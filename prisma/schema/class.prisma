@@ -1,0 +1,131 @@
+model ClassSubject {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+
+  classId   Int
+  sectionId Int
+  subjectId Int
+
+  classSubjectCode String
+
+  school       School       @relation(fields: [schoolId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  class        Class        @relation(fields: [classId], references: [id])
+  section      Section      @relation(fields: [sectionId], references: [id])
+  subject      Subject      @relation(fields: [subjectId], references: [id])
+
+  teacherProfileId Int?
+  teacherProfile   TeacherProfile? @relation(fields: [teacherProfileId], references: [id])
+
+  roomAssignments RoomAssignment[]
+  lessonPlans     LessonPlan[]
+
+  @@unique([schoolId, academicYearId, sectionId, subjectId])
+  @@index([schoolId, academicYearId])
+}
+
+model Class {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+
+  name        String
+  level       String?
+  description String?
+
+  capacity Int?
+  order    Int  @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school       School       @relation(fields: [schoolId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  sections    Section[]
+  subjects    ClassSubject[]
+  headTeacher ClassHeadTeacher?
+
+  // existing relations (kept)
+  calendarExceptions   CalendarException[]
+  StudentProfile       StudentProfile[]
+  SubjectAssignment    SubjectAssignment[]
+  TimetableEntry       TimetableEntry[]
+  AnnouncementAudience AnnouncementAudience[]
+  AttendanceSession    AttendanceSession[]
+  lessonPlans          LessonPlan[]
+
+  @@unique([schoolId, academicYearId, name])
+  @@index([schoolId, academicYearId])
+}
+
+model Section {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  classId        Int
+
+  name        String
+  description String?
+  stream      String?
+
+  capacity Int?
+  order    Int  @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school       School       @relation(fields: [schoolId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  ClassSubject   ClassSubject[]
+  StudentProfile StudentProfile[]
+  classTeacher   SectionTeacher?
+
+  // existing relations
+  SubjectAssignment    SubjectAssignment[]
+  TimetableEntry       TimetableEntry[]
+  AnnouncementAudience AnnouncementAudience[]
+  AttendanceSession    AttendanceSession[]
+  lessonPlans          LessonPlan[]
+  roomAssignments      RoomAssignment[]
+
+  @@unique([schoolId, academicYearId, classId, name])
+  @@index([schoolId, academicYearId])
+}
+
+model ClassHeadTeacher {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  classId        Int @unique
+
+  teacherId  Int?
+  assignedAt DateTime @default(now())
+
+  school       School          @relation(fields: [schoolId], references: [id])
+  academicYear AcademicYear    @relation(fields: [academicYearId], references: [id])
+  class        Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
+  teacher      TeacherProfile? @relation(fields: [teacherId], references: [id])
+
+  @@index([schoolId, academicYearId])
+}
+
+model SectionTeacher {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  sectionId      Int @unique
+
+  teacherId  Int?
+  assignedAt DateTime @default(now())
+
+  school       School          @relation(fields: [schoolId], references: [id])
+  academicYear AcademicYear    @relation(fields: [academicYearId], references: [id])
+  section      Section         @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  teacher      TeacherProfile? @relation(fields: [teacherId], references: [id])
+
+  @@index([schoolId, academicYearId])
+}

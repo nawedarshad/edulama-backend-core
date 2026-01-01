@@ -1,0 +1,129 @@
+// ------------------- ENUMS -------------------
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+}
+
+enum DayType {
+  WORKING
+  HOLIDAY
+  SPECIAL_WORKING
+  EVENT
+}
+
+// ------------------- WORKING PATTERN (RULES) -------------------
+model WorkingPattern {
+  id             Int       @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  dayOfWeek      DayOfWeek
+  isWorking      Boolean   @default(true)
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, academicYearId, dayOfWeek])
+  @@index([schoolId, academicYearId])
+}
+
+// ------------------- CALENDAR EXCEPTIONS -------------------
+model CalendarException {
+  id             Int      @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  date           DateTime @db.Date
+  type           DayType
+  title          String?
+  description    String?
+  classId        Int? // NULL = school-wide
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  class        Class?       @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, academicYearId, date, classId])
+  @@index([schoolId, date])
+}
+
+// ------------------- ATTENDANCE SESSION -------------------
+// Each session = attendance record for a class/subject/day
+model AttendanceSession {
+  id             Int      @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  classId        Int
+  sectionId      Int
+  subjectId      Int?
+  date           DateTime @db.Date
+  markedById     Int
+  takenAt        DateTime @default(now())
+  remarks        String?
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section      @relation(fields: [sectionId], references: [id])
+  subject      Subject?     @relation(fields: [subjectId], references: [id])
+  markedBy     User         @relation(fields: [markedById], references: [id])
+
+  attendances Attendance[]
+
+  @@unique([schoolId, academicYearId, classId, sectionId, subjectId, date])
+  @@index([schoolId, date])
+}
+
+model Attendance {
+  id                  Int @id @default(autoincrement())
+  schoolId            Int
+  attendanceSessionId Int
+  studentProfileId    Int
+
+  status AttendanceStatus
+
+  isLate         Boolean   @default(false)
+  lateMarkedAt   DateTime?
+  lateReason     String?
+  lateMarkedById Int?
+
+  remarks  String?
+  markedAt DateTime @default(now())
+
+  school         School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  session        AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
+  studentProfile StudentProfile    @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  lateMarkedBy   User?             @relation("LateMarkedBy", fields: [lateMarkedById], references: [id])
+
+  @@unique([schoolId, attendanceSessionId, studentProfileId])
+  @@index([schoolId, studentProfileId])
+  @@index([schoolId, isLate])
+}
+
+// ------------------- ATTENDANCE SUMMARY -------------------
+// Monthly or term-wise summary
+model AttendanceSummary {
+  id             Int  @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  studentId      Int
+  classId        Int
+  sectionId      Int
+  subjectId      Int?
+  month          Int
+  year           Int
+
+  totalDays Int @default(0)
+  present   Int @default(0)
+  absent    Int @default(0)
+  late      Int @default(0)
+  excused   Int @default(0)
+
+  computedAt DateTime @default(now())
+  version    Int      @default(1)
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, academicYearId, studentId, classId, sectionId, subjectId, month, year])
+  @@index([schoolId, month, year])
+}

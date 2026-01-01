@@ -1,0 +1,48 @@
+model StudentProfile {
+  id Int @id @default(autoincrement())
+
+  // Tenant & academic isolation
+  schoolId       Int
+  academicYearId Int
+
+  // Identity
+  userId      Int     @unique
+  admissionNo String
+  rollNo      String?
+
+  fullName String
+  photo    String?
+
+  dob DateTime?
+
+  admissionDate DateTime?
+
+  // Academic placement
+  classId   Int
+  sectionId Int
+  house     String?
+
+  // Lifecycle
+  leftDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  parents ParentStudent[]
+
+  attendances           Attendance[]
+  announcementAudiences AnnouncementAudience[]
+  incidentReports       IncidentReport[]
+  parentProfiles        ParentProfile[]
+
+  @@unique([schoolId, academicYearId, admissionNo])
+  @@index([schoolId, academicYearId])
+  @@index([classId, sectionId])
+}

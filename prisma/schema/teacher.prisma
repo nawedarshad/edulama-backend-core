@@ -1,0 +1,189 @@
+model TeacherProfile {
+  id       Int @id @default(autoincrement())
+  userId   Int @unique
+  schoolId Int
+
+  // Employment Identity
+  empCode String?
+
+  // Dates
+  joinDate DateTime @default(now())
+
+  // Status & Compliance
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  // Core relations (already in your system)
+  lessonPlans           LessonPlan[]
+  ClassSubject          ClassSubject[]
+  ClassHeadTeacher      ClassHeadTeacher[]
+  SectionTeacher        SectionTeacher[]
+  announcementAudiences AnnouncementAudience[]
+  subjectAssignments    SubjectAssignment[]
+  timetableEntries      TimetableEntry[]
+  timetableOverrides    TimetableOverride[]
+
+  // New relations
+  personalInfo   TeacherPersonalInfo?
+  qualifications TeacherQualification[]
+  documents      TeacherDocument[]
+
+  // Enhanced Relations
+  preferredSubjects TeacherPreferredSubject[]
+  skills            TeacherSkill[]
+  certifications    TeacherCertification[]
+  trainings         TeacherTraining[]
+  appraisals        TeacherAppraisal[]
+  additionalRoles   TeacherResponsibility[]
+
+  @@index([schoolId])
+}
+
+model TeacherPersonalInfo {
+  id      Int @id @default(autoincrement())
+  staffId Int @unique
+
+  // Identity
+  fullName    String
+  gender      String
+  dateOfBirth DateTime
+
+  // Contact
+  phone          String
+  alternatePhone String
+  email          String
+
+  // Address
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  country      String
+  postalCode   String
+
+  // Emergency
+  emergencyContactName  String
+  emergencyContactPhone String
+  emergencyRelation     String?
+
+  // Government IDs (store refs or masked values)
+  nationalIdMasked String? // Aadhaar/PAN masked
+  taxIdMasked      String?
+
+  teacherProfile TeacherProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+}
+
+model TeacherQualification {
+  id      Int @id @default(autoincrement())
+  staffId Int
+
+  degree         String? // B.Ed, M.Sc, B.A
+  specialization String?
+  institution    String?
+  yearOfPassing  Int?
+
+  teacherProfile TeacherProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+}
+
+model TeacherDocument {
+  id      Int @id @default(autoincrement())
+  staffId Int
+
+  type String // ID_PROOF, EXPERIENCE_LETTER, CERTIFICATE
+  ref  String // S3 key / URL / document ID
+
+  uploadedAt DateTime @default(now())
+
+  teacherProfile TeacherProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+}
+
+//-------------------------------------------------------------
+// 1. Substitution Logic
+//-------------------------------------------------------------
+model TeacherPreferredSubject {
+  id        Int @id @default(autoincrement())
+  teacherId Int
+  subjectId Int
+
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, subjectId])
+}
+
+//-------------------------------------------------------------
+// 2. Professional Development & Skills
+//-------------------------------------------------------------
+model TeacherSkill {
+  id        Int    @id @default(autoincrement())
+  teacherId Int
+  name      String // "Debate", "Coding"
+
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, name])
+}
+
+model TeacherCertification {
+  id        Int     @id @default(autoincrement())
+  teacherId Int
+  name      String
+  issuer    String
+  year      Int
+  url       String? // verification link
+
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+}
+
+model TeacherTraining {
+  id            Int      @id @default(autoincrement())
+  teacherId     Int
+  title         String
+  organizer     String // Internal / External
+  date          DateTime
+  durationHours Int
+  notes         String?
+
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+}
+
+//-------------------------------------------------------------
+// 3. Performance & Appraisal
+//-------------------------------------------------------------
+model TeacherAppraisal {
+  id             Int @id @default(autoincrement())
+  teacherId      Int
+  academicYearId Int
+
+  kpiScore             Float? // e.g., 4.5/5
+  studentFeedbackScore Float?
+  principalNotes       String? // Private notes
+
+  evaluatedAt DateTime @default(now())
+  evaluatedBy Int? // User ID of Principal
+
+  teacher      TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id])
+}
+
+//-------------------------------------------------------------
+// 4. Additional Roles
+//-------------------------------------------------------------
+model TeacherResponsibility {
+  id        Int    @id @default(autoincrement())
+  teacherId Int
+  roleName  String // "House Master", "Bus Coordinator"
+
+  assignedAt DateTime @default(now())
+
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+}

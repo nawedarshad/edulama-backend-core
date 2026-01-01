@@ -1,0 +1,147 @@
+enum AnnouncementPriority {
+  NORMAL
+  URGENT
+  CRITICAL
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  EXPIRED
+  CANCELLED
+}
+
+enum AudienceType {
+  ALL_SCHOOL
+  CLASS
+  SECTION
+  STUDENT
+  TEACHER
+  PARENTS
+  STAFF
+  ROLE
+}
+
+enum AckType {
+  READ
+  ACKNOWLEDGE
+}
+
+// Core announcement
+model Announcement {
+  id       Int @id @default(autoincrement())
+  schoolId Int
+
+  title   String
+  body    String
+  summary String?
+
+  createdById Int
+  createdBy   User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  priority    AnnouncementPriority @default(NORMAL)
+  status      AnnouncementStatus   @default(DRAFT)
+  isEmergency Boolean              @default(false)
+
+  isRecurring   Boolean @default(false)
+  recurringCron String?
+
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  expireAt    DateTime?
+
+  visibilityNote String?
+  metadata       Json?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  school School @relation(fields: [schoolId], references: [id])
+
+  audiences        AnnouncementAudience[]
+  attachments      AnnouncementAttachment[]
+  acknowledgements AnnouncementAck[]
+
+  @@index([schoolId, status])
+  @@index([schoolId, createdAt])
+  @@index([schoolId, priority, isEmergency])
+}
+
+// Targeting / audience mapping (normalized)
+model AnnouncementAudience {
+  id             Int          @id @default(autoincrement())
+  schoolId       Int
+  announcementId Int
+  type           AudienceType
+
+  classId   Int?
+  sectionId Int?
+  studentId Int?
+  staffId   Int?
+  roleId    Int?
+  branchId  Int?
+
+  customMeta Json?
+  createdAt  DateTime @default(now())
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  school       School       @relation(fields: [schoolId], references: [id])
+
+  class   Class?          @relation(fields: [classId], references: [id], onDelete: SetNull)
+  section Section?        @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  student StudentProfile? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  staff   TeacherProfile? @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  role    Role?           @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, announcementId])
+  @@index([schoolId, type])
+  @@index([schoolId, classId])
+  @@index([schoolId, sectionId])
+  @@index([schoolId, studentId])
+}
+
+// Attachments (documents, posters)
+model AnnouncementAttachment {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  announcementId Int
+
+  fileName String
+  fileType String
+  fileUrl  String
+  fileSize Int?
+
+  uploadedById Int?
+  uploadedBy   User? @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  school       School       @relation(fields: [schoolId], references: [id])
+
+  @@index([schoolId, announcementId])
+}
+
+// Acknowledgements / read receipts / responses
+model AnnouncementAck {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  announcementId Int
+  userId         Int
+
+  ackType      AckType
+  responseText String?
+  signatureUrl String?
+
+  createdAt DateTime @default(now())
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school       School       @relation(fields: [schoolId], references: [id])
+
+  @@unique([schoolId, announcementId, userId, ackType])
+  @@index([schoolId, announcementId])
+  @@index([schoolId, userId])
+}

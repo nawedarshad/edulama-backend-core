@@ -1,0 +1,82 @@
+//-------------------------------------------------------------
+// ENUMS
+//-------------------------------------------------------------
+enum AllocationType {
+  AUTO
+  MANUAL
+}
+
+enum AllocationStrategy {
+  EQUAL
+  CUSTOM
+  WEIGHTED
+}
+
+//-------------------------------------------------------------
+// SUBJECT CATEGORY
+//-------------------------------------------------------------
+model SubjectCategory {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subjects Subject[]
+}
+
+//-------------------------------------------------------------
+// SUBJECT (WITH SUB-SUBJECT SUPPORT)
+//-------------------------------------------------------------
+model Subject {
+  id   Int    @id @default(autoincrement())
+  name String
+  code String
+
+  categoryId Int?
+  category   SubjectCategory? @relation(fields: [categoryId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Core relations
+  ClassSubject             ClassSubject[]
+  SubjectAssignment        SubjectAssignment[]
+  LessonPlan               LessonPlan[]
+  AttendanceSession        AttendanceSession[]
+  timetableEntries         TimetableEntry[]
+  teacherPreferredSubjects TeacherPreferredSubject[]
+
+  @@unique([code])
+}
+
+//-------------------------------------------------------------
+// SUBJECT ASSIGNMENT (teacher assigned to a subject)
+//-------------------------------------------------------------
+model SubjectAssignment {
+  id Int @id @default(autoincrement())
+
+  schoolId       Int
+  academicYearId Int
+
+  classId   Int
+  sectionId Int?
+  subjectId Int
+  teacherId Int
+
+  periodsPerWeek Int?
+  isActive       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  class        Class          @relation(fields: [classId], references: [id])
+  section      Section?       @relation(fields: [sectionId], references: [id])
+  subject      Subject        @relation(fields: [subjectId], references: [id])
+  teacher      TeacherProfile @relation(fields: [teacherId], references: [id])
+  school       School         @relation(fields: [schoolId], references: [id])
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id])
+
+  @@unique([schoolId, academicYearId, classId, sectionId, subjectId])
+  @@index([teacherId])
+}

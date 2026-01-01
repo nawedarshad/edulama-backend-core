@@ -1,0 +1,57 @@
+enum NotificationType {
+  ANNOUNCEMENT
+  ATTENDANCE
+  HOMEWORK
+  EVENT
+  SYSTEM
+  ALERT
+}
+
+model Notification {
+  id BigInt @id @default(autoincrement())
+
+  schoolId Int
+  type     NotificationType
+  title    String
+  message  String
+
+  createdById Int?
+  createdBy   User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  metadata Json? // optional: { eventId, classId }
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  deliveries NotificationDelivery[]
+
+  @@index([schoolId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model NotificationDelivery {
+  id             BigInt @id @default(autoincrement())
+  notificationId BigInt
+  userId         Int
+
+  deliveredAt DateTime  @default(now())
+  readAt      DateTime?
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId])
+}
+
+model NotificationPreference {
+  id     Int @id @default(autoincrement())
+  userId Int @unique
+
+  inApp Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

@@ -1,0 +1,40 @@
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  LOGIN
+  LOGOUT
+}
+
+model AuditLog {
+  id BigInt @id @default(autoincrement())
+
+  // Tenant safety
+  schoolId Int
+  userId   Int?
+
+  // What happened
+  entity   String // "Attendance", "Fee", "LessonPlan"
+  entityId Int?
+  action   AuditAction
+
+  // Optional change snapshot
+  oldValue Json?
+  newValue Json?
+
+  // Metadata
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId])
+  @@index([userId])
+  @@index([entity])
+  @@index([action])
+  @@index([createdAt])
+}
