@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsInt } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsInt, IsEnum } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateClassDto {
@@ -7,10 +7,12 @@ export class CreateClassDto {
     @IsNotEmpty()
     name: string;
 
-    @ApiPropertyOptional({ description: 'The level of the class', example: 'Secondary' })
-    @IsString()
+
+
+    @ApiProperty({ description: 'The educational stage of the class', enum: ['KINDERGARTEN', 'PRIMARY', 'MIDDLE', 'SECONDARY', 'SENIOR_SECONDARY'], example: 'PRIMARY' })
+    @IsEnum(['KINDERGARTEN', 'PRIMARY', 'MIDDLE', 'SECONDARY', 'SENIOR_SECONDARY'])
     @IsOptional()
-    level?: string;
+    stage?: 'KINDERGARTEN' | 'PRIMARY' | 'MIDDLE' | 'SECONDARY' | 'SENIOR_SECONDARY';
 
     @ApiPropertyOptional({ description: 'The capacity of the class', example: 40 })
     @IsInt()

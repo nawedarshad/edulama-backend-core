@@ -60,7 +60,7 @@ export class PrincipalAuthGuard implements CanActivate {
             request.user = user;
             return true;
         } catch (error) {
-            this.logger.error('Token verification failed', error.message);
+            this.logger.error(`Token verification failed against ${authServiceUrl}`, error);
             throw new UnauthorizedException('Invalid token or auth service unavailable');
         }
     }

@@ -58,17 +58,23 @@ model School {
   schoolSettings          SchoolSettings?
   timeSlots               TimeSlot[]
   lessonPlans             LessonPlan[]
+  houses                  House[]
   auditLogs               AuditLog[]
   notifications           Notification[]
   rooms                   Room[]
   roomAssignments         RoomAssignment[]
-  schoolComplaints        SchoolComplaint[]
+  grievances              Grievance[]
   teacherProfiles         TeacherProfile[]
   studentProfiles         StudentProfile[]
   subjectAssignments      SubjectAssignment[]
   timePeriods             TimePeriod[]
+  departments             Department[]
+  subjects                Subject[]
+  subjectCategories       SubjectCategory[]
   timetableEntries        TimetableEntry[]
   timetableOverrides      TimetableOverride[]
+
+  grievanceConfigs GrievanceConfig[]
 
   @@index([code])
   @@index([subdomain])
@@ -101,13 +107,14 @@ model AcademicYear {
   incidentReports     IncidentReport[]
   lessonPlans         LessonPlan[]
   roomAssignments     RoomAssignment[]
-  schoolComplaints    SchoolComplaint[]
+  grievances          Grievance[]
   studentProfiles     StudentProfile[]
   subjectAssignments  SubjectAssignment[]
   timetableEntries    TimetableEntry[]
   timetableOverrides  TimetableOverride[]
   timeSlots           TimeSlot[]
   teacherAppraisals   TeacherAppraisal[]
+  subjects            Subject[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -133,9 +140,10 @@ model User {
   roleId Int
   role   Role @relation(fields: [roleId], references: [id])
 
-  raisedBy    SchoolComplaint[]
-  resolvedBy  SchoolComplaint[] @relation("ComplaintResolvedBy")
-  againstUser SchoolComplaint[] @relation("ComplaintAgainstUser")
+  grievancesRaised             Grievance[]
+  grievancesResolved           Grievance[]           @relation("GrievanceResolvedBy")
+  grievancesAgainst            Grievance[]           @relation("GrievanceAgainstUser")
+  uploadedGrievanceAttachments GrievanceAttachment[]
 
   // Back-relations for IncidentReport
   createdIncidents  IncidentReport[] @relation("CreatedIncidents")
@@ -145,27 +153,30 @@ model User {
   lateMarkedAttendances Attendance[] @relation("LateMarkedBy")
 
   // Note: Removed 'attendances Attendance[]' as it lacks an opposite relation on Attendance
-  announcements              Announcement[]
-  announcementAttachments    AnnouncementAttachment[]
-  announcementAcks           AnnouncementAck[]
-  attendanceSessions         AttendanceSession[]
-  incidentAttachments        IncidentAttachment[]
-  todos                      Todo[]
-  lessonPlans                LessonPlan[]
-  auditLogs                  AuditLog[]
-  notifications              Notification[]
-  notificationDeliveries     NotificationDelivery[]
-  notificationPreference     NotificationPreference?
-  parentProfile              ParentProfile?
-  schoolComplaintAttachments SchoolComplaintAttachment[]
-  teacherProfile             TeacherProfile?
-  studentProfile             StudentProfile?
-  timetableOverrides         TimetableOverride[]
-  authIdentities             AuthIdentity[]
-  passwordResets             PasswordReset[]
-  authTokens                 AuthToken[]
-  userRoles                  UserRole[]
-  userPermissions            UserPermission[]
+  announcements           Announcement[]
+  announcementAttachments AnnouncementAttachment[]
+  announcementAcks        AnnouncementAck[]
+  attendanceSessions      AttendanceSession[]
+  incidentAttachments     IncidentAttachment[]
+  todos                   Todo[]
+  lessonPlans             LessonPlan[]
+  auditLogs               AuditLog[]
+  notifications           Notification[]
+  notificationDeliveries  NotificationDelivery[]
+  notificationPreference  NotificationPreference?
+  parentProfile           ParentProfile?
+  teacherProfile          TeacherProfile?
+  studentProfile          StudentProfile?
+  timetableOverrides      TimetableOverride[]
+  authIdentities          AuthIdentity[]
+  passwordResets          PasswordReset[]
+  authTokens              AuthToken[]
+  userRoles               UserRole[]
+  userPermissions         UserPermission[]
+
+  // Department relations
+  departmentHeadOf           Department[]                @relation("HeadOfDepartment")
+  departmentMemberships      DepartmentMember[]
 
   @@index([schoolId])
 }
@@ -237,6 +248,7 @@ model Role {
   rolePermissions       RolePermission[]
   announcementAudiences AnnouncementAudience[]
   uiFeatureRoles        UiFeatureRole[]
+  grievanceConfigs      GrievanceConfig[]
 }
 
 model UserRole {

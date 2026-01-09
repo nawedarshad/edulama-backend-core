@@ -6,7 +6,7 @@ import { UpdateRoomDto } from './dto/update-room.dto';
 import { GetRoomsDto } from './dto/get-rooms.dto';
 import { AssignRoomDto } from './dto/assign-room.dto';
 import { BulkCreateRoomDto } from './dto/bulk-create-room.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, AcademicYearStatus } from '@prisma/client';
 
 @Injectable()
 export class RoomService {
@@ -62,7 +62,6 @@ export class RoomService {
                                     class: {
                                         select: {
                                             name: true,
-                                            level: true,
                                         },
                                     },
                                 },
@@ -156,7 +155,6 @@ export class RoomService {
                                 class: {
                                     select: {
                                         name: true,
-                                        level: true,
                                     },
                                 },
                             },
@@ -262,11 +260,20 @@ export class RoomService {
         // 2. Check if section exists and belongs to school
         const section = await this.prisma.section.findFirst({
             where: { id: dto.sectionId, schoolId },
-            include: { academicYear: true } // Need academicYearId for assignment
+            // Removed include: academicYear
         });
 
         if (!section) {
             throw new NotFoundException('Section not found');
+        }
+
+        // Get active academic year
+        const activeYear = await this.prisma.academicYear.findFirst({
+            where: { schoolId, status: AcademicYearStatus.ACTIVE }
+        });
+
+        if (!activeYear) {
+            throw new BadRequestException('No active academic year found');
         }
 
         // 3. Upsert assignment
@@ -276,13 +283,13 @@ export class RoomService {
                 where: {
                     schoolId_academicYearId_sectionId: {
                         schoolId,
-                        academicYearId: section.academicYearId,
+                        academicYearId: activeYear.id,
                         sectionId: dto.sectionId,
                     }
                 },
                 create: {
                     schoolId,
-                    academicYearId: section.academicYearId,
+                    academicYearId: activeYear.id,
                     roomId: dto.roomId,
                     sectionId: dto.sectionId,
                     isActive: dto.isActive ?? true,

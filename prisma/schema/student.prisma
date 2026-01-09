@@ -1,3 +1,43 @@
+enum Religion {
+  HINDUISM
+  ISLAM
+  CHRISTIANITY
+  SIKHISM
+  BUDDHISM
+  JAINISM
+  OTHER
+}
+
+enum BloodGroup {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
+  UNKNOWN
+}
+
+enum Caste {
+  GENERAL
+  OBC
+  SC
+  ST
+  OTHER
+}
+
+enum StudentCategory {
+  GENERAL
+  RTE
+  STAFF_WARD
+  SIBLING
+  MANAGEMENT_QUOTA
+  EWS
+  OTHER
+}
+
 model StudentProfile {
   id Int @id @default(autoincrement())
 
@@ -20,10 +60,12 @@ model StudentProfile {
   // Academic placement
   classId   Int
   sectionId Int
-  house     String?
+  houseId   Int?
 
   // Lifecycle
-  leftDate DateTime?
+  isActive      Boolean   @default(true)
+  leftDate      DateTime?
+  leavingReason String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -34,6 +76,7 @@ model StudentProfile {
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
   section      Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  house        House?       @relation(fields: [houseId], references: [id])
 
   parents ParentStudent[]
 
@@ -42,7 +85,100 @@ model StudentProfile {
   incidentReports       IncidentReport[]
   parentProfiles        ParentProfile[]
 
+  // House Leadership (Using explicit relation names)
+  captainOf     House[] @relation("HouseCaptain")
+  viceCaptainOf House[] @relation("HouseViceCaptain")
+
+  // Extended Details
+  personalInfo      StudentPersonalInfo?
+  documents         StudentDocument[]
+  previousEducation StudentPreviousEducation[]
+  healthRecord      StudentHealthRecord?
+
   @@unique([schoolId, academicYearId, admissionNo])
   @@index([schoolId, academicYearId])
   @@index([classId, sectionId])
+}
+
+// ==========================
+// EXTENDED PROFILE MODELS
+// ==========================
+
+model StudentPersonalInfo {
+  id        Int @id @default(autoincrement())
+  studentId Int @unique
+
+  // Demographics
+  gender       String?
+  bloodGroup   BloodGroup?
+  religion     Religion?
+  caste        Caste?
+  category     StudentCategory?
+  nationality  String?
+  motherTongue String?
+
+  // Contact
+  studentPhone String?
+  studentEmail String?
+
+  // Address
+  currentAddress   String?
+  permanentAddress String?
+  city             String?
+  state            String?
+  pincode          String?
+
+  // Disability
+  isDisabled        Boolean @default(false)
+  disabilityDetails String?
+
+  student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model StudentDocument {
+  id        Int @id @default(autoincrement())
+  studentId Int
+
+  name       String // e.g., "Birth Certificate"
+  type       String // e.g., "PDF", "IMAGE"
+  url        String
+  isVerified Boolean  @default(false)
+  uploadedAt DateTime @default(now())
+
+  student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+}
+
+model StudentPreviousEducation {
+  id        Int @id @default(autoincrement())
+  studentId Int
+
+  schoolName    String
+  lastClass     String?
+  yearOfPassing Int?
+  marksObtained String?
+  tcNumber      String?
+  tcDate        DateTime?
+
+  student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+}
+
+model StudentHealthRecord {
+  id        Int @id @default(autoincrement())
+  studentId Int @unique
+
+  height Float? // cm
+  weight Float? // kg
+
+  allergies         String?
+  medicalConditions String?
+  medications       String?
+
+  familyDoctorName    String?
+  familyDoctorContact String?
+
+  student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
 }

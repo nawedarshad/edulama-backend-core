@@ -40,6 +40,9 @@ model TeacherProfile {
   trainings         TeacherTraining[]
   appraisals        TeacherAppraisal[]
   additionalRoles   TeacherResponsibility[]
+  preferredStages   EducationalStage[]
+
+  houseMasterOf House[] @relation("HouseMaster")
 
   @@index([schoolId])
 }

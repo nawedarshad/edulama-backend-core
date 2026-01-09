@@ -1,6 +1,14 @@
 import { Injectable, BadRequestException, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateTeacherDto } from './dto/create-teacher.dto';
+import {
+    CreateTeacherDto,
+    CreateDocumentDto,
+    CreateQualificationDto,
+    CreateCertificationDto,
+    CreateTrainingDto,
+    CreateResponsibilityDto,
+    CreateAppraisalDto
+} from './dto/create-teacher.dto';
 import { BulkCreateTeacherDto } from './dto/bulk-create-teacher.dto';
 import { UpdateTeacherDto } from './dto/update-teacher.dto';
 import * as argon2 from 'argon2';
@@ -88,6 +96,8 @@ export class TeacherService {
                         userId: user.id,
                         schoolId,
                         joinDate: dto.joinDate ? new Date(dto.joinDate) : new Date(),
+                        empCode: dto.empCode,
+                        preferredStages: dto.preferredStages,
                     },
                 });
 
@@ -136,6 +146,81 @@ export class TeacherService {
                             institution: q.institution,
                             specialization: q.specialization,
                             yearOfPassing: q.yearOfPassing ? Number(q.yearOfPassing) : null,
+                        })),
+                    });
+                }
+
+                // F. Teacher Enhancements (Skills, Roles, etc.)
+                if (dto.preferredSubjectIds && dto.preferredSubjectIds.length > 0) {
+                    await tx.teacherPreferredSubject.createMany({
+                        data: dto.preferredSubjectIds.map(subId => ({
+                            teacherId: teacherProfile.id,
+                            subjectId: subId,
+                        })),
+                    });
+                }
+
+                if (dto.documents && dto.documents.length > 0) {
+                    await tx.teacherDocument.createMany({
+                        data: dto.documents.map(doc => ({
+                            staffId: teacherProfile.id,
+                            type: doc.type,
+                            ref: doc.ref,
+                        })),
+                    });
+                }
+
+                if (dto.skills && dto.skills.length > 0) {
+                    await tx.teacherSkill.createMany({
+                        data: dto.skills.map(skill => ({
+                            teacherId: teacherProfile.id,
+                            name: skill,
+                        })),
+                    });
+                }
+
+                if (dto.certifications && dto.certifications.length > 0) {
+                    await tx.teacherCertification.createMany({
+                        data: dto.certifications.map(c => ({
+                            teacherId: teacherProfile.id,
+                            name: c.name,
+                            issuer: c.issuer,
+                            year: c.year,
+                            url: c.url,
+                        })),
+                    });
+                }
+
+                if (dto.trainings && dto.trainings.length > 0) {
+                    await tx.teacherTraining.createMany({
+                        data: dto.trainings.map(t => ({
+                            teacherId: teacherProfile.id,
+                            title: t.title,
+                            organizer: t.organizer,
+                            date: new Date(t.date),
+                            durationHours: t.durationHours,
+                            notes: t.notes,
+                        })),
+                    });
+                }
+
+                if (dto.additionalRoles && dto.additionalRoles.length > 0) {
+                    await tx.teacherResponsibility.createMany({
+                        data: dto.additionalRoles.map(r => ({
+                            teacherId: teacherProfile.id,
+                            roleName: r.roleName,
+                        })),
+                    });
+                }
+
+                if (dto.appraisals && dto.appraisals.length > 0) {
+                    await tx.teacherAppraisal.createMany({
+                        data: dto.appraisals.map(a => ({
+                            teacherId: teacherProfile.id,
+                            academicYearId: a.academicYearId,
+                            kpiScore: a.kpiScore,
+                            studentFeedbackScore: a.studentFeedbackScore,
+                            principalNotes: a.principalNotes,
                         })),
                     });
                 }
@@ -206,6 +291,12 @@ export class TeacherService {
                 user: true,
                 personalInfo: true,
                 qualifications: true,
+                preferredSubjects: { include: { subject: true } },
+                skills: true,
+                certifications: true,
+                trainings: true,
+                additionalRoles: true,
+                appraisals: true,
             },
         });
 
@@ -223,6 +314,8 @@ export class TeacherService {
                     where: { id: staff.id },
                     data: {
                         joinDate: dto.joinDate ? new Date(dto.joinDate) : undefined,
+                        empCode: dto.empCode,
+                        preferredStages: dto.preferredStages,
                     },
                 });
 
@@ -282,7 +375,108 @@ export class TeacherService {
                                 degree: q.degree,
                                 institution: q.institution,
                                 specialization: q.specialization,
-                                yearOfPassing: q.yearOfPassing,
+                                yearOfPassing: q.yearOfPassing ? Number(q.yearOfPassing) : null,
+                            })),
+                        });
+                    }
+                }
+
+                // Update Preferred Subjects
+                if (dto.preferredSubjectIds) {
+                    await tx.teacherPreferredSubject.deleteMany({ where: { teacherId: staff.id } });
+                    if (dto.preferredSubjectIds.length > 0) {
+                        await tx.teacherPreferredSubject.createMany({
+                            data: dto.preferredSubjectIds.map(subId => ({
+                                teacherId: staff.id,
+                                subjectId: subId,
+                            })),
+                        });
+                    }
+                }
+
+                // Update Skills
+                if (dto.skills) {
+                    await tx.teacherSkill.deleteMany({ where: { teacherId: staff.id } });
+                    if (dto.skills.length > 0) {
+                        await tx.teacherSkill.createMany({
+                            data: dto.skills.map(skill => ({
+                                teacherId: staff.id,
+                                name: skill,
+                            })),
+                        });
+                    }
+                }
+
+                // Update Certifications
+                if (dto.certifications) {
+                    await tx.teacherCertification.deleteMany({ where: { teacherId: staff.id } });
+                    if (dto.certifications.length > 0) {
+                        await tx.teacherCertification.createMany({
+                            data: dto.certifications.map(c => ({
+                                teacherId: staff.id,
+                                name: c.name,
+                                issuer: c.issuer,
+                                year: c.year,
+                                url: c.url,
+                            })),
+                        });
+                    }
+                }
+
+                // Update Trainings
+                if (dto.trainings) {
+                    await tx.teacherTraining.deleteMany({ where: { teacherId: staff.id } });
+                    if (dto.trainings.length > 0) {
+                        await tx.teacherTraining.createMany({
+                            data: dto.trainings.map(t => ({
+                                teacherId: staff.id,
+                                title: t.title,
+                                organizer: t.organizer,
+                                date: new Date(t.date),
+                                durationHours: t.durationHours,
+                                notes: t.notes,
+                            })),
+                        });
+                    }
+                }
+
+                // Update Additional Roles
+                if (dto.additionalRoles) {
+                    await tx.teacherResponsibility.deleteMany({ where: { teacherId: staff.id } });
+                    if (dto.additionalRoles.length > 0) {
+                        await tx.teacherResponsibility.createMany({
+                            data: dto.additionalRoles.map(r => ({
+                                teacherId: staff.id,
+                                roleName: r.roleName,
+                            })),
+                        });
+                    }
+                }
+
+                // Update Appraisals
+                if (dto.appraisals) {
+                    await tx.teacherAppraisal.deleteMany({ where: { teacherId: staff.id } });
+                    if (dto.appraisals.length > 0) {
+                        await tx.teacherAppraisal.createMany({
+                            data: dto.appraisals.map(a => ({
+                                teacherId: staff.id,
+                                academicYearId: a.academicYearId,
+                                kpiScore: a.kpiScore,
+                                studentFeedbackScore: a.studentFeedbackScore,
+                                principalNotes: a.principalNotes,
+                            })),
+                        });
+                    }
+                }
+
+                if (dto.documents) {
+                    await tx.teacherDocument.deleteMany({ where: { staffId: staff.id } });
+                    if (dto.documents.length > 0) {
+                        await tx.teacherDocument.createMany({
+                            data: dto.documents.map(d => ({
+                                staffId: staff.id,
+                                type: d.type,
+                                ref: d.ref,
                             })),
                         });
                     }
@@ -316,5 +510,136 @@ export class TeacherService {
             this.logger.error('Error deleting teacher', error);
             throw new InternalServerErrorException('Failed to delete teacher');
         }
+    }
+
+    // =================================================================
+    // GRANULAR ENDPOINTS SUPPORT
+    // =================================================================
+
+    async addDocument(schoolId: number, teacherId: number, dto: CreateDocumentDto) {
+        await this.findOne(schoolId, teacherId);
+        return this.prisma.teacherDocument.create({
+            data: { staffId: teacherId, ...dto }
+        });
+    }
+
+    async removeDocument(schoolId: number, teacherId: number, documentId: number) {
+        await this.findOne(schoolId, teacherId);
+        const doc = await this.prisma.teacherDocument.findFirst({ where: { id: documentId, staffId: teacherId } });
+        if (!doc) throw new NotFoundException('Document not found');
+        return this.prisma.teacherDocument.delete({ where: { id: documentId } });
+    }
+
+    async addQualification(schoolId: number, teacherId: number, dto: CreateQualificationDto) {
+        await this.findOne(schoolId, teacherId);
+        return this.prisma.teacherQualification.create({
+            data: {
+                staffId: teacherId,
+                degree: dto.degree,
+                institution: dto.institution,
+                specialization: dto.specialization,
+                yearOfPassing: dto.yearOfPassing ? Number(dto.yearOfPassing) : null,
+            }
+        });
+    }
+
+    async removeQualification(schoolId: number, teacherId: number, qualId: number) {
+        await this.findOne(schoolId, teacherId);
+        const qual = await this.prisma.teacherQualification.findFirst({ where: { id: qualId, staffId: teacherId } });
+        if (!qual) throw new NotFoundException('Qualification not found');
+        return this.prisma.teacherQualification.delete({ where: { id: qualId } });
+    }
+
+    async addSkill(schoolId: number, teacherId: number, skillName: string) {
+        await this.findOne(schoolId, teacherId);
+        return this.prisma.teacherSkill.create({
+            data: { teacherId, name: skillName }
+        });
+    }
+
+    async removeSkill(schoolId: number, teacherId: number, skillId: number) {
+        await this.findOne(schoolId, teacherId);
+        const skill = await this.prisma.teacherSkill.findFirst({ where: { id: skillId, teacherId } });
+        if (!skill) throw new NotFoundException('Skill not found');
+        return this.prisma.teacherSkill.delete({ where: { id: skillId } });
+    }
+
+    async addCertification(schoolId: number, teacherId: number, dto: CreateCertificationDto) {
+        await this.findOne(schoolId, teacherId);
+        return this.prisma.teacherCertification.create({
+            data: { teacherId, ...dto }
+        });
+    }
+
+    async removeCertification(schoolId: number, teacherId: number, certId: number) {
+        await this.findOne(schoolId, teacherId);
+        const cert = await this.prisma.teacherCertification.findFirst({ where: { id: certId, teacherId } });
+        if (!cert) throw new NotFoundException('Certification not found');
+        return this.prisma.teacherCertification.delete({ where: { id: certId } });
+    }
+
+    async addTraining(schoolId: number, teacherId: number, dto: CreateTrainingDto) {
+        await this.findOne(schoolId, teacherId);
+        return this.prisma.teacherTraining.create({
+            data: {
+                teacherId,
+                title: dto.title,
+                organizer: dto.organizer,
+                date: new Date(dto.date),
+                durationHours: dto.durationHours,
+                notes: dto.notes
+            }
+        });
+    }
+
+    async removeTraining(schoolId: number, teacherId: number, trainingId: number) {
+        await this.findOne(schoolId, teacherId);
+        const training = await this.prisma.teacherTraining.findFirst({ where: { id: trainingId, teacherId } });
+        if (!training) throw new NotFoundException('Training not found');
+        return this.prisma.teacherTraining.delete({ where: { id: trainingId } });
+    }
+
+    async addAppraisal(schoolId: number, teacherId: number, dto: CreateAppraisalDto) {
+        await this.findOne(schoolId, teacherId);
+        return this.prisma.teacherAppraisal.create({
+            data: { teacherId, ...dto }
+        });
+    }
+
+    async removeAppraisal(schoolId: number, teacherId: number, appraisalId: number) {
+        await this.findOne(schoolId, teacherId);
+        const appraisal = await this.prisma.teacherAppraisal.findFirst({ where: { id: appraisalId, teacherId } });
+        if (!appraisal) throw new NotFoundException('Appraisal not found');
+        return this.prisma.teacherAppraisal.delete({ where: { id: appraisalId } });
+    }
+
+    async addResponsibility(schoolId: number, teacherId: number, dto: CreateResponsibilityDto) {
+        await this.findOne(schoolId, teacherId);
+        return this.prisma.teacherResponsibility.create({
+            data: { teacherId, ...dto }
+        });
+    }
+
+    async removeResponsibility(schoolId: number, teacherId: number, respId: number) {
+        await this.findOne(schoolId, teacherId);
+        const resp = await this.prisma.teacherResponsibility.findFirst({ where: { id: respId, teacherId } });
+        if (!resp) throw new NotFoundException('Role not found');
+        return this.prisma.teacherResponsibility.delete({ where: { id: respId } });
+    }
+
+    async addPreferredSubject(schoolId: number, teacherId: number, subjectId: number) {
+        await this.findOne(schoolId, teacherId);
+        return this.prisma.teacherPreferredSubject.create({
+            data: { teacherId, subjectId }
+        });
+    }
+
+    async removePreferredSubject(schoolId: number, teacherId: number, subjectId: number) {
+        await this.findOne(schoolId, teacherId);
+        return this.prisma.teacherPreferredSubject.delete({
+            where: {
+                teacherId_subjectId: { teacherId, subjectId }
+            }
+        });
     }
 }

@@ -13,6 +13,7 @@ export class SectionService {
     constructor(private readonly prisma: PrismaService) { }
 
     async findAll(schoolId: number, classId?: number, page: number = 1, limit: number = 10) {
+        this.logger.log(`Fetching sections for school ${schoolId} (Class: ${classId}, Page: ${page})`);
         const skip = (page - 1) * limit;
 
         const where: Prisma.SectionWhereInput = {
@@ -85,6 +86,7 @@ export class SectionService {
     }
 
     async create(schoolId: number, dto: CreateSectionDto) {
+        this.logger.log(`Creating section ${dto.name} for class ${dto.classId}`);
         // Validate Class
         const cls = await this.prisma.class.findFirst({
             where: { id: dto.classId, schoolId },
@@ -98,22 +100,11 @@ export class SectionService {
         if (cls.capacity) {
             const currentTotal = cls.sections.reduce((sum, sec) => sum + (sec.capacity || 0), 0);
             if (currentTotal + (dto.capacity || 0) > cls.capacity) {
+                this.logger.warn(`Capacity exceeded for class ${cls.id}`);
                 throw new BadRequestException(
                     `Total section capacity (${currentTotal + (dto.capacity || 0)}) exceeds class limit (${cls.capacity})`
                 );
             }
-        }
-
-        // Get active academic year
-        const activeAcademicYear = await this.prisma.academicYear.findFirst({
-            where: {
-                schoolId,
-                status: AcademicYearStatus.ACTIVE,
-            },
-        });
-
-        if (!activeAcademicYear) {
-            throw new BadRequestException('No active academic year found');
         }
 
         try {
@@ -126,15 +117,16 @@ export class SectionService {
                     description: dto.description,
                     stream: dto.stream,
                     schoolId,
-                    academicYearId: activeAcademicYear.id,
+                    // academicYearId removed
                 },
             });
+            this.logger.log(`Section created: ${section.id}`);
             return section;
         } catch (error) {
             if (error.code === 'P2002') {
                 throw new BadRequestException('Section with this name already exists for this class');
             }
-            this.logger.error('Error creating section', error);
+            this.logger.error('Error creating section', error.stack);
             throw new InternalServerErrorException('Failed to create section');
         }
     }
@@ -190,6 +182,7 @@ export class SectionService {
     }
 
     async update(schoolId: number, id: number, dto: UpdateSectionDto) {
+        this.logger.log(`Updating section ${id}`);
         const section = await this.prisma.section.findFirst({
             where: { id, schoolId },
         });
@@ -219,7 +212,7 @@ export class SectionService {
         }
 
         try {
-            return await this.prisma.section.update({
+            const updated = await this.prisma.section.update({
                 where: { id },
                 data: {
                     name: dto.name,
@@ -230,22 +223,26 @@ export class SectionService {
                     stream: dto.stream,
                 },
             });
+            this.logger.log(`Section updated: ${updated.id}`);
+            return updated;
         } catch (error) {
             if (error.code === 'P2002') {
                 throw new BadRequestException('Section with this name already exists for this class');
             }
-            this.logger.error('Error updating section', error);
+            this.logger.error('Error updating section', error.stack);
             throw new InternalServerErrorException('Failed to update section');
         }
     }
 
     async remove(schoolId: number, id: number) {
+        this.logger.log(`Deleting section ${id}`);
         const section = await this.prisma.section.findFirst({
             where: { id, schoolId },
             include: {
                 _count: {
                     select: {
-                        StudentProfile: true
+                        StudentProfile: true,
+                        ClassSubject: true
                     }
                 }
             }
@@ -260,41 +257,26 @@ export class SectionService {
             throw new BadRequestException(`Cannot delete section. It has ${section._count.StudentProfile} students assigned.`);
         }
 
+        if (section._count.ClassSubject > 0) {
+            throw new BadRequestException(`Cannot delete section. It has ${section._count.ClassSubject} subjects assigned. Please remove them first.`);
+        }
+
         try {
             await this.prisma.section.delete({
                 where: { id },
             });
+            this.logger.log(`Section deleted: ${id}`);
             return { message: 'Section deleted successfully' };
         } catch (error) {
-            this.logger.error('Error deleting section', error);
+            this.logger.error('Error deleting section', error.stack);
             throw new InternalServerErrorException('Failed to delete section');
         }
     }
 
     async createBulk(schoolId: number, dto: BulkCreateSectionDto) {
-        // Get active academic year
-        const activeAcademicYear = await this.prisma.academicYear.findFirst({
-            where: {
-                schoolId,
-                status: AcademicYearStatus.ACTIVE,
-            },
-        });
+        this.logger.log(`Bulk creating ${dto.sections.length} sections`);
 
-        if (!activeAcademicYear) {
-            throw new BadRequestException('No active academic year found');
-        }
-
-        // Validate all classIds belong to school (optional optimization: fetch all relevant classIds in one query)
-        // For simplicity and safety in transaction, we rely on individual constraints or simple pre-check.
-        // Let's do a simple pre-check for existence of classes if needed, 
-        // but foreign key constraints will handle invalid classIds. 
-        // However, we must ensure class belongs to school. 
-
-        // Strategy: We won't check every single class ownership in a loop to avoid N queries.
-        // We will assume if they pass FK constraint it's okay, BUT standard Multi-tenant rule:
-        // Malicious user could try to add section to class of another school.
-        // So we MUST verify class ownership.
-
+        // Validate all classIds belong to school 
         const classIds = [...new Set(dto.sections.map(s => s.classId))];
         const validClasses = await this.prisma.class.count({
             where: {
@@ -342,14 +324,14 @@ export class SectionService {
                             description: secDto.description,
                             stream: secDto.stream,
                             schoolId,
-                            academicYearId: activeAcademicYear.id,
+                            // academicYearId removed
                         },
                     });
                 }
             });
             return { message: `Successfully created ${dto.sections.length} sections` };
         } catch (error) {
-            this.logger.error('Bulk create section error', error);
+            this.logger.error('Bulk create section error', error.stack);
             if (error.code === 'P2002') {
                 throw new BadRequestException('One or more sections already exist (duplicate name in class)');
             }

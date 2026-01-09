@@ -8,6 +8,12 @@ import { GlobalModule } from './global/global.module';
 
 import { AcademicYearModule } from './academic-year/academic-year.module';
 import { CalendarModule } from './calendar/calendar.module';
+import { DepartmentModule } from './department/department.module';
+import { SubjectModule } from './subject/subject.module';
+import { StudentModule } from './student/student.module';
+import { HouseModule } from './house/house.module';
+import { GrievanceModule } from './grievance/grievance.module';
+import { RoleModule } from './role/role.module';
 
 @Module({
     imports: [
@@ -19,6 +25,12 @@ import { CalendarModule } from './calendar/calendar.module';
         GlobalModule,
         AcademicYearModule,
         CalendarModule,
+        DepartmentModule,
+        SubjectModule,
+        StudentModule,
+        HouseModule,
+        GrievanceModule,
+        RoleModule,
     ],
 })
 export class PrincipalModule { }

@@ -16,25 +16,36 @@ enum AllocationStrategy {
 // SUBJECT CATEGORY
 //-------------------------------------------------------------
 model SubjectCategory {
-  id   Int    @id @default(autoincrement())
-  name String @unique
+  id       Int    @id @default(autoincrement())
+  schoolId Int
+  name     String
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  classSubjects ClassSubject[]
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
-  subjects Subject[]
+  @@unique([schoolId, name])
+  @@index([schoolId])
 }
 
 //-------------------------------------------------------------
 // SUBJECT (WITH SUB-SUBJECT SUPPORT)
 //-------------------------------------------------------------
 model Subject {
-  id   Int    @id @default(autoincrement())
+  id       Int @id @default(autoincrement())
+  schoolId Int
+  // Subjects are global per school
+
   name String
   code String
 
-  categoryId Int?
-  category   SubjectCategory? @relation(fields: [categoryId], references: [id])
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  // Visuals
+  color String? // Hex code
+  icon  String? // Icon name
+
+  description String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -47,7 +58,12 @@ model Subject {
   timetableEntries         TimetableEntry[]
   teacherPreferredSubjects TeacherPreferredSubject[]
 
-  @@unique([code])
+  school         School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id])
+  academicYearId Int?
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
 }
 
 //-------------------------------------------------------------

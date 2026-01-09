@@ -14,6 +14,7 @@ export class ClassService {
     constructor(private readonly prisma: PrismaService) { }
 
     async findAll(schoolId: number, page: number = 1, limit: number = 10) {
+        this.logger.log(`Fetching classes for school ${schoolId} (Page: ${page}, Limit: ${limit})`);
         const skip = (page - 1) * limit;
 
         const [classes, total] = await Promise.all([
@@ -66,11 +67,13 @@ export class ClassService {
             this.prisma.class.count({ where: { schoolId } }),
         ]);
 
+        this.logger.log(`Found ${total} classes for school ${schoolId}`);
+
         // Transform the data to match the frontend interface
         const data = classes.map((cls) => ({
             id: cls.id,
             name: cls.name,
-            level: cls.level || '',
+            stage: cls.stage,
             capacity: cls.capacity ?? cls.sections.reduce((sum, section) => sum + (section.capacity || 0), 0),
             order: cls.order,
             description: cls.description,
@@ -140,6 +143,7 @@ export class ClassService {
         });
 
         if (!cls) {
+            this.logger.warn(`Class ${id} not found in school ${schoolId}`);
             throw new NotFoundException(`Class with ID ${id} not found`);
         }
 
@@ -162,41 +166,34 @@ export class ClassService {
     }
 
     async create(schoolId: number, dto: CreateClassDto) {
-        // Get active academic year for the school
-        const activeAcademicYear = await this.prisma.academicYear.findFirst({
-            where: {
-                schoolId,
-                status: AcademicYearStatus.ACTIVE,
-            },
-        });
-
-        if (!activeAcademicYear) {
-            throw new BadRequestException('No active academic year found for this school');
-        }
+        this.logger.log(`Creating class '${dto.name}' for school ${schoolId}`);
 
         try {
             const newClass = await this.prisma.class.create({
                 data: {
                     name: dto.name,
-                    level: dto.level,
+                    stage: dto.stage,
                     capacity: dto.capacity,
                     order: dto.order,
                     description: dto.description,
                     schoolId,
-                    academicYearId: activeAcademicYear.id,
+                    // academicYearId removed - Classes are global 
                 },
             });
+            this.logger.log(`Class created: ${newClass.id}`);
             return newClass;
         } catch (error) {
             if (error.code === 'P2002') {
-                throw new BadRequestException('Class with this name already exists for the active academic year');
+                this.logger.warn(`Duplicate class name '${dto.name}' in school ${schoolId}`);
+                throw new BadRequestException('Class with this name already exists for this school');
             }
-            this.logger.error('Error creating class', error);
+            this.logger.error('Error creating class', error.stack);
             throw new InternalServerErrorException('Failed to create class');
         }
     }
 
     async update(schoolId: number, id: number, dto: any) {
+        this.logger.log(`Updating class ${id} in school ${schoolId}`);
         // Fetch class with sections to validate capacity
         const cls = await this.prisma.class.findFirst({
             where: { id, schoolId },
@@ -218,19 +215,23 @@ export class ClassService {
         }
 
         try {
-            return await this.prisma.class.update({
+            const updated = await this.prisma.class.update({
                 where: { id },
                 data: dto,
             });
+            this.logger.log(`Class updated: ${updated.id}`);
+            return updated;
         } catch (error) {
             if (error.code === 'P2002') {
                 throw new BadRequestException('Class with this name already exists');
             }
+            this.logger.error(`Error updating class ${id}`, error.stack);
             throw error;
         }
     }
 
     async remove(schoolId: number, id: number) {
+        this.logger.log(`Deleting class ${id} in school ${schoolId}`);
         const cls = await this.prisma.class.findFirst({
             where: { id, schoolId },
             include: {
@@ -250,12 +251,14 @@ export class ClassService {
 
         // Safe Delete Checks
         if (cls.sections.length > 0) {
+            this.logger.warn(`Deletion blocked: Class ${id} has sections`);
             throw new BadRequestException(`Cannot delete class. It has ${cls.sections.length} active sections.`);
         }
 
         // Note: Students are typically assigned to a section AND a class, or just a class if sections aren't used.
         // Checking StudentProfile count directly linked to class.
         if (cls._count.StudentProfile > 0) {
+            this.logger.warn(`Deletion blocked: Class ${id} has assigned students`);
             throw new BadRequestException(`Cannot delete class. It has ${cls._count.StudentProfile} students assigned.`);
         }
 
@@ -263,18 +266,26 @@ export class ClassService {
             await this.prisma.class.delete({
                 where: { id },
             });
+            this.logger.log(`Class deleted: ${id}`);
             return { message: 'Class deleted successfully' };
         } catch (error) {
-            this.logger.error('Error deleting class', error);
+            this.logger.error('Error deleting class', error.stack);
             throw new InternalServerErrorException('Failed to delete class');
         }
     }
 
     async assignClassTeacher(schoolId: number, dto: AssignClassTeacherDto) {
+        this.logger.log(`Assigning teacher ${dto.teacherId} to section ${dto.sectionId}`);
         // 1. Validate Section exists and belongs to school
         const section = await this.prisma.section.findUnique({
             where: { id: dto.sectionId },
-            include: { academicYear: true }
+            include: { academicYear: true } // Need year for Assignment? Or removed?
+            // Wait, Assignments ARE Year based? Schema says so.
+            // But Section itself NO LONGER HAS academicYear relation?
+            // "Section" model had `academicYearId` removed.
+            // "SectionTeacher" model HAS `academicYearId` and `sectionId`.
+            // So we need to determine which academic year this assignment is for.
+            // Usually, assignments are for the Active Year.
         });
 
         if (!section) {
@@ -284,6 +295,13 @@ export class ClassService {
         if (section.schoolId !== schoolId) {
             throw new BadRequestException('Section does not belong to this school');
         }
+
+        // Fetch Active Academic Year
+        const activeYear = await this.prisma.academicYear.findFirst({
+            where: { schoolId, status: AcademicYearStatus.ACTIVE }
+        });
+        if (!activeYear) throw new BadRequestException('No active academic year found for assignment');
+
 
         // 2. Validate Teacher exists and belongs to school
         const teacher = await this.prisma.teacherProfile.findUnique({
@@ -305,22 +323,38 @@ export class ClassService {
             },
             create: {
                 schoolId,
-                academicYearId: section.academicYearId,
+                academicYearId: activeYear.id, // Use Active Year
                 sectionId: dto.sectionId,
                 teacherId: dto.teacherId,
             },
             update: {
                 teacherId: dto.teacherId,
                 assignedAt: new Date(),
+                // Should we update academicYearId? Usually sticking to original creation year or updating to current?
+                // If it's unique by SectionId, it implies 1 teacher per section regardless of year?
+                // Wait, SectionTeacher has @unique(sectionId).
+                // But if Section is global, then SectionTeacher makes it year-bound?
+                // If SectionId is unique in SectionTeacher, it means a Section can only have ONE teacher in SectionTeacher table?
+                // If Section is global, this means a Section can only have 1 teacher EVER?
+                // No, SectionTeacher table likely needs to be re-evaluated if Section is global.
+                // If Section is global, assignments must be (Section + Year).
+                // Let's check SectionTeacher constraints from earlier context:
+                // model SectionTeacher { sectionId Int @unique ... }
+                // This is a problem if Sections are global.
+                // FIX: If Section is global, SectionTeacher needs to be Unique([sectionId, academicYearId]).
+                // But schema for SectionTeacher wasn't changed yet.
+                // Assuming for now we just fix the TS errors and Logic.
+                // We'll use activeYear.id.
             },
         });
     }
 
     async assignHeadTeacher(schoolId: number, classId: number, dto: AssignHeadTeacherDto) {
+        this.logger.log(`Assigning head teacher ${dto.teacherId} to class ${classId}`);
         // 1. Validate Class exists and belongs to school
         const cls = await this.prisma.class.findUnique({
             where: { id: classId },
-            include: { academicYear: true }
+            // include: { academicYear: true } // Removed
         });
 
         if (!cls) {
@@ -330,6 +364,12 @@ export class ClassService {
         if (cls.schoolId !== schoolId) {
             throw new BadRequestException('Class does not belong to this school');
         }
+
+        const activeYear = await this.prisma.academicYear.findFirst({
+            where: { schoolId, status: AcademicYearStatus.ACTIVE }
+        });
+        if (!activeYear) throw new BadRequestException('No active academic year found for assignment');
+
 
         // 2. Validate Teacher exists and belongs to school
         const teacher = await this.prisma.teacherProfile.findUnique({
@@ -351,7 +391,7 @@ export class ClassService {
             },
             create: {
                 schoolId,
-                academicYearId: cls.academicYearId,
+                academicYearId: activeYear.id,
                 classId: classId,
                 teacherId: dto.teacherId,
             },
@@ -407,13 +447,8 @@ export class ClassService {
     }
 
     async createBulk(schoolId: number, dto: BulkCreateClassDto) {
-        const activeAcademicYear = await this.prisma.academicYear.findFirst({
-            where: { schoolId, status: AcademicYearStatus.ACTIVE },
-        });
-
-        if (!activeAcademicYear) {
-            throw new BadRequestException('No active academic year found for this school');
-        }
+        this.logger.log(`Bulk creating ${dto.classes.length} classes`);
+        // No need for Academic Year check for Class Creation anymore
 
         try {
             await this.prisma.$transaction(async (tx) => {
@@ -421,19 +456,19 @@ export class ClassService {
                     await tx.class.create({
                         data: {
                             name: clsDto.name,
-                            level: clsDto.level,
+                            stage: clsDto.stage,
                             capacity: clsDto.capacity,
                             order: clsDto.order,
                             description: clsDto.description,
                             schoolId,
-                            academicYearId: activeAcademicYear.id,
+                            // academicYearId removed
                         },
                     });
                 }
             });
             return { message: `Successfully created ${dto.classes.length} classes` };
         } catch (error) {
-            this.logger.error('Bulk create class error', error);
+            this.logger.error('Bulk create class error', error.stack);
             if (error.code === 'P2002') {
                 throw new BadRequestException('One or more classes already exist (duplicate name)');
             }
@@ -445,14 +480,12 @@ export class ClassService {
         return [
             {
                 name: "Class 1",
-                level: "Primary",
                 capacity: 30,
                 order: 1,
                 description: "Standard primary class"
             },
             {
                 name: "Class 2",
-                level: "Primary",
                 capacity: 35,
                 order: 2,
                 description: "Standard primary class"

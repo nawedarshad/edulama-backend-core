@@ -43,9 +43,8 @@ model RoomAssignment {
   id             Int @id @default(autoincrement())
   schoolId       Int
   academicYearId Int
-
-  roomId    Int
-  sectionId Int
+  roomId         Int
+  sectionId      Int
 
   isActive Boolean @default(true)
 

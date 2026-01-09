@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsEmail, IsOptional, IsDateString, ValidateNested, IsArray, IsEnum } from 'class-validator';
+import { IsNotEmpty, IsString, IsEmail, IsOptional, IsDateString, ValidateNested, IsArray, IsEnum, IsInt, IsNumber } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateQualificationDto {
@@ -118,4 +118,128 @@ export class CreateTeacherDto {
 
     @IsOptional()
     yearOfPassing?: number | string; // Allow string from CSV
+
+    // =================================================================
+    // NEW FIELDS FOR TEACHER ENHANCEMENTS
+    // =================================================================
+
+    @IsOptional()
+    @IsArray()
+    @IsInt({ each: true })
+    preferredSubjectIds?: number[];
+
+    @IsOptional()
+    @IsArray()
+    @IsEnum(['KINDERGARTEN', 'PRIMARY', 'MIDDLE', 'SECONDARY', 'SENIOR_SECONDARY'], { each: true })
+    preferredStages?: ('KINDERGARTEN' | 'PRIMARY' | 'MIDDLE' | 'SECONDARY' | 'SENIOR_SECONDARY')[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    skills?: string[];
+
+    @IsOptional()
+    @ValidateNested({ each: true })
+    @Type(() => CreateCertificationDto)
+    certifications?: CreateCertificationDto[];
+
+    @IsOptional()
+    @ValidateNested({ each: true })
+    @Type(() => CreateTrainingDto)
+    trainings?: CreateTrainingDto[];
+
+    @IsOptional()
+    @ValidateNested({ each: true })
+    @Type(() => CreateResponsibilityDto)
+    additionalRoles?: CreateResponsibilityDto[];
+
+    @IsOptional()
+    @ValidateNested({ each: true })
+    @Type(() => CreateAppraisalDto)
+    appraisals?: CreateAppraisalDto[];
+
+    @IsString()
+    @IsOptional()
+    empCode?: string;
+
+    @IsOptional()
+    @ValidateNested({ each: true })
+    @Type(() => CreateDocumentDto)
+    documents?: CreateDocumentDto[];
 }
+
+// Sub-DTOs
+export class CreateCertificationDto {
+    @IsString()
+    @IsNotEmpty()
+    name: string;
+
+    @IsString()
+    @IsNotEmpty()
+    issuer: string;
+
+    @IsInt()
+    @IsNotEmpty()
+    year: number;
+
+    @IsString()
+    @IsOptional()
+    url?: string;
+}
+
+export class CreateTrainingDto {
+    @IsString()
+    @IsNotEmpty()
+    title: string;
+
+    @IsString()
+    @IsNotEmpty()
+    organizer: string;
+
+    @IsDateString()
+    @IsNotEmpty()
+    date: string;
+
+    @IsInt()
+    @IsNotEmpty()
+    durationHours: number;
+
+    @IsString()
+    @IsOptional()
+    notes?: string;
+}
+
+export class CreateResponsibilityDto {
+    @IsString()
+    @IsNotEmpty()
+    roleName: string;
+}
+
+export class CreateAppraisalDto {
+    @IsInt()
+    @IsNotEmpty()
+    academicYearId: number;
+
+    @IsNumber()
+    @IsOptional()
+    kpiScore?: number;
+
+    @IsNumber()
+    @IsOptional()
+    studentFeedbackScore?: number;
+
+    @IsString()
+    @IsOptional()
+    principalNotes?: string;
+}
+
+export class CreateDocumentDto {
+    @IsString()
+    @IsNotEmpty()
+    type: string; // ID_PROOF, EXPERIENCE_LETTER, CERTIFICATE
+
+    @IsString()
+    @IsNotEmpty()
+    ref: string; // S3 key / URL / document ID
+}
+

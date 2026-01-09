@@ -1,3 +1,11 @@
+enum SubjectType {
+  CORE
+  ELECTIVE
+  CO_SCHOLASTIC
+  LAB
+  VOCATIONAL
+}
+
 model ClassSubject {
   id             Int @id @default(autoincrement())
   schoolId       Int
@@ -7,13 +15,37 @@ model ClassSubject {
   sectionId Int
   subjectId Int
 
+  // The unique code for this class-subject instance (e.g., MATH-9A)
   classSubjectCode String
 
-  school       School       @relation(fields: [schoolId], references: [id])
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
-  class        Class        @relation(fields: [classId], references: [id])
-  section      Section      @relation(fields: [sectionId], references: [id])
-  subject      Subject      @relation(fields: [subjectId], references: [id])
+  // ---------------------------------------------
+  // CLASS-SPECIFIC CONFIGURATION
+  // ---------------------------------------------
+  type SubjectType @default(CORE)
+
+  categoryId Int?
+
+  // Academic Weightage
+  credits       Float? // GPA / Credits (e.g., 4.0)
+  weeklyClasses Int? // Target periods per week
+
+  // Assessment Limits
+  maxMarks  Float? @default(100)
+  passMarks Float? @default(33)
+
+  // Flags
+  isOptional     Boolean @default(false)
+  hasLab         Boolean @default(false)
+  excludeFromGPA Boolean @default(false)
+
+  // ---------------------------------------------
+
+  school       School           @relation(fields: [schoolId], references: [id])
+  academicYear AcademicYear     @relation(fields: [academicYearId], references: [id])
+  class        Class            @relation(fields: [classId], references: [id])
+  section      Section          @relation(fields: [sectionId], references: [id])
+  subject      Subject          @relation(fields: [subjectId], references: [id])
+  category     SubjectCategory? @relation(fields: [categoryId], references: [id])
 
   teacherProfileId Int?
   teacherProfile   TeacherProfile? @relation(fields: [teacherProfileId], references: [id])
@@ -26,13 +58,13 @@ model ClassSubject {
 }
 
 model Class {
-  id             Int @id @default(autoincrement())
-  schoolId       Int
-  academicYearId Int
+  id       Int @id @default(autoincrement())
+  schoolId Int
+  // academicYearId Int <- REMOVED
 
   name        String
-  level       String?
   description String?
+  stage       EducationalStage @default(PRIMARY)
 
   capacity Int?
   order    Int  @default(0)
@@ -40,8 +72,8 @@ model Class {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  school       School       @relation(fields: [schoolId], references: [id])
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  school School @relation(fields: [schoolId], references: [id])
+  // academicYear AcademicYear @relation(fields: [academicYearId], references: [id])  <- REMOVED
 
   sections    Section[]
   subjects    ClassSubject[]
@@ -55,16 +87,18 @@ model Class {
   AnnouncementAudience AnnouncementAudience[]
   AttendanceSession    AttendanceSession[]
   lessonPlans          LessonPlan[]
+  academicYear         AcademicYear?          @relation(fields: [academicYearId], references: [id])
+  academicYearId       Int?
 
-  @@unique([schoolId, academicYearId, name])
-  @@index([schoolId, academicYearId])
+  @@unique([schoolId, name])
+  @@index([schoolId])
 }
 
 model Section {
-  id             Int @id @default(autoincrement())
-  schoolId       Int
-  academicYearId Int
-  classId        Int
+  id       Int @id @default(autoincrement())
+  schoolId Int
+  // academicYearId Int <- REMOVED
+  classId  Int
 
   name        String
   description String?
@@ -76,9 +110,9 @@ model Section {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  school       School       @relation(fields: [schoolId], references: [id])
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
-  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id])
+  // academicYear AcademicYear @relation(fields: [academicYearId], references: [id]) <- REMOVED
+  class  Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
 
   ClassSubject   ClassSubject[]
   StudentProfile StudentProfile[]
@@ -91,9 +125,11 @@ model Section {
   AttendanceSession    AttendanceSession[]
   lessonPlans          LessonPlan[]
   roomAssignments      RoomAssignment[]
+  academicYear         AcademicYear?          @relation(fields: [academicYearId], references: [id])
+  academicYearId       Int?
 
-  @@unique([schoolId, academicYearId, classId, name])
-  @@index([schoolId, academicYearId])
+  @@unique([schoolId, classId, name])
+  @@index([schoolId])
 }
 
 model ClassHeadTeacher {

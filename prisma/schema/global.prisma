@@ -1,3 +1,11 @@
+enum EducationalStage {
+  KINDERGARTEN
+  PRIMARY
+  MIDDLE
+  SECONDARY
+  SENIOR_SECONDARY
+}
+
 enum TodoStatus {
   TODO
   IN_PROGRESS
