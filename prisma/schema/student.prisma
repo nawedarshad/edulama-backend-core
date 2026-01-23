@@ -76,7 +76,7 @@ model StudentProfile {
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
   section      Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  house        House?       @relation(fields: [houseId], references: [id])
+  house        House?       @relation(fields: [houseId], references: [id], onDelete: SetNull)
 
   parents ParentStudent[]
 
@@ -94,6 +94,7 @@ model StudentProfile {
   documents         StudentDocument[]
   previousEducation StudentPreviousEducation[]
   healthRecord      StudentHealthRecord?
+  noticeAcks        NoticeAck[]
 
   @@unique([schoolId, academicYearId, admissionNo])
   @@index([schoolId, academicYearId])

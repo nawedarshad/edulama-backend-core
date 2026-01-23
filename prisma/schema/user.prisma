@@ -48,6 +48,7 @@ model School {
   attendanceSessions      AttendanceSession[]
   attendances             Attendance[]
   attendanceSummaries     AttendanceSummary[]
+  staffAttendances        StaffAttendance[]
   classSubjects           ClassSubject[]
   classes                 Class[]
   sections                Section[]
@@ -56,25 +57,34 @@ model School {
   incidentReports         IncidentReport[]
   todos                   Todo[]
   schoolSettings          SchoolSettings?
-  timeSlots               TimeSlot[]
-  lessonPlans             LessonPlan[]
-  houses                  House[]
-  auditLogs               AuditLog[]
-  notifications           Notification[]
-  rooms                   Room[]
-  roomAssignments         RoomAssignment[]
-  grievances              Grievance[]
-  teacherProfiles         TeacherProfile[]
-  studentProfiles         StudentProfile[]
-  subjectAssignments      SubjectAssignment[]
-  timePeriods             TimePeriod[]
-  departments             Department[]
-  subjects                Subject[]
-  subjectCategories       SubjectCategory[]
-  timetableEntries        TimetableEntry[]
-  timetableOverrides      TimetableOverride[]
 
-  grievanceConfigs GrievanceConfig[]
+  leaveTypes    LeaveType[]
+  leaveRequests LeaveRequest[]
+
+  timeSlots          TimeSlot[]
+  classDiaries       ClassDiary[]
+  syllabi            Syllabus[]
+  houses             House[]
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  rooms              Room[]
+  roomAssignments    RoomAssignment[]
+  grievances         Grievance[]
+  teacherProfiles    TeacherProfile[]
+  studentProfiles    StudentProfile[]
+  subjectAssignments SubjectAssignment[]
+  timePeriods        TimePeriod[]
+  departments        Department[]
+  subjects           Subject[]
+  subjectCategories  SubjectCategory[]
+  timetableEntries   TimetableEntry[]
+  timetableOverrides TimetableOverride[]
+  schedules          Schedule[]
+
+  grievanceConfigs       GrievanceConfig[]
+  notices                Notice[]
+  attendanceConfigs      AttendanceConfig[]
+  lateAttendanceMonitors LateAttendanceMonitor[]
 
   @@index([code])
   @@index([subdomain])
@@ -99,13 +109,15 @@ model AcademicYear {
   calendarExceptions  CalendarException[]
   attendanceSessions  AttendanceSession[]
   attendanceSummaries AttendanceSummary[]
+  staffAttendances    StaffAttendance[]
   classSubjects       ClassSubject[]
   classes             Class[]
   sections            Section[]
   classHeadTeachers   ClassHeadTeacher[]
   sectionTeachers     SectionTeacher[]
   incidentReports     IncidentReport[]
-  lessonPlans         LessonPlan[]
+  classDiaries        ClassDiary[]
+  syllabi             Syllabus[]
   roomAssignments     RoomAssignment[]
   grievances          Grievance[]
   studentProfiles     StudentProfile[]
@@ -113,8 +125,16 @@ model AcademicYear {
   timetableEntries    TimetableEntry[]
   timetableOverrides  TimetableOverride[]
   timeSlots           TimeSlot[]
+  timePeriods         TimePeriod[]
   teacherAppraisals   TeacherAppraisal[]
   subjects            Subject[]
+  schedules           Schedule[]
+
+  leaveRequests          LeaveRequest[]
+  announcements          Announcement[]
+  notices                Notice[]
+  attendanceConfigs      AttendanceConfig[]
+  lateAttendanceMonitors LateAttendanceMonitor[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -159,7 +179,7 @@ model User {
   attendanceSessions      AttendanceSession[]
   incidentAttachments     IncidentAttachment[]
   todos                   Todo[]
-  lessonPlans             LessonPlan[]
+  // classDiaries            ClassDiary[] // Moved to TeacherProfile
   auditLogs               AuditLog[]
   notifications           Notification[]
   notificationDeliveries  NotificationDelivery[]
@@ -168,15 +188,23 @@ model User {
   teacherProfile          TeacherProfile?
   studentProfile          StudentProfile?
   timetableOverrides      TimetableOverride[]
+  publishedTimetables     TimetableEntry[]         @relation("TimetablePublisher")
   authIdentities          AuthIdentity[]
   passwordResets          PasswordReset[]
   authTokens              AuthToken[]
-  userRoles               UserRole[]
-  userPermissions         UserPermission[]
+
+  leaveRequests              LeaveRequest[] @relation("LeaveApplicant")
+  reviewedLeaves             LeaveRequest[] @relation("LeaveApprover")
+  classTeacherApprovedLeaves LeaveRequest[] @relation("ClassTeacherApprover")
+
+  userRoles       UserRole[]
+  userPermissions UserPermission[]
 
   // Department relations
-  departmentHeadOf           Department[]                @relation("HeadOfDepartment")
-  departmentMemberships      DepartmentMember[]
+  departmentHeadOf      Department[]       @relation("HeadOfDepartment")
+  departmentMemberships DepartmentMember[]
+
+  schoolAdminScopes SchoolAdminScope[]
 
   @@index([schoolId])
 }
@@ -255,7 +283,7 @@ model UserRole {
   userId Int
   roleId Int
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   role Role @relation(fields: [roleId], references: [id])
 
   @@id([userId, roleId])

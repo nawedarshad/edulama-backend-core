@@ -2,7 +2,7 @@ enum NotificationType {
   ANNOUNCEMENT
   ATTENDANCE
   HOMEWORK
-  EVENT
+  GRIEVANCE
   SYSTEM
   ALERT
 }

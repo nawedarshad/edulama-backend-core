@@ -1,0 +1,12 @@
+model SchoolAdminScope {
+    id        Int  @id @default(autoincrement())
+    userId    Int
+    classId   Int?
+    sectionId Int?
+
+    user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    class   Class?   @relation(fields: [classId], references: [id])
+    section Section? @relation(fields: [sectionId], references: [id])
+
+    @@unique([userId, classId, sectionId])
+}

@@ -3,21 +3,65 @@ enum TimetableOverrideType {
   CANCELLED
 }
 
+enum PeriodType {
+  TEACHING
+  BREAK
+  ASSEMBLY
+}
+
+enum TimetableStatus {
+  DRAFT
+  PUBLISHED
+  LOCKED
+}
+
+model Schedule {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+
+  name        String // "Primary Schedule", "Senior Schedule", "Exam Schedule"
+  description String?
+  isDefault   Boolean @default(false)
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  timePeriods TimePeriod[]
+  classes     Class[]
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, academicYearId, name])
+  @@index([schoolId, academicYearId])
+  @@map("schedules")
+}
+
 model TimePeriod {
-  id       Int @id @default(autoincrement())
-  schoolId Int
+  id             Int  @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  scheduleId     Int?
 
   name      String // P1, P2, Assembly
   startTime String // "09:00"
   endTime   String // "09:45"
 
+  type PeriodType  @default(TEACHING)
+  days DayOfWeek[] // Applicable days for this period
+
   createdAt DateTime @default(now())
 
-  school    School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  entries   TimetableEntry[]
-  timeSlots TimeSlot[]
+  school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  schedule           Schedule?           @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  entries            TimetableEntry[]
+  timeSlots          TimeSlot[]
+  attendanceSessions AttendanceSession[]
 
-  @@unique([schoolId, name])
+  @@unique([schoolId, academicYearId, scheduleId, name])
   @@index([schoolId])
 }
 
@@ -41,6 +85,12 @@ model TimetableEntry {
   // Optional room
   roomId Int?
 
+  // Workflow & Locking
+  isLocked    Boolean         @default(false)
+  status      TimetableStatus @default(DRAFT)
+  publishedAt DateTime?
+  publishedBy Int?
+
   isFixed Boolean @default(false) // assembly, lunch
 
   createdAt DateTime @default(now())
@@ -57,10 +107,13 @@ model TimetableEntry {
   room               Room?               @relation(fields: [roomId], references: [id], onDelete: SetNull)
   timeSlot           TimeSlot?           @relation(fields: [timeSlotId], references: [id])
   timeSlotId         Int?
+  publisher          User?               @relation("TimetablePublisher", fields: [publishedBy], references: [id], onDelete: SetNull)
   timetableOverrides TimetableOverride[]
 
-  // Prevent obvious duplicates only
-  @@unique([schoolId, academicYearId, sectionId, day, periodId])
+  // Prevent double booking
+  @@unique([schoolId, academicYearId, sectionId, day, periodId]) // Section cannot be in two places
+  @@unique([schoolId, academicYearId, teacherId, day, periodId]) // Teacher cannot be in two places
+  @@unique([schoolId, academicYearId, roomId, day, periodId]) // Room cannot be double booked
   @@index([teacherId])
   @@index([roomId])
 }
@@ -87,7 +140,8 @@ model TimetableOverride {
   academicYear      AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   substituteTeacher TeacherProfile? @relation(fields: [substituteTeacherId], references: [id])
   substituteRoom    Room?           @relation(fields: [substituteRoomId], references: [id])
-  createdBy         User?           @relation(fields: [createdById], references: [id])
+  createdBy         User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
+  @@unique([schoolId, entryId, date])
   @@index([schoolId, date])
 }

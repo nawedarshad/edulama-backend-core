@@ -21,6 +21,20 @@ export class SetWorkingPatternDto {
     days: DayConfigDto[];
 }
 
+export class GetCalendarDto {
+    @IsDateString()
+    @IsNotEmpty()
+    startDate: string;
+
+    @IsDateString()
+    @IsNotEmpty()
+    endDate: string;
+
+    @IsInt()
+    @IsOptional()
+    classId?: number;
+}
+
 export class CreateCalendarExceptionDto {
     @IsInt()
     @IsNotEmpty()

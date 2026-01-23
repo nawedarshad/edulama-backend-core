@@ -1,60 +1,60 @@
 enum GrievanceStatus {
-    OPEN
-    IN_PROGRESS
-    RESOLVED
-    DISMISSED
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
 }
 
 model Grievance {
-    id Int @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-    // Tenant & academic isolation
-    schoolId       Int
-    academicYearId Int
+  // Tenant & academic isolation
+  schoolId       Int
+  academicYearId Int
 
-    // Who raised the grievance
-    raisedById Int
-    raisedBy   User @relation(fields: [raisedById], references: [id], onDelete: Cascade)
+  // Who raised the grievance
+  raisedById Int
+  raisedBy   User @relation(fields: [raisedById], references: [id], onDelete: Cascade)
 
-    // Optional: who / what the grievance is about
-    againstUserId Int?
-    againstUser   User? @relation("GrievanceAgainstUser", fields: [againstUserId], references: [id], onDelete: SetNull)
+  // Optional: who / what the grievance is about
+  againstUserId Int?
+  againstUser   User? @relation("GrievanceAgainstUser", fields: [againstUserId], references: [id], onDelete: SetNull)
 
-    // Details
-    title       String
-    description String
+  // Details
+  title       String
+  description String
 
-    // Lifecycle
-    status GrievanceStatus @default(OPEN)
+  // Lifecycle
+  status GrievanceStatus @default(OPEN)
 
-    resolvedById   Int?
-    resolvedBy     User?     @relation("GrievanceResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
-    resolvedAt     DateTime?
-    resolutionNote String?
+  resolvedById   Int?
+  resolvedBy     User?     @relation("GrievanceResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt     DateTime?
+  resolutionNote String?
 
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    // Relations
-    school       School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-    academicYear AcademicYear          @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-    attachments  GrievanceAttachment[]
+  // Relations
+  school       School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear          @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  attachments  GrievanceAttachment[]
 
-    @@index([schoolId, academicYearId])
-    @@index([status])
-    @@index([raisedById])
+  @@index([schoolId, academicYearId])
+  @@index([status])
+  @@index([raisedById])
 }
 
 model GrievanceAttachment {
-    id           Int    @id @default(autoincrement())
-    grievanceId  Int
-    fileUrl      String
-    uploadedById Int?
+  id           Int    @id @default(autoincrement())
+  grievanceId  Int
+  fileUrl      String
+  uploadedById Int?
 
-    uploadedAt DateTime @default(now())
+  uploadedAt DateTime @default(now())
 
-    grievance  Grievance @relation(fields: [grievanceId], references: [id], onDelete: Cascade)
-    uploadedBy User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  grievance  Grievance @relation(fields: [grievanceId], references: [id], onDelete: Cascade)
+  uploadedBy User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
 }
 
 // ==========================
@@ -62,15 +62,15 @@ model GrievanceAttachment {
 // ==========================
 
 model GrievanceConfig {
-    id       Int @id @default(autoincrement())
-    schoolId Int
-    roleId   Int
+  id       Int @id @default(autoincrement())
+  schoolId Int
+  roleId   Int
 
-    isEnabled Boolean @default(true)
+  isEnabled Boolean @default(true)
 
-    school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-    role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
-    @@unique([schoolId, roleId])
-    @@index([schoolId])
+  @@unique([schoolId, roleId])
+  @@index([schoolId])
 }

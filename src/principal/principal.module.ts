@@ -14,6 +14,19 @@ import { StudentModule } from './student/student.module';
 import { HouseModule } from './house/house.module';
 import { GrievanceModule } from './grievance/grievance.module';
 import { RoleModule } from './role/role.module';
+import { TimetableModule } from './timetable/timetable.module';
+import { AttendanceModule } from './attendance/attendance.module';
+import { PrincipalLeaveTypeModule } from './leave-type/leave-type.module';
+
+import { PrincipalAnnouncementModule } from './announcement/principal-announcement.module';
+import { PrincipalNoticeModule } from './notice/principal-notice.module';
+import { PrincipalDiaryModule } from './diary/principal-diary.module';
+import { PrincipalLeaveModule } from './leave/leave.module';
+import { SchoolAdminModule } from './school-admin/school-admin.module';
+import { SubstitutionModule } from './substitution/substitution.module';
+import { AttendanceMonitorModule } from './attendance-monitor/attendance-monitor.module';
+import { PrincipalProfileModule } from './profile/principal-profile.module';
+
 
 @Module({
     imports: [
@@ -31,6 +44,17 @@ import { RoleModule } from './role/role.module';
         HouseModule,
         GrievanceModule,
         RoleModule,
+        TimetableModule,
+        AttendanceModule,
+        PrincipalLeaveTypeModule,
+        PrincipalLeaveModule,
+        PrincipalAnnouncementModule,
+        PrincipalNoticeModule,
+        PrincipalDiaryModule,
+        SchoolAdminModule,
+        SubstitutionModule,
+        AttendanceMonitorModule,
+        PrincipalProfileModule,
     ],
 })
 export class PrincipalModule { }

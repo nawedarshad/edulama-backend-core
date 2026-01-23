@@ -54,6 +54,11 @@ enum AttendanceMode {
   PERIOD_WISE
 }
 
+enum DailyAttendanceAccess {
+  CLASS_TEACHER
+  FIRST_PERIOD_TEACHER
+}
+
 model SchoolSettings {
   id       Int @id @default(autoincrement())
   schoolId Int @unique
@@ -77,9 +82,10 @@ model SchoolSettings {
   website String?
 
   // Academic
-  attendanceMode  AttendanceMode  @default(DAILY)
-  gradingSystem   GradingSystem   @default(PERCENTAGE)
-  promotionPolicy PromotionPolicy @default(MANUAL)
+  attendanceMode        AttendanceMode        @default(DAILY)
+  dailyAttendanceAccess DailyAttendanceAccess @default(CLASS_TEACHER)
+  gradingSystem         GradingSystem         @default(PERCENTAGE)
+  promotionPolicy       PromotionPolicy       @default(MANUAL)
 
   // School Day Timings
   schoolStartTime DateTime
@@ -114,8 +120,8 @@ model TimeSlot {
   day            DayOfWeek
   periodId       Int
 
-  description String?
-  isBreak     Boolean @default(false)
+  // description String? <- REMOVED
+  isBreak Boolean @default(false)
 
   period           TimePeriod       @relation(fields: [periodId], references: [id], onDelete: Cascade)
   timetableEntries TimetableEntry[]

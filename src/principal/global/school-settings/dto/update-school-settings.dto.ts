@@ -1,5 +1,5 @@
 import { IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsOptional, IsPhoneNumber, IsString, IsUrl, Min } from 'class-validator';
-import { AttendanceMode, GradingSystem, PromotionPolicy } from '@prisma/client';
+import { AttendanceMode, DailyAttendanceAccess, GradingSystem, PromotionPolicy } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -85,6 +85,12 @@ export class UpdateSchoolSettingsDto {
     @IsOptional()
     @Transform(({ value }) => value === "" ? undefined : value)
     attendanceMode?: AttendanceMode;
+
+    @ApiPropertyOptional({ enum: DailyAttendanceAccess, description: 'Who can take daily attendance', example: DailyAttendanceAccess.CLASS_TEACHER })
+    @IsEnum(DailyAttendanceAccess)
+    @IsOptional()
+    @Transform(({ value }) => value === "" ? undefined : value)
+    dailyAttendanceAccess?: DailyAttendanceAccess;
 
     @ApiPropertyOptional({ description: 'Start date of current academic year (ISO8601)', example: '2024-04-01T00:00:00Z' })
     @IsDateString()

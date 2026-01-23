@@ -6,9 +6,13 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AdminModule } from './admin/admin.module';
 import { PrincipalModule } from './principal/principal.module';
+import { TeacherModule } from './teacher/teacher.module';
+import { ParentModule } from './parent/parent.module';
+import { StudentModule } from './student/student.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { AuditLogModule } from './common/audit/audit-log.module';
 import { TodoModule } from './todo/todo.module';
+import { SaaSAdminModule } from './saas-admin/saas-admin.module';
 
 @Module({
   imports: [
@@ -18,8 +22,12 @@ import { TodoModule } from './todo/todo.module';
     PrismaModule,
     AdminModule,
     PrincipalModule,
+    TeacherModule,
+    ParentModule,
+    StudentModule,
     AuditLogModule,
     TodoModule,
+    SaaSAdminModule,
     EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],

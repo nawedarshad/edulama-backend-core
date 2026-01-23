@@ -87,7 +87,17 @@ export class HouseService {
                 throw new NotFoundException(`House with ID ${id} not found`);
             }
 
-            return house;
+            return {
+                ...house,
+                students: house.studentProfiles.map(student => ({
+                    id: student.id,
+                    fullName: student.fullName,
+                    admissionNo: student.admissionNo,
+                    photo: student.photo,
+                    class: student.class?.name,
+                    section: student.section?.name
+                }))
+            };
         } catch (error) {
             if (error instanceof NotFoundException) throw error;
             this.logger.error(`Error fetching house ${id}: ${error.message}`, error.stack);

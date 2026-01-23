@@ -18,9 +18,9 @@ model House {
   school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   studentProfiles StudentProfile[]
 
-  houseMaster TeacherProfile? @relation("HouseMaster", fields: [houseMasterId], references: [id])
-  captain     StudentProfile? @relation("HouseCaptain", fields: [captainStudentId], references: [id])
-  viceCaptain StudentProfile? @relation("HouseViceCaptain", fields: [viceCaptainStudentId], references: [id])
+  houseMaster TeacherProfile? @relation("HouseMaster", fields: [houseMasterId], references: [id], onDelete: SetNull)
+  captain     StudentProfile? @relation("HouseCaptain", fields: [captainStudentId], references: [id], onDelete: SetNull)
+  viceCaptain StudentProfile? @relation("HouseViceCaptain", fields: [viceCaptainStudentId], references: [id], onDelete: SetNull)
 
   @@unique([schoolId, name])
   @@index([schoolId])

@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
+import { PrincipalOrTeacherGuard } from '../../common/guards/principal-teacher.guard';
 import { StudentService } from './student.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
@@ -25,7 +26,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 @ApiTags('Principal - Students')
 @ApiBearerAuth()
 @Controller('principal/students')
-@UseGuards(PrincipalAuthGuard)
+// @UseGuards(PrincipalAuthGuard) // Removed to apply per-method
 export class StudentController {
     constructor(
         private readonly studentService: StudentService,
@@ -46,6 +47,7 @@ export class StudentController {
     }
 
     @Post()
+    @UseGuards(PrincipalAuthGuard) // Write: Principal Only
     @ApiOperation({ summary: 'Create a new student' })
     @ApiResponse({ status: 201, description: 'The student has been successfully created.', type: CreateStudentDto })
     @ApiResponse({ status: 400, description: 'Bad Request. Validation failed or duplicates found.' })
@@ -59,6 +61,7 @@ export class StudentController {
     }
 
     @Get()
+    @UseGuards(PrincipalAuthGuard) // Read: Principal + Teacher
     @ApiOperation({ summary: 'Get all students with filters' })
     @ApiResponse({ status: 200, description: 'List of students.' })
     async findAll(
@@ -71,6 +74,7 @@ export class StudentController {
     }
 
     @Get('analytics')
+    @UseGuards(PrincipalAuthGuard) // Write: Principal Only (Analytics restricted)
     @ApiOperation({ summary: 'Get student analytics' })
     @ApiResponse({ status: 200, description: 'Student analytics data.' })
     async getAnalytics(
@@ -82,6 +86,7 @@ export class StudentController {
     }
 
     @Get(':id')
+    @UseGuards(PrincipalAuthGuard) // Write: Principal Only (Details restricted)
     @ApiOperation({ summary: 'Get a student by ID' })
     @ApiResponse({ status: 200, description: 'The student found.', type: CreateStudentDto })
     @ApiResponse({ status: 404, description: 'Student not found.' })
@@ -91,6 +96,7 @@ export class StudentController {
     }
 
     @Patch(':id')
+    @UseGuards(PrincipalAuthGuard) // Write: Principal Only
     @ApiOperation({ summary: 'Update a student' })
     @ApiResponse({ status: 200, description: 'The student has been successfully updated.' })
     @ApiResponse({ status: 404, description: 'Student not found.' })
@@ -103,6 +109,7 @@ export class StudentController {
     }
 
     @Patch(':id/leave')
+    @UseGuards(PrincipalAuthGuard) // Write: Principal Only
     @ApiOperation({ summary: 'Mark student as left (inactive)' })
     @ApiResponse({ status: 200, description: 'Student marked as left.' })
     @ApiResponse({ status: 404, description: 'Student not found.' })
@@ -116,6 +123,7 @@ export class StudentController {
     }
 
     @Delete(':id')
+    @UseGuards(PrincipalAuthGuard) // Write: Principal Only
     @ApiOperation({ summary: 'Delete a student' })
     @ApiResponse({ status: 200, description: 'The student has been successfully deleted.' })
     @ApiResponse({ status: 404, description: 'Student not found.' })

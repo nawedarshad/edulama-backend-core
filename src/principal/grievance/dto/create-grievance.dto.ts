@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsArray } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateGrievanceDto {
@@ -18,5 +18,7 @@ export class CreateGrievanceDto {
 
     @ApiPropertyOptional({ description: 'URLs of attachment files', type: [String] })
     @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
     attachmentUrls?: string[];
 }

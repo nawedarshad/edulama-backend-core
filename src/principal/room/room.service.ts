@@ -64,6 +64,24 @@ export class RoomService {
                                             name: true,
                                         },
                                     },
+                                    classTeacher: {
+                                        include: {
+                                            teacher: {
+                                                include: {
+                                                    user: {
+                                                        select: {
+                                                            name: true
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    _count: {
+                                        select: {
+                                            StudentProfile: true
+                                        }
+                                    }
                                 },
                             },
                         },
@@ -98,6 +116,8 @@ export class RoomService {
                         sectionId: activeAssignment.sectionId,
                         sectionName: activeAssignment.section.name,
                         className: activeAssignment.section.class.name,
+                        assignedTeacher: activeAssignment.section.classTeacher?.teacher?.user?.name || null,
+                        studentCount: activeAssignment.section._count.StudentProfile
                     }
                     : null,
                 createdAt: room.createdAt,
@@ -157,6 +177,24 @@ export class RoomService {
                                         name: true,
                                     },
                                 },
+                                classTeacher: {
+                                    include: {
+                                        teacher: {
+                                            include: {
+                                                user: {
+                                                    select: {
+                                                        name: true
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                _count: {
+                                    select: {
+                                        StudentProfile: true
+                                    }
+                                }
                             },
                         },
                     },
@@ -185,6 +223,8 @@ export class RoomService {
                     sectionId: activeAssignment.sectionId,
                     sectionName: activeAssignment.section.name,
                     className: activeAssignment.section.class.name,
+                    assignedTeacher: activeAssignment.section.classTeacher?.teacher?.user?.name || null,
+                    studentCount: activeAssignment.section._count.StudentProfile
                 }
                 : null,
             createdAt: room.createdAt,

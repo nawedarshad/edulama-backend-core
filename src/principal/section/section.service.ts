@@ -151,7 +151,37 @@ export class SectionService {
                         },
                     },
                 },
-            },
+                StudentProfile: {
+                    include: {
+                        user: {
+                            select: {
+                                name: true,
+                                photo: true
+                            }
+                        }
+                    }
+                },
+                TimetableEntry: {
+                    include: {
+                        subject: {
+                            select: {
+                                name: true,
+                                code: true
+                            }
+                        },
+                        teacher: {
+                            include: {
+                                user: {
+                                    select: {
+                                        name: true
+                                    }
+                                }
+                            }
+                        },
+                        period: true
+                    }
+                }
+            }
         });
 
         if (!section) {
@@ -178,6 +208,21 @@ export class SectionService {
                     },
                 }
                 : undefined,
+            students: sec.StudentProfile?.map(s => ({
+                id: s.id,
+                name: s.user.name,
+                photo: s.user.photo,
+            })) || [],
+            timetable: sec.TimetableEntry?.map(t => ({
+                id: t.id,
+                day: t.day,
+                subject: {
+                    name: t.subject.name,
+                    code: t.subject.code
+                },
+                teacher: t.teacher?.user?.name,
+                period: t.period
+            })) || []
         };
     }
 

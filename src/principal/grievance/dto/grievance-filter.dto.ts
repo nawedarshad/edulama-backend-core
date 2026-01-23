@@ -15,6 +15,11 @@ export class GrievanceFilterDto {
     @IsNumber()
     raisedById?: number;
 
+    @ApiPropertyOptional({ description: 'Filter by role name (e.g. PARENT, TEACHER)' })
+    @IsOptional()
+    @IsString()
+    role?: string;
+
     @ApiPropertyOptional()
     @IsOptional()
     @Type(() => Number)

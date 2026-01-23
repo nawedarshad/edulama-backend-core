@@ -86,9 +86,10 @@ export class GrievanceController {
     }
 
     @Delete(':id')
-    @UseGuards(PrincipalAuthGuard) // Principal only
+    @UseGuards(UserAuthGuard) // Changed from PrincipalAuthGuard to allow Parents
     @ApiOperation({ summary: 'Delete a grievance' })
     remove(@Request() req, @Param('id', ParseIntPipe) id: number) {
-        return this.grievanceService.remove(req.user.schoolId, id);
+        // Pass user ID and Role to service for ownership check
+        return this.grievanceService.remove(req.user.schoolId, id, req.user.id, req.user.role);
     }
 }

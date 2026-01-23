@@ -2,12 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { NotificationType } from '@prisma/client';
+import { NotificationGateway } from './notification.gateway';
 
 @Injectable()
 export class NotificationService {
     private readonly logger = new Logger(NotificationService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly gateway: NotificationGateway
+    ) { }
 
     async create(schoolId: number, creatorId: number, dto: CreateNotificationDto) {
         // 1. Create Notification Record
@@ -40,6 +44,17 @@ export class NotificationService {
                         userId: u.id,
                     })),
                 });
+
+                // Notify users in real-time
+                this.logger.log(`Notifying ${validUsers.length} users via gateway.`);
+                for (const user of validUsers) {
+                    this.gateway.sendToUser(user.id, 'notification', {
+                        title: dto.title,
+                        message: dto.message,
+                        type: dto.type,
+                        createdAt: new Date(),
+                    });
+                }
             }
         }
 
@@ -104,20 +119,21 @@ export class NotificationService {
                     NotificationType.HOMEWORK,
                     NotificationType.ATTENDANCE,
                     NotificationType.ANNOUNCEMENT,
-                    NotificationType.EVENT,
+                    NotificationType.GRIEVANCE,
                     NotificationType.ALERT
                 ];
             } else if (roleName.includes('PARENT')) {
                 allowedTypes = [
+                    NotificationType.HOMEWORK,
                     NotificationType.ATTENDANCE,
                     NotificationType.ANNOUNCEMENT,
-                    NotificationType.EVENT,
+                    NotificationType.GRIEVANCE,
                     NotificationType.ALERT
                 ];
             } else if (roleName.includes('TEACHER')) {
                 allowedTypes = [
                     NotificationType.ANNOUNCEMENT,
-                    NotificationType.EVENT,
+                    NotificationType.GRIEVANCE,
                     NotificationType.SYSTEM,
                     NotificationType.ALERT
                 ];
@@ -136,5 +152,42 @@ export class NotificationService {
             types,
             mapping
         };
+    }
+    async getMyNotifications(schoolId: number, userId: number, page = 1, limit = 50) {
+        const skip = (page - 1) * limit;
+
+        // Fetch notifications explicitly delivered to the user
+        const deliveries = await this.prisma.notificationDelivery.findMany({
+            where: {
+                userId,
+                notification: { schoolId }
+            },
+            include: {
+                notification: true
+            },
+            orderBy: { deliveredAt: 'desc' },
+            skip,
+            take: limit
+        });
+
+        // Flatten the structure to return notification objects
+        return deliveries.map(d => ({
+            ...d.notification,
+            isRead: !!d.readAt,
+            deliveredAt: d.deliveredAt
+        }));
+    }
+    async deleteMyNotification(schoolId: number, userId: number, notificationId: number) {
+        // Delete the delivery record (unassign it from the user)
+        // We use deleteMany to avoid errors if it doesn't exist or double deletion
+        const result = await this.prisma.notificationDelivery.deleteMany({
+            where: {
+                notificationId: BigInt(notificationId),
+                userId,
+                notification: { schoolId }
+            }
+        });
+
+        return { count: result.count };
     }
 }

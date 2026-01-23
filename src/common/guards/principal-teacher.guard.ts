@@ -1,0 +1,66 @@
+
+import {
+    CanActivate,
+    ExecutionContext,
+    Injectable,
+    UnauthorizedException,
+    Logger,
+} from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { lastValueFrom } from 'rxjs';
+
+@Injectable()
+export class PrincipalOrTeacherGuard implements CanActivate {
+    private readonly logger = new Logger(PrincipalOrTeacherGuard.name);
+
+    constructor(
+        private readonly httpService: HttpService,
+        private readonly configService: ConfigService,
+    ) { }
+
+    async canActivate(context: ExecutionContext): Promise<boolean> {
+        const request = context.switchToHttp().getRequest();
+        const authHeader = request.headers.authorization;
+
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            throw new UnauthorizedException('Missing or invalid token');
+        }
+
+        const token = authHeader.split(' ')[1];
+        const authServiceUrl = this.configService.get<string>('AUTH_MS_URL');
+
+        if (!authServiceUrl) {
+            this.logger.error('AUTH_MS_URL is not defined');
+            throw new UnauthorizedException('System configuration error');
+        }
+
+        try {
+            const baseUrl = authServiceUrl.replace(/\/$/, '');
+            const response = await lastValueFrom(
+                this.httpService.post(
+                    `${baseUrl}/verify`,
+                    {},
+                    {
+                        headers: { Authorization: `Bearer ${token}` },
+                    },
+                ),
+            );
+
+            const user = response.data;
+
+            // Check if user has PRINCIPAL or TEACHER role
+            if (!user || (user.role !== 'PRINCIPAL' && user.role !== 'TEACHER')) {
+                throw new UnauthorizedException('Insufficient permissions: Required PRINCIPAL or TEACHER role');
+            }
+
+            // Attach user to request for further use if needed
+            request.user = user;
+            return true;
+        } catch (error) {
+            // this.logger.error(`Token verification failed against ${authServiceUrl}`, error);
+            // Verify failure usually means invalid token or network issue, but we treat as unauthorized
+            throw new UnauthorizedException('Invalid token or auth service unavailable');
+        }
+    }
+}

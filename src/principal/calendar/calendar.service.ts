@@ -144,7 +144,7 @@ export class CalendarService {
 
     // 3. Calendar Generation
     // 3. Calendar Generation (Enterprise Grade)
-    async generateCalendar(schoolId: number, startStr: string, endStr: string, classId?: number): Promise<CalendarResponse> {
+    async generateCalendar(schoolId: number, startStr: string, endStr: string, classId?: number, academicYearId?: number): Promise<CalendarResponse> {
         const startDate = new Date(startStr);
         const endDate = new Date(endStr);
 
@@ -176,6 +176,7 @@ export class CalendarService {
         const academicYears = await this.prisma.academicYear.findMany({
             where: {
                 schoolId,
+                id: academicYearId, // Optional filter
                 startDate: { lte: endDate },
                 endDate: { gte: startDate },
             },
@@ -235,6 +236,16 @@ export class CalendarService {
                 if (patterns.length === 0) isWorking = false; // Safe default if no setup
 
                 if (!isWorking) type = DayType.HOLIDAY;
+
+                // Last Saturday logic
+                if (dayOfWeek === 6) {
+                    const nextWeek = new Date(d);
+                    nextWeek.setDate(d.getDate() + 7);
+                    if (nextWeek.getMonth() !== d.getMonth()) {
+                        isWorking = false;
+                        type = DayType.HOLIDAY;
+                    }
+                }
 
                 const exception = exceptionMap.get(dateString);
                 if (exception) {

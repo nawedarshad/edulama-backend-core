@@ -40,18 +40,18 @@ model ClassSubject {
 
   // ---------------------------------------------
 
-  school       School           @relation(fields: [schoolId], references: [id])
-  academicYear AcademicYear     @relation(fields: [academicYearId], references: [id])
-  class        Class            @relation(fields: [classId], references: [id])
-  section      Section          @relation(fields: [sectionId], references: [id])
-  subject      Subject          @relation(fields: [subjectId], references: [id])
-  category     SubjectCategory? @relation(fields: [categoryId], references: [id])
+  school       School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear     @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  class        Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section          @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject      Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  category     SubjectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   teacherProfileId Int?
-  teacherProfile   TeacherProfile? @relation(fields: [teacherProfileId], references: [id])
+  teacherProfile   TeacherProfile? @relation(fields: [teacherProfileId], references: [id], onDelete: SetNull)
 
   roomAssignments RoomAssignment[]
-  lessonPlans     LessonPlan[]
+  classDiaries    ClassDiary[]
 
   @@unique([schoolId, academicYearId, sectionId, subjectId])
   @@index([schoolId, academicYearId])
@@ -72,7 +72,10 @@ model Class {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  school School @relation(fields: [schoolId], references: [id])
+  scheduleId Int?
+
+  school   School    @relation(fields: [schoolId], references: [id])
+  schedule Schedule? @relation(fields: [scheduleId], references: [id])
   // academicYear AcademicYear @relation(fields: [academicYearId], references: [id])  <- REMOVED
 
   sections    Section[]
@@ -86,9 +89,15 @@ model Class {
   TimetableEntry       TimetableEntry[]
   AnnouncementAudience AnnouncementAudience[]
   AttendanceSession    AttendanceSession[]
-  lessonPlans          LessonPlan[]
+  classDiaries         ClassDiary[]
+  syllabi              Syllabus[]
   academicYear         AcademicYear?          @relation(fields: [academicYearId], references: [id])
   academicYearId       Int?
+  teacherProfile       TeacherProfile?        @relation(fields: [teacherProfileId], references: [id], onDelete: SetNull)
+  teacherProfileId     Int?
+  notices              Notice[]
+
+  schoolAdminScopes SchoolAdminScope[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -123,10 +132,12 @@ model Section {
   TimetableEntry       TimetableEntry[]
   AnnouncementAudience AnnouncementAudience[]
   AttendanceSession    AttendanceSession[]
-  lessonPlans          LessonPlan[]
   roomAssignments      RoomAssignment[]
+  classDiaries         ClassDiary[]
   academicYear         AcademicYear?          @relation(fields: [academicYearId], references: [id])
   academicYearId       Int?
+  notices              Notice[]
+  schoolAdminScopes    SchoolAdminScope[]
 
   @@unique([schoolId, classId, name])
   @@index([schoolId])
@@ -144,7 +155,7 @@ model ClassHeadTeacher {
   school       School          @relation(fields: [schoolId], references: [id])
   academicYear AcademicYear    @relation(fields: [academicYearId], references: [id])
   class        Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
-  teacher      TeacherProfile? @relation(fields: [teacherId], references: [id])
+  teacher      TeacherProfile? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
   @@index([schoolId, academicYearId])
 }
@@ -161,7 +172,7 @@ model SectionTeacher {
   school       School          @relation(fields: [schoolId], references: [id])
   academicYear AcademicYear    @relation(fields: [academicYearId], references: [id])
   section      Section         @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  teacher      TeacherProfile? @relation(fields: [teacherId], references: [id])
+  teacher      TeacherProfile? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
   @@index([schoolId, academicYearId])
 }

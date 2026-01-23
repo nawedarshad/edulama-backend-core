@@ -25,10 +25,6 @@ export class CreateTimeSlotDto {
     @IsNotEmpty()
     periodId: number;
 
-    @IsString()
-    @IsOptional()
-    description?: string;
-
     @IsBoolean()
     @IsOptional()
     isBreak?: boolean;

@@ -1,0 +1,176 @@
+// ------------------- ENUMS -------------------
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+  LATE
+  SUSPENDED
+}
+
+// ------------------- ATTENDANCE SESSION -------------------
+// Represents the "event" of taking attendance (e.g., "Class 10-A, Math, Period 3, 12th Jan")
+model AttendanceSession {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+
+  // Context
+  classId   Int
+  sectionId Int
+  subjectId Int? // Null for Daily Attendance
+  periodId  Int? // Null for Daily Attendance, Required for Subject Attendance if subject is repeated
+
+  date    DateTime @db.Date // The date of attendance
+  takenAt DateTime @default(now()) // Timestamp when it was taken
+
+  // Meta
+  markedById Int
+  remarks    String?
+
+  // Relations
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject      Subject?     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  period       TimePeriod?  @relation(fields: [periodId], references: [id])
+  markedBy     User         @relation(fields: [markedById], references: [id])
+
+  attendances Attendance[]
+
+  // Constraint: One session per class/section/subject/period per day.
+  // If Subject/Period are null (Daily Attendance), simple date constraint applies.
+  @@unique([schoolId, academicYearId, classId, sectionId, subjectId, periodId, date])
+  @@index([schoolId, date])
+}
+
+// ------------------- ATTENDANCE RECORD -------------------
+// Individual student status linked to a session
+model Attendance {
+  id                  Int @id @default(autoincrement())
+  schoolId            Int
+  attendanceSessionId Int
+  studentProfileId    Int
+
+  status AttendanceStatus
+
+  // Metadata
+  isLate         Boolean   @default(false)
+  lateReason     String?
+  lateMarkedAt   DateTime? // When was the late status applied?
+  lateMarkedById Int?
+
+  remarks String?
+
+  // Audit 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school         School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  session        AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
+  studentProfile StudentProfile    @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  lateMarkedBy   User?             @relation("LateMarkedBy", fields: [lateMarkedById], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, attendanceSessionId, studentProfileId])
+  @@index([schoolId, studentProfileId])
+  @@index([schoolId, status])
+}
+
+// ------------------- STAFF ATTENDANCE -------------------
+// For Teachers/Staff Self-Check-in/Check-out
+model StaffAttendance {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  teacherId      Int
+
+  date   DateTime         @db.Date
+  status AttendanceStatus
+
+  // Time Tracking
+  checkInTime  DateTime?
+  checkOutTime DateTime?
+
+  isLate  Boolean @default(false)
+  remarks String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school       School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  teacher      TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, academicYearId, teacherId, date])
+  @@index([schoolId, date])
+}
+
+// ------------------- ATTENDANCE SUMMARY -------------------
+// For fast analytics (Monthly/Term-wise)
+model AttendanceSummary {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+
+  studentId Int
+  classId   Int
+  sectionId Int
+  subjectId Int? // Null for Daily Attendance Summary
+
+  month Int
+  year  Int
+
+  totalDays Int @default(0)
+  present   Int @default(0)
+  absent    Int @default(0)
+  late      Int @default(0)
+  excused   Int @default(0)
+  suspended Int @default(0)
+
+  computedAt DateTime @default(now())
+  version    Int      @default(1)
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, academicYearId, studentId, classId, sectionId, subjectId, month, year])
+  @@index([schoolId, month, year])
+}
+
+// ------------------- ATTENDANCE CONFIGURATION (Academic Year Scoped) -------------------
+model AttendanceConfig {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+
+  mode           AttendanceMode        @default(DAILY)
+  responsibility DailyAttendanceAccess @default(CLASS_TEACHER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, academicYearId])
+}
+
+// ------------------- LATE ATTENDANCE MONITOR -------------------
+// Teachers authorized to mark late attendance
+model LateAttendanceMonitor {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  teacherId      Int
+
+  assignedAt DateTime @default(now())
+
+  school       School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  teacher      TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, academicYearId, teacherId])
+  @@index([schoolId, academicYearId])
+}

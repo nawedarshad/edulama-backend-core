@@ -28,4 +28,9 @@ export class CreateClassDto {
     @IsString()
     @IsOptional()
     description?: string;
+
+    @ApiPropertyOptional({ description: 'Schedule ID to assign this class to a specific bell schedule' })
+    @IsInt()
+    @IsOptional()
+    scheduleId?: number;
 }

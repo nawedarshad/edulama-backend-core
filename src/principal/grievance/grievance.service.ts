@@ -3,12 +3,21 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateGrievanceDto } from './dto/create-grievance.dto';
 import { UpdateGrievanceDto } from './dto/update-grievance.dto';
 import { GrievanceFilterDto } from './dto/grievance-filter.dto';
+import { NotificationService } from '../global/notification/notification.service';
+import { NotificationType, GrievanceStatus } from '@prisma/client';
 
 @Injectable()
 export class GrievanceService {
     private readonly logger = new Logger(GrievanceService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly notificationService: NotificationService
+    ) { }
+
+    // ... existing methods ...
+
+
 
     // 1. Configure allowed roles (Admin/Principal only)
     async configureRoles(schoolId: number, roleNames: string[]) {
@@ -73,7 +82,7 @@ export class GrievanceService {
             }
         }
 
-        return this.prisma.grievance.create({
+        const grievance = await this.prisma.grievance.create({
             data: {
                 schoolId,
                 academicYearId,
@@ -86,6 +95,26 @@ export class GrievanceService {
                 } : undefined
             }
         });
+
+        // Notify Principal(s)
+        const principals = await this.prisma.user.findMany({
+            where: {
+                schoolId,
+                role: { name: 'PRINCIPAL' }
+            },
+            select: { id: true }
+        });
+
+        if (principals.length > 0) {
+            await this.notificationService.create(schoolId, userId, {
+                type: NotificationType.GRIEVANCE,
+                title: 'New Grievance Raised',
+                message: `A new grievance "${dto.title}" has been raised.`,
+                targetUserIds: principals.map(p => p.id)
+            });
+        }
+
+        return grievance;
     }
 
     // 3. Find All
@@ -98,7 +127,8 @@ export class GrievanceService {
                 schoolId,
                 academicYearId,
                 status,
-                raisedById
+                raisedById,
+                ...(filters.role ? { raisedBy: { role: { name: filters.role } } } : {})
             },
             include: {
                 raisedBy: {
@@ -144,7 +174,7 @@ export class GrievanceService {
 
         if (!grievance) throw new NotFoundException(`Grievance ${id} not found`);
 
-        return this.prisma.grievance.update({
+        const updatedGrievance = await this.prisma.grievance.update({
             where: { id },
             data: {
                 status: dto.status,
@@ -153,12 +183,42 @@ export class GrievanceService {
                 resolvedAt: dto.status === 'RESOLVED' || dto.status === 'DISMISSED' ? new Date() : null
             }
         });
+
+        // Notify the user if status changed
+        if (dto.status && dto.status !== grievance.status) {
+            this.logger.log(`Grievance status changed from ${grievance.status} to ${dto.status}. Triggering notification for user ${grievance.raisedById}`);
+            await this.notificationService.create(schoolId, resolverId, {
+                type: NotificationType.GRIEVANCE,
+                title: 'Grievance Update',
+                message: `Your grievance "${grievance.title}" has been marked as ${dto.status}.`,
+                targetUserIds: [grievance.raisedById]
+            });
+        } else {
+            this.logger.log(`No status change detected (Old: ${grievance.status}, New: ${dto.status}). Notification skipped.`);
+        }
+
+        return updatedGrievance;
     }
 
     // 5. Delete
-    async remove(schoolId: number, id: number) {
+    // 5. Delete
+    async remove(schoolId: number, id: number, userId: number, userRole: string) {
         const grievance = await this.prisma.grievance.findFirst({ where: { id, schoolId } });
         if (!grievance) throw new NotFoundException('Grievance not found');
+
+        // Check Permissions
+        const isAdminOrPrincipal = userRole === 'ADMIN' || userRole === 'PRINCIPAL';
+
+        // If not Admin/Principal, they MUST be the creator
+        if (!isAdminOrPrincipal && grievance.raisedById !== userId) {
+            throw new ForbiddenException('You can only delete your own grievances.');
+        }
+
+        // Can only delete if status is OPEN
+        if (grievance.status !== GrievanceStatus.OPEN) {
+            throw new ForbiddenException('Cannot delete a grievance once action has been taken.');
+        }
+
         return this.prisma.grievance.delete({ where: { id } });
     }
 }

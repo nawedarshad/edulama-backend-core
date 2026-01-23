@@ -264,11 +264,27 @@ export class TeacherService {
     }
 
     async findAll(schoolId: number) {
-        return this.prisma.teacherProfile.findMany({
-            where: { schoolId, isActive: true },
+        const teachers = await this.prisma.teacherProfile.findMany({
+            where: {
+                schoolId,
+                isActive: true,
+                user: {
+                    role: {
+                        name: 'TEACHER',
+                    },
+                },
+            },
             include: {
                 user: {
-                    select: { id: true, name: true, photo: true },
+                    select: {
+                        id: true,
+                        name: true,
+                        photo: true,
+                        authIdentities: {
+                            where: { type: 'EMAIL' },
+                            select: { value: true },
+                        },
+                    },
                 },
                 personalInfo: true,
                 qualifications: true,
@@ -276,16 +292,21 @@ export class TeacherService {
             },
             orderBy: { createdAt: 'desc' },
         });
+
+        return teachers.map((teacher) => ({
+            ...teacher,
+            user: {
+                ...teacher.user,
+                email: teacher.user.authIdentities?.[0]?.value || '',
+            },
+        }));
     }
 
     async findOne(schoolId: number, id: number) {
         const staff = await this.prisma.teacherProfile.findFirst({
             where: {
                 schoolId,
-                OR: [
-                    { id: id },
-                    { userId: id },
-                ],
+                id: id,
             },
             include: {
                 user: true,

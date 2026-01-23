@@ -57,6 +57,7 @@ export class TimeSlotService {
                 period = await this.prisma.timePeriod.create({
                     data: {
                         schoolId,
+                        academicYearId: activeYear.id,
                         name: dto.period.name,
                         startTime: dto.period.startTime,
                         endTime: dto.period.endTime
@@ -76,7 +77,6 @@ export class TimeSlotService {
                 academicYearId: activeYear.id,
                 day: dto.day,
                 periodId: period.id,
-                description: dto.description,
                 isBreak: dto.isBreak || false,
             },
         });
@@ -104,7 +104,6 @@ export class TimeSlotService {
             data: {
                 day: dto.day,
                 periodId: dto.periodId,
-                description: dto.description,
                 isBreak: dto.isBreak,
             },
         });

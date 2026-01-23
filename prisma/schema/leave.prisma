@@ -1,0 +1,98 @@
+enum LeaveStatus {
+  PENDING_CLASS_TEACHER // Waiting for class teacher approval
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeaveCategory {
+  TEACHER
+  STUDENT
+}
+
+enum StudentLeaveApprovalWorkflow {
+  DIRECT_TO_PRINCIPAL
+  CLASS_TEACHER_FIRST
+}
+
+model LeaveType {
+  id       Int @id @default(autoincrement())
+  schoolId Int
+
+  name     String
+  code     String // e.g., CL, SL
+  category LeaveCategory
+
+  description String?
+  color       String? // for UI
+
+  requiresDocument Boolean @default(false)
+
+  // Student Leave Approval Workflow (only applicable for STUDENT category)
+  studentLeaveApprovalWorkflow StudentLeaveApprovalWorkflow @default(DIRECT_TO_PRINCIPAL)
+
+  isActive Boolean @default(true)
+
+  school   School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  requests LeaveRequest[]
+
+  @@unique([schoolId, code, category])
+}
+
+model LeaveRequest {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  applicantId    Int
+
+  leaveTypeId Int
+
+  startDate DateTime @db.Date // Inclusive
+  endDate   DateTime @db.Date // Inclusive
+
+  // Computed effective days (excluding holidays/weekends)
+  daysCount Float
+
+  reason String
+
+  attachments LeaveAttachment[]
+
+  status LeaveStatus @default(PENDING)
+
+  // Approval Info
+  approvedById    Int?
+  rejectionReason String?
+  actionAt        DateTime?
+
+  // Class Teacher Approval (for student leaves)
+  classTeacherApprovedById Int?
+  classTeacherActionAt     DateTime?
+  classTeacherRemarks      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leaveType              LeaveType    @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  applicant              User         @relation("LeaveApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  approvedBy             User?        @relation("LeaveApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  classTeacherApprovedBy User?        @relation("ClassTeacherApprover", fields: [classTeacherApprovedById], references: [id], onDelete: SetNull)
+  school                 School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear           AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, status])
+  @@index([applicantId])
+}
+
+model LeaveAttachment {
+  id             Int @id @default(autoincrement())
+  leaveRequestId Int
+
+  name    String?
+  fileUrl String
+  type    String? // e.g. "image/jpeg", "application/pdf"
+
+  createdAt DateTime @default(now())
+
+  leaveRequest LeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+}

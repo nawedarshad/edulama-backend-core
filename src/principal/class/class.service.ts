@@ -21,6 +21,7 @@ export class ClassService {
             this.prisma.class.findMany({
                 where: { schoolId },
                 include: {
+                    schedule: { select: { id: true, name: true } },
                     headTeacher: {
                         include: {
                             teacher: {
@@ -55,6 +56,11 @@ export class ClassService {
                                     },
                                 },
                             },
+                            ClassSubject: {
+                                include: {
+                                    subject: true
+                                }
+                            }
                         },
                     },
                 },
@@ -81,7 +87,7 @@ export class ClassService {
                 ? {
                     id: cls.headTeacher.id,
                     teacher: {
-                        id: cls.headTeacher.teacher.user.id,
+                        id: cls.headTeacher.teacher.id,
                         name: cls.headTeacher.teacher.user.name,
                         email: cls.headTeacher.teacher.user.authIdentities[0]?.value || '',
                     },
@@ -99,12 +105,19 @@ export class ClassService {
                     ? {
                         id: section.classTeacher.id,
                         teacher: {
-                            id: section.classTeacher.teacher.user.id,
+                            id: section.classTeacher.teacher.id,
                             name: section.classTeacher.teacher.user.name,
                             email: section.classTeacher.teacher.user.authIdentities[0]?.value || '',
                         },
                     }
                     : undefined,
+                subjects: section.ClassSubject?.map(cs => ({
+                    id: cs.subject.id,
+                    name: cs.subject.name,
+                    code: cs.subject.code,
+                    type: cs.type,
+                    credits: cs.credits
+                })) || [],
             })),
         }));
 
@@ -122,7 +135,15 @@ export class ClassService {
         const cls = await this.prisma.class.findFirst({
             where: { id, schoolId },
             include: {
-                sections: true,
+                sections: {
+                    include: {
+                        ClassSubject: {
+                            include: {
+                                subject: true
+                            }
+                        }
+                    }
+                },
                 headTeacher: {
                     include: {
                         teacher: {
@@ -156,7 +177,7 @@ export class ClassService {
                 ? {
                     id: c.headTeacher.id,
                     teacher: {
-                        id: c.headTeacher.teacher.user.id,
+                        id: c.headTeacher.teacher.id,
                         name: c.headTeacher.teacher.user.name,
                         email: c.headTeacher.teacher.user.authIdentities[0]?.value || '',
                     },
@@ -176,6 +197,7 @@ export class ClassService {
                     capacity: dto.capacity,
                     order: dto.order,
                     description: dto.description,
+                    scheduleId: dto.scheduleId,
                     schoolId,
                     // academicYearId removed - Classes are global 
                 },
@@ -202,6 +224,14 @@ export class ClassService {
 
         if (!cls) {
             throw new NotFoundException(`Class with ID ${id} not found`);
+        }
+
+        // Prevent changing schedule if already assigned
+        if (dto.scheduleId !== undefined && cls.scheduleId !== null && cls.scheduleId !== dto.scheduleId) {
+            throw new BadRequestException(
+                `Cannot change schedule. This class is already assigned to schedule ID ${cls.scheduleId}. ` +
+                `Please remove the current schedule assignment first before assigning to a new schedule.`
+            );
         }
 
         // Capacity Validation: Prevent reducing class capacity below current section usage
@@ -304,12 +334,16 @@ export class ClassService {
 
 
         // 2. Validate Teacher exists and belongs to school
+        // IMPORTANT: dto.teacherId must be TeacherProfile.id, NOT User.id
         const teacher = await this.prisma.teacherProfile.findUnique({
             where: { id: dto.teacherId }
         });
 
         if (!teacher) {
-            throw new NotFoundException('Teacher not found');
+            throw new NotFoundException(
+                `Teacher with ID ${dto.teacherId} not found. ` +
+                `Note: teacherId must be the TeacherProfile ID, not the User ID.`
+            );
         }
 
         if (teacher.schoolId !== schoolId) {
@@ -325,26 +359,12 @@ export class ClassService {
                 schoolId,
                 academicYearId: activeYear.id, // Use Active Year
                 sectionId: dto.sectionId,
-                teacherId: dto.teacherId,
+                teacherId: teacher.id, // Use found TeacherProfile ID
             },
             update: {
-                teacherId: dto.teacherId,
+                teacherId: teacher.id, // Use found TeacherProfile ID
+                academicYearId: activeYear.id, // Update to active year
                 assignedAt: new Date(),
-                // Should we update academicYearId? Usually sticking to original creation year or updating to current?
-                // If it's unique by SectionId, it implies 1 teacher per section regardless of year?
-                // Wait, SectionTeacher has @unique(sectionId).
-                // But if Section is global, then SectionTeacher makes it year-bound?
-                // If SectionId is unique in SectionTeacher, it means a Section can only have ONE teacher in SectionTeacher table?
-                // If Section is global, this means a Section can only have 1 teacher EVER?
-                // No, SectionTeacher table likely needs to be re-evaluated if Section is global.
-                // If Section is global, assignments must be (Section + Year).
-                // Let's check SectionTeacher constraints from earlier context:
-                // model SectionTeacher { sectionId Int @unique ... }
-                // This is a problem if Sections are global.
-                // FIX: If Section is global, SectionTeacher needs to be Unique([sectionId, academicYearId]).
-                // But schema for SectionTeacher wasn't changed yet.
-                // Assuming for now we just fix the TS errors and Logic.
-                // We'll use activeYear.id.
             },
         });
     }
@@ -372,12 +392,16 @@ export class ClassService {
 
 
         // 2. Validate Teacher exists and belongs to school
+        // IMPORTANT: dto.teacherId must be TeacherProfile.id, NOT User.id
         const teacher = await this.prisma.teacherProfile.findUnique({
             where: { id: dto.teacherId }
         });
 
         if (!teacher) {
-            throw new NotFoundException('Teacher not found');
+            throw new NotFoundException(
+                `Teacher with ID ${dto.teacherId} not found. ` +
+                `Note: teacherId must be the TeacherProfile ID, not the User ID.`
+            );
         }
 
         if (teacher.schoolId !== schoolId) {
@@ -393,10 +417,11 @@ export class ClassService {
                 schoolId,
                 academicYearId: activeYear.id,
                 classId: classId,
-                teacherId: dto.teacherId,
+                teacherId: teacher.id,
             },
             update: {
-                teacherId: dto.teacherId,
+                teacherId: teacher.id,
+                academicYearId: activeYear.id, // Update to active year
                 assignedAt: new Date(),
             },
         });
