@@ -26,6 +26,7 @@ import { SchoolAdminModule } from './school-admin/school-admin.module';
 import { SubstitutionModule } from './substitution/substitution.module';
 import { AttendanceMonitorModule } from './attendance-monitor/attendance-monitor.module';
 import { PrincipalProfileModule } from './profile/principal-profile.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 
 @Module({
@@ -55,6 +56,7 @@ import { PrincipalProfileModule } from './profile/principal-profile.module';
         SubstitutionModule,
         AttendanceMonitorModule,
         PrincipalProfileModule,
+        DashboardModule,
     ],
 })
 export class PrincipalModule { }

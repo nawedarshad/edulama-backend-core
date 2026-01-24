@@ -318,8 +318,14 @@ export class StudentService {
             },
         });
 
-        if (!student || student.schoolId !== schoolId) {
-            this.logger.warn(`Student not found or access denied: ${id} in school ${schoolId}`);
+
+        if (!student) {
+            this.logger.warn(`Student not found: ID ${id}`);
+            throw new NotFoundException('Student not found');
+        }
+
+        if (student.schoolId !== schoolId) {
+            this.logger.warn(`Student found but school mismatch. ID: ${id}, Student School: ${student.schoolId}, Req School: ${schoolId}`);
             throw new NotFoundException('Student not found');
         }
 
