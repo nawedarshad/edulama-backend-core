@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AnnouncementStatus, AudienceType } from '@prisma/client';
+import { AnnouncementStatus, AudienceType, AckType } from '@prisma/client';
 
 @Injectable()
 export class TeacherAnnouncementService {
@@ -55,6 +55,19 @@ export class TeacherAnnouncementService {
             where.type = type;
         }
 
+        if (query.priority) {
+            where.priority = query.priority.toUpperCase();
+        }
+
+        if (query.unread === 'true') {
+            where.acknowledgements = {
+                none: {
+                    userId: userId,
+                    schoolId: schoolId
+                }
+            };
+        }
+
         const [data, total] = await Promise.all([
             this.prisma.announcement.findMany({
                 where,
@@ -81,5 +94,25 @@ export class TeacherAnnouncementService {
                 totalPages: Math.ceil(total / limit),
             },
         };
+    }
+
+    async markAsRead(schoolId: number, userId: number, announcementId: number) {
+        return this.prisma.announcementAck.upsert({
+            where: {
+                schoolId_announcementId_userId_ackType: {
+                    schoolId,
+                    announcementId,
+                    userId,
+                    ackType: AckType.READ
+                }
+            },
+            update: {},
+            create: {
+                schoolId,
+                announcementId,
+                userId,
+                ackType: AckType.READ
+            }
+        });
     }
 }

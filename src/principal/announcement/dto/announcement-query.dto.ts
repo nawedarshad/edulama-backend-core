@@ -34,5 +34,16 @@ export class AnnouncementQueryDto {
     @IsOptional()
     @Type(() => Number)
     @IsInt()
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
     academicYearId?: number;
+
+    @IsOptional()
+    @IsString()
+    priority?: string;
+
+    @IsOptional()
+    @IsString()
+    unread?: string; // 'true' or 'false'
 }
