@@ -77,6 +77,9 @@ export class TeacherAnnouncementService {
                 include: {
                     attachments: true,
                     audiences: true,
+                    acknowledgements: {
+                        where: { userId: userId, ackType: AckType.READ }
+                    },
                     createdBy: {
                         select: { id: true, name: true, photo: true }
                     }
