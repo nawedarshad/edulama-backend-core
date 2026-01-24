@@ -7,6 +7,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } }));
+  app.setGlobalPrefix('core');
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.enableCors({
     origin: true, // Allow all origins
@@ -22,7 +23,7 @@ async function bootstrap() {
     .addTag('Section')
     .build();
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  SwaggerModule.setup('api', app, document, { useGlobalPrefix: true });
 
   // BigInt Serialization Fix
   (BigInt.prototype as any).toJSON = function () {
