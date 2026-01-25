@@ -13,6 +13,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { AuditLogModule } from './common/audit/audit-log.module';
 import { TodoModule } from './todo/todo.module';
 import { SaaSAdminModule } from './saas-admin/saas-admin.module';
+import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SaaSAdminModule } from './saas-admin/saas-admin.module';
     AuditLogModule,
     TodoModule,
     SaaSAdminModule,
+    UserModule,
     EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],

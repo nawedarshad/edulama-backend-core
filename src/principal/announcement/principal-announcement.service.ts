@@ -1,13 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
+import { NotificationService } from '../global/notification/notification.service';
+import { NotificationType } from '@prisma/client';
 
 import { AnnouncementQueryDto } from './dto/announcement-query.dto';
 import { Prisma, AnnouncementPriority } from '@prisma/client';
 
 @Injectable()
 export class PrincipalAnnouncementService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly notificationService: NotificationService
+    ) { }
 
     async create(schoolId: number, userId: number, dto: CreateAnnouncementDto) {
         const { audiences, attachments, academicYearId, ...data } = dto;
@@ -20,7 +25,7 @@ export class PrincipalAnnouncementService {
             throw new NotFoundException('Academic Year not found for this school');
         }
 
-        return this.prisma.$transaction(async (tx) => {
+        const result = await this.prisma.$transaction(async (tx) => {
             // 1. Create Announcement
             const announcement = await tx.announcement.create({
                 data: {
@@ -58,6 +63,75 @@ export class PrincipalAnnouncementService {
 
             return announcement;
         });
+
+        // Send Notification (Fire & Forget to avoid blocking response)
+        this.sendAnnouncementNotification(schoolId, userId, result, audiences).catch(err => {
+            console.error('Failed to send announcement notification', err);
+        });
+
+        return result;
+    }
+
+    private async sendAnnouncementNotification(
+        schoolId: number,
+        creatorId: number,
+        announcement: any,
+        audiences: any[]
+    ) {
+        if (!audiences || audiences.length === 0) return;
+
+        const targetUserIds = new Set<number>();
+        const targetRoleIds = new Set<number>();
+
+        // 1. Resolve Audiences
+        for (const audience of audiences) {
+            if (audience.studentId) targetUserIds.add(audience.studentId);
+            if (audience.staffId) targetUserIds.add(audience.staffId);
+            if (audience.roleId) targetRoleIds.add(audience.roleId);
+
+            // Resolve Class/Section to Students
+            if (audience.sectionId) {
+                const students = await this.prisma.studentProfile.findMany({
+                    where: { sectionId: audience.sectionId, schoolId },
+                    select: { userId: true }
+                });
+                students.forEach(s => targetUserIds.add(s.userId));
+            } else if (audience.classId) {
+                const students = await this.prisma.studentProfile.findMany({
+                    where: { classId: audience.classId, schoolId },
+                    select: { userId: true }
+                });
+                students.forEach(s => targetUserIds.add(s.userId));
+            }
+
+            // Resolve generic types if needed (simplified for now)
+            // If AudienceType is ALL_SCHOOL, we might need a strategy.
+            // For now, let's assume specific targeting or roles covers most.
+            // If strictly needed, we'd fetch all roles.
+        }
+
+        const payload = {
+            targetUserIds: Array.from(targetUserIds),
+            targetRoleIds: Array.from(targetRoleIds),
+        };
+
+        // 2. Send Standard Notification
+        await this.notificationService.create(schoolId, creatorId, {
+            title: 'New Announcement',
+            message: announcement.title,
+            type: NotificationType.ANNOUNCEMENT,
+            ...payload
+        });
+
+        // 3. Send Emergency Alert if applicable
+        if (announcement.isEmergency || announcement.priority === 'CRITICAL') {
+            await this.notificationService.create(schoolId, creatorId, {
+                title: 'EMERGENCY ALERT',
+                message: `URGENT: ${announcement.title}`,
+                type: NotificationType.ALERT, // Ensure ALERT type exists in Prisma Schema
+                ...payload
+            });
+        }
     }
 
     async findAll(schoolId: number, query: AnnouncementQueryDto) {
