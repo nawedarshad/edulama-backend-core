@@ -139,10 +139,10 @@ export class NotificationService {
         for (const chunk of chunks) {
             try {
                 const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
-                this.logger.log(`Sent ${chunk.length} push notifications`);
+                this.logger.log(`DEBUG: Sent ${chunk.length} push notifications. Tickets: ${JSON.stringify(ticketChunk)}`);
                 // Process tickets to check for errors/rejections if needed
             } catch (error) {
-                this.logger.error('Error sending push notifications', error);
+                this.logger.error('DEBUG: Error sending push notifications', error);
             }
         }
     }
