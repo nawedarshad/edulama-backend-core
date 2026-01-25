@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AnnouncementStatus, AudienceType, AckType } from '@prisma/client';
+import { AnnouncementStatus, AudienceType, AckType, AnnouncementPriority } from '@prisma/client';
 
 @Injectable()
 export class TeacherAnnouncementService {
@@ -58,21 +58,11 @@ export class TeacherAnnouncementService {
         // Helper: Check if a custom priority status was requested (e.g. IMPORTANT)
         const priorityParam = query.priority?.toUpperCase();
         if (priorityParam === 'IMPORTANT') {
-            // "Important" = Emergency OR Critical OR Urgent
-            where.OR = [
-                ...(where.OR || []), // Preserve existing OR (search) if any. Ideally should nest AND, but simplistic OR merge:
-                // Actually if search exists, we need AND(Search, Priority).
-                // Let's refactor 'where' structure safe merging:
-            ];
-            // Safe merge:
-            // if search exists, wrap existing where in AND
-            // For simplicity in this context, assuming standard filters don't overlap destructively.
-            // Correct approach:
             where.AND = [
                 {
                     OR: [
                         { isEmergency: true },
-                        { priority: { in: ['CRITICAL', 'URGENT'] } }
+                        { priority: { in: ['CRITICAL', 'URGENT'] } } // Using strings to avoid runtime enum issues
                     ]
                 }
             ];
@@ -88,6 +78,13 @@ export class TeacherAnnouncementService {
                 }
             };
         }
+
+        console.log('DEBUG_ANNOUNCEMENT_FILTER:', {
+            priorityParam,
+            where: JSON.stringify(where, null, 2),
+            schoolId,
+            userId
+        });
 
         const [data, total] = await Promise.all([
             this.prisma.announcement.findMany({
