@@ -145,12 +145,12 @@ model AcademicYear {
 // ==========================
 
 model User {
-  id       Int       @id @default(autoincrement())
-  schoolId Int
-  name     String
-  photo    String?
-  isActive Boolean   @default(true)
-  lastSeen DateTime?
+  id          Int       @id @default(autoincrement())
+  schoolId    Int
+  name        String
+  photo       String?
+  isActive    Boolean   @default(true)
+  lastSeen    DateTime?
   deviceToken String?
 
   createdAt DateTime @default(now())
