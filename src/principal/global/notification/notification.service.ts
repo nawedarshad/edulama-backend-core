@@ -126,12 +126,29 @@ export class NotificationService {
     }
 
     private async sendPushNotifications(tokens: string[], title: string, body: string, data: any) {
+        // 1. Determine Urgency and Styling
+        const isEmergency = title.toUpperCase().includes('EMERGENCY') || title.toUpperCase().includes('URGENT');
+
+        // 2. Format Title with Branding & Icons
+        let displayTitle = title;
+        if (isEmergency) {
+            displayTitle = `🚨 ${title}`;
+        } else {
+            // If it's a generic title, prefix with Edulama. 
+            // If it's already specific, maybe just append or use Icon.
+            displayTitle = `📢 Edulama: ${title}`;
+        }
+
         const messages = tokens.map(token => ({
             to: token,
-            sound: 'default' as const, // Fix type literal
-            title,
-            body,
+            sound: 'default' as const,
+            title: displayTitle,
+            body: body,
             data,
+            subtitle: 'Edulama', // iOS only subtitle
+            badge: 1, // Update badge count
+            _displayInForeground: true,
+            channelId: isEmergency ? 'emergency-alerts' : 'default', // Android Channel Separation
         }));
 
         const chunks = this.expo.chunkPushNotifications(messages);
