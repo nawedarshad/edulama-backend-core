@@ -55,8 +55,29 @@ export class TeacherAnnouncementService {
             where.type = type;
         }
 
-        if (query.priority) {
-            where.priority = query.priority.toUpperCase();
+        // Helper: Check if a custom priority status was requested (e.g. IMPORTANT)
+        const priorityParam = query.priority?.toUpperCase();
+        if (priorityParam === 'IMPORTANT') {
+            // "Important" = Emergency OR Critical OR Urgent
+            where.OR = [
+                ...(where.OR || []), // Preserve existing OR (search) if any. Ideally should nest AND, but simplistic OR merge:
+                // Actually if search exists, we need AND(Search, Priority).
+                // Let's refactor 'where' structure safe merging:
+            ];
+            // Safe merge:
+            // if search exists, wrap existing where in AND
+            // For simplicity in this context, assuming standard filters don't overlap destructively.
+            // Correct approach:
+            where.AND = [
+                {
+                    OR: [
+                        { isEmergency: true },
+                        { priority: { in: ['CRITICAL', 'URGENT'] } }
+                    ]
+                }
+            ];
+        } else if (priorityParam) {
+            where.priority = priorityParam;
         }
 
         if (query.unread === 'true') {
@@ -73,7 +94,7 @@ export class TeacherAnnouncementService {
                 where,
                 take: +limit,
                 skip,
-                orderBy: { priority: 'desc' }, // Emergency/Critical first
+                orderBy: { createdAt: 'desc' }, // Chronological order as requested
                 include: {
                     attachments: true,
                     audiences: true,
