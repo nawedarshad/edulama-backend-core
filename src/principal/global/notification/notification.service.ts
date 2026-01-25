@@ -3,10 +3,12 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { NotificationType } from '@prisma/client';
 import { NotificationGateway } from './notification.gateway';
+import { Expo } from 'expo-server-sdk';
 
 @Injectable()
 export class NotificationService {
     private readonly logger = new Logger(NotificationService.name);
+    private expo = new Expo();
 
     constructor(
         private readonly prisma: PrismaService,
@@ -28,13 +30,13 @@ export class NotificationService {
 
         // 2. If target users provided, create deliveries
         if (dto.targetUserIds && dto.targetUserIds.length > 0) {
-            // Verify users belong to school
+            // Verify users belong to school and fetch tokens
             const validUsers = await this.prisma.user.findMany({
                 where: {
                     schoolId,
                     id: { in: dto.targetUserIds },
                 },
-                select: { id: true },
+                select: { id: true, deviceToken: true },
             });
 
             if (validUsers.length > 0) {
@@ -45,15 +47,29 @@ export class NotificationService {
                     })),
                 });
 
-                // Notify users in real-time
-                this.logger.log(`Notifying ${validUsers.length} users via gateway.`);
+                // Notify users in real-time (Socket) + Push
+                this.logger.log(`Notifying ${validUsers.length} users via gateway and push.`);
+
+                const pushTokens: { token: string, user: any }[] = [];
+
                 for (const user of validUsers) {
+                    // Socket
                     this.gateway.sendToUser(user.id, 'notification', {
                         title: dto.title,
                         message: dto.message,
                         type: dto.type,
                         createdAt: new Date(),
                     });
+
+                    // Collect Puh Token
+                    if (user.deviceToken && Expo.isExpoPushToken(user.deviceToken)) {
+                        pushTokens.push({ token: user.deviceToken, user });
+                    }
+                }
+
+                // Send Push
+                if (pushTokens.length > 0) {
+                    this.sendPushNotifications(pushTokens.map(p => p.token), dto.title, dto.message, { notificationId: notification.id });
                 }
             }
         }
@@ -66,7 +82,7 @@ export class NotificationService {
                     roleId: { in: dto.targetRoleIds },
                     isActive: true // Only active users
                 },
-                select: { id: true },
+                select: { id: true, deviceToken: true },
             });
 
             if (roleUsers.length > 0) {
@@ -82,11 +98,53 @@ export class NotificationService {
                         })),
                         skipDuplicates: true,
                     });
+
+                    const pushTokens: string[] = [];
+                    for (const user of newUsers) {
+                        // Socket
+                        this.gateway.sendToUser(user.id, 'notification', {
+                            title: dto.title,
+                            message: dto.message,
+                            type: dto.type,
+                            createdAt: new Date(),
+                        });
+
+                        if (user.deviceToken && Expo.isExpoPushToken(user.deviceToken)) {
+                            pushTokens.push(user.deviceToken);
+                        }
+                    }
+
+                    // Send Push
+                    if (pushTokens.length > 0) {
+                        this.sendPushNotifications(pushTokens, dto.title, dto.message, { notificationId: notification.id });
+                    }
                 }
             }
         }
 
         return notification;
+    }
+
+    private async sendPushNotifications(tokens: string[], title: string, body: string, data: any) {
+        const messages = tokens.map(token => ({
+            to: token,
+            sound: 'default' as const, // Fix type literal
+            title,
+            body,
+            data,
+        }));
+
+        const chunks = this.expo.chunkPushNotifications(messages);
+
+        for (const chunk of chunks) {
+            try {
+                const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
+                this.logger.log(`Sent ${chunk.length} push notifications`);
+                // Process tickets to check for errors/rejections if needed
+            } catch (error) {
+                this.logger.error('Error sending push notifications', error);
+            }
+        }
     }
 
     async findAll(schoolId: number) {
