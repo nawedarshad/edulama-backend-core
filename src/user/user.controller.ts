@@ -11,6 +11,7 @@ export class UserController {
 
     @Patch('device-token')
     updateDeviceToken(@GetUser() user: User, @Body('token') token: string) {
+        console.log(`DEBUG: Received device token update for user ${user.id}. Token: ${token?.substring(0, 10)}...`);
         return this.userService.updateDeviceToken(user.id, token);
     }
 }
