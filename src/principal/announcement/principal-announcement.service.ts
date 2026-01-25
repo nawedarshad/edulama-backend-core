@@ -5,7 +5,7 @@ import { NotificationService } from '../global/notification/notification.service
 import { NotificationType } from '@prisma/client';
 
 import { AnnouncementQueryDto } from './dto/announcement-query.dto';
-import { Prisma, AnnouncementPriority } from '@prisma/client';
+import { Prisma, AnnouncementPriority, AudienceType } from '@prisma/client';
 
 @Injectable()
 export class PrincipalAnnouncementService {
@@ -105,9 +105,31 @@ export class PrincipalAnnouncementService {
             }
 
             // Resolve generic types if needed (simplified for now)
-            // If AudienceType is ALL_SCHOOL, we might need a strategy.
-            // For now, let's assume specific targeting or roles covers most.
-            // If strictly needed, we'd fetch all roles.
+            // Handle ALL_SCHOOL
+            if (audience.type === AudienceType.ALL_SCHOOL) {
+                const allUsers = await this.prisma.user.findMany({
+                    where: { schoolId, isActive: true },
+                    select: { id: true }
+                });
+                allUsers.forEach(u => targetUserIds.add(u.id));
+            }
+            // Handle Generic Role-based Audiences (TEACHER, STUDENT, PARENTS, STAFF)
+            else if ([AudienceType.TEACHER, AudienceType.STUDENT, AudienceType.PARENTS, AudienceType.STAFF].includes(audience.type)) {
+                // Fetch roles to find matching IDs
+                // Optimization: Cache roles or fetch only needed ones
+                const roles = await this.prisma.role.findMany();
+
+                let roleNameKeyword = '';
+                if (audience.type === AudienceType.TEACHER) roleNameKeyword = 'TEACHER';
+                else if (audience.type === AudienceType.STUDENT) roleNameKeyword = 'STUDENT';
+                else if (audience.type === AudienceType.PARENTS) roleNameKeyword = 'PARENT';
+                else if (audience.type === AudienceType.STAFF) roleNameKeyword = 'STAFF'; // Or 'ADMIN', 'CLERK' etc? STAFF usually implies non-teaching employees.
+
+                if (roleNameKeyword) {
+                    const matchingRoles = roles.filter(r => r.name.toUpperCase().includes(roleNameKeyword));
+                    matchingRoles.forEach(r => targetRoleIds.add(r.id));
+                }
+            }
         }
 
         const payload = {
@@ -124,11 +146,11 @@ export class PrincipalAnnouncementService {
         });
 
         // 3. Send Emergency Alert if applicable
-        if (announcement.isEmergency || announcement.priority === 'CRITICAL') {
+        if (announcement.isEmergency || announcement.priority === AnnouncementPriority.CRITICAL || announcement.priority === AnnouncementPriority.URGENT) {
             await this.notificationService.create(schoolId, creatorId, {
-                title: 'EMERGENCY ALERT',
-                message: `URGENT: ${announcement.title}`,
-                type: NotificationType.ALERT, // Ensure ALERT type exists in Prisma Schema
+                title: announcement.isEmergency ? 'EMERGENCY ALERT' : 'URGENT ANNOUNCEMENT',
+                message: `${announcement.isEmergency ? 'URGENT' : 'Attention'}: ${announcement.title}`,
+                type: NotificationType.ALERT,
                 ...payload
             });
         }
