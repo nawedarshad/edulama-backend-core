@@ -4,9 +4,10 @@ import { StudentLeaveApprovalService } from './student-leave-approval.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
+import { NotificationModule } from '../../principal/global/notification/notification.module';
 
 @Module({
-    imports: [PrismaModule, HttpModule, ConfigModule],
+    imports: [PrismaModule, HttpModule, ConfigModule, NotificationModule],
     controllers: [StudentLeaveApprovalController],
     providers: [StudentLeaveApprovalService],
 })

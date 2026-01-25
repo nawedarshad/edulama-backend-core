@@ -3,12 +3,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LeaveActionDto } from './dto/leave-action.dto';
 import { LeaveStatus, AttendanceStatus } from '@prisma/client';
 import { CalendarService } from '../calendar/calendar.service';
+import { NotificationService } from '../global/notification/notification.service';
+import { NotificationType } from '@prisma/client';
 
 @Injectable()
 export class PrincipalLeaveService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly calendarService: CalendarService
+        private readonly calendarService: CalendarService,
+        private readonly notificationService: NotificationService
     ) { }
 
     async findAll(schoolId: number, query: any) {
@@ -73,7 +76,7 @@ export class PrincipalLeaveService {
         const { status } = dto;
         const { schoolId, academicYearId } = user;
 
-        return this.prisma.$transaction(async (tx) => {
+        const result = await this.prisma.$transaction(async (tx) => {
             // 1. Update Request
             const updated = await tx.leaveRequest.update({
                 where: { id },
@@ -150,6 +153,18 @@ export class PrincipalLeaveService {
 
             return updated;
         });
+
+        // Send Notification to Applicant
+        if (result) {
+            this.notificationService.create(schoolId, user.id, {
+                title: 'Leave Request Update',
+                message: `Your leave request for ${result.startDate.toDateString()} has been ${result.status}.`,
+                type: NotificationType.ATTENDANCE,
+                targetUserIds: [result.applicantId]
+            }).catch(err => console.error('Failed to send leave notification', err));
+        }
+
+        return result;
     }
 
     async getTeacherLeaveSummary(schoolId: number, academicYearId: number) {

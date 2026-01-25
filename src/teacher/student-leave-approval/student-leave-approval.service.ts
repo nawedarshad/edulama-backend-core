@@ -2,12 +2,17 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException,
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClassTeacherActionDto } from './dto/class-teacher-action.dto';
 import { LeaveStatus } from '@prisma/client';
+import { NotificationService } from '../../principal/global/notification/notification.service';
+import { NotificationType } from '@prisma/client';
 
 @Injectable()
 export class StudentLeaveApprovalService {
     private readonly logger = new Logger(StudentLeaveApprovalService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly notificationService: NotificationService
+    ) { }
 
     /**
      * Get all pending student leave requests for class teacher's class (section)
@@ -271,13 +276,27 @@ export class StudentLeaveApprovalService {
 
             const actionText = dto.status === LeaveStatus.PENDING ? 'approved and forwarded to principal' : 'rejected';
 
-            return {
+            const response = {
                 ...updated,
                 _meta: {
                     message: `Leave request ${actionText}`,
                     nextStep: dto.status === LeaveStatus.PENDING ? 'Awaiting principal approval' : 'Workflow complete'
                 }
             };
+
+            // Send Notification to Applicant
+            const msg = dto.status === LeaveStatus.PENDING
+                ? 'Your leave request has been approved by your Class Teacher and forwarded to Principal.'
+                : `Your leave request has been rejected by your Class Teacher. Remarks: ${dto.remarks || 'None'}`;
+
+            this.notificationService.create(teacherUser.schoolId, teacherUser.id, {
+                title: 'Leave Request Update',
+                message: msg,
+                type: NotificationType.ATTENDANCE,
+                targetUserIds: [updated.applicantId]
+            }).catch(err => this.logger.error('Failed to send notification', err));
+
+            return response;
         } catch (error) {
             this.handleError(error, 'Failed to process leave action');
         }
