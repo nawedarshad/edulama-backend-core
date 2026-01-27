@@ -43,6 +43,11 @@ model Announcement {
   academicYearId Int
   type           AnnouncementType @default(GENERAL)
 
+  // Voice & Channels
+  voiceAudioUrl String?
+  voiceDuration Int?
+  channels      AnnouncementChannel[]
+
   title   String
   body    String
   summary String?
@@ -155,4 +160,11 @@ model AnnouncementAck {
   @@unique([schoolId, announcementId, userId, ackType])
   @@index([schoolId, announcementId])
   @@index([schoolId, userId])
+}
+
+enum AnnouncementChannel {
+  PUSH
+  EMAIL
+  SMS
+  WHATSAPP
 }
