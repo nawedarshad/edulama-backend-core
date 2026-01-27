@@ -1,3 +1,11 @@
+
+enum SyllabusStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  DEFERRED
+}
+
 model ClassDiary {
   id Int @id @default(autoincrement())
 
@@ -20,9 +28,15 @@ model ClassDiary {
   topic       String? // e.g. "Photosynthesis"
   description String? // What was taught
   homework    String?
-
+  
+  // Detailed Lesson Plan
+  objective   String? // Learning objective of the session
+  activity    String? // Activities performed (group work, lab, etc.)
+  remarks     String? // Teacher's remarks/notes
+  
   // Attachments/Links
   studyMaterial Json? // [{ "title": "Video", "url": "..." }]
+  media         Json? // [{ "type": "image", "url": "..." }] for gallery view
 
   lessonDate DateTime
 
@@ -53,12 +67,24 @@ model Syllabus {
   classId   Int
   subjectId Int
 
+  // Hierarchy and Ordering
+  parentId   Int?      // Null for Unit, set for Chapter/Topic
+  parent     Syllabus? @relation("SyllabusHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children   Syllabus[] @relation("SyllabusHierarchy")
+  
+  orderIndex Int       @default(0)
+
   title       String
   description String?
+  learningOutcomes String? // "Student will be able to..."
 
   attachments Json? // [{ "title": "Syllabus PDF", "url": "..." }]
 
-  isCompleted Boolean   @default(false)
+  // Tracking
+  status         SyllabusStatus @default(PLANNED)
+  estimatedHours Float?         // For planning
+  
+  isCompleted Boolean   @default(false) // Keeping for backward compatibility, sync with status
   completedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -71,4 +97,6 @@ model Syllabus {
 
   @@index([schoolId, academicYearId])
   @@index([classId, subjectId])
+  @@index([parentId])
 }
+
