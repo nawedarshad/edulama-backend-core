@@ -52,6 +52,10 @@ export class TeacherClassDiaryService {
                 academicYearId: resolvedYearId,
                 teacherId,
                 studyMaterial: dto.studyMaterial || [],
+                objective: dto.objective,
+                activity: dto.activity,
+                remarks: dto.remarks,
+                media: dto.media || [],
             },
         });
     }
@@ -120,6 +124,10 @@ export class TeacherClassDiaryService {
             data: {
                 ...dto,
                 studyMaterial: dto.studyMaterial ?? undefined, // Only update if provided
+                objective: dto.objective,
+                activity: dto.activity,
+                remarks: dto.remarks,
+                media: dto.media,
             },
         });
     }

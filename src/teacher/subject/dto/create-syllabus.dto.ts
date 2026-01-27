@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsArray } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, IsEnum } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateSyllabusDto {
@@ -16,4 +16,29 @@ export class CreateSyllabusDto {
     @IsOptional()
     @IsArray()
     attachments?: any[]; // Allow JSON array structure
+
+    @ApiPropertyOptional({ description: 'Parent Syllabus ID for hierarchy' })
+    @IsOptional()
+    @IsNumber()
+    parentId?: number;
+
+    @ApiPropertyOptional({ description: 'Order index for sorting' })
+    @IsOptional()
+    @IsNumber()
+    orderIndex?: number;
+
+    @ApiPropertyOptional({ description: 'Learning outcomes' })
+    @IsOptional()
+    @IsString()
+    learningOutcomes?: string;
+
+    @ApiPropertyOptional({ description: 'Estimated hours to complete' })
+    @IsOptional()
+    @IsNumber()
+    estimatedHours?: number;
+
+    @ApiPropertyOptional({ description: 'Status', enum: ['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'DEFERRED'] })
+    @IsOptional()
+    @IsEnum(['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'DEFERRED'])
+    status?: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'DEFERRED';
 }

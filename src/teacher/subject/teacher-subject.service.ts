@@ -167,13 +167,19 @@ export class TeacherSubjectService {
                 subjectId: assignment.subjectId,
                 title: dto.title,
                 description: dto.description,
-                attachments: dto.attachments ?? []
+                attachments: dto.attachments ?? [],
+                parentId: dto.parentId,
+                orderIndex: dto.orderIndex ?? 0,
+                learningOutcomes: dto.learningOutcomes,
+                estimatedHours: dto.estimatedHours,
+                status: dto.status ?? 'PLANNED',
+                isCompleted: dto.status === 'COMPLETED'
             }
         });
     }
 
     // 4. Update Syllabus Status
-    async updateSyllabusStatus(schoolId: number, userId: number, assignmentId: number, syllabusId: number, isCompleted: boolean) {
+    async updateSyllabusStatus(schoolId: number, userId: number, assignmentId: number, syllabusId: number, statusInput: string | boolean) {
         // Ownership check
         const teacher = await this.prisma.teacherProfile.findUnique({
             where: { userId },
@@ -188,7 +194,6 @@ export class TeacherSubjectService {
 
         if (!assignment) throw new ForbiddenException('Assignment not accessible');
 
-        // Check if syllabus belongs to this context (optional but safer)
         const syllabus = await this.prisma.syllabus.findUnique({
             where: { id: syllabusId }
         });
@@ -197,9 +202,22 @@ export class TeacherSubjectService {
             throw new NotFoundException('Syllabus item not found or does not belong to this subject');
         }
 
+        let newStatus: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'DEFERRED' = 'PLANNED';
+        let isCompleted = false;
+
+        if (typeof statusInput === 'boolean') {
+            // Backward compatibility
+            isCompleted = statusInput;
+            newStatus = statusInput ? 'COMPLETED' : 'PLANNED';
+        } else {
+            newStatus = statusInput as any;
+            isCompleted = newStatus === 'COMPLETED';
+        }
+
         return this.prisma.syllabus.update({
             where: { id: syllabusId },
             data: {
+                status: newStatus,
                 isCompleted,
                 completedAt: isCompleted ? new Date() : null
             }

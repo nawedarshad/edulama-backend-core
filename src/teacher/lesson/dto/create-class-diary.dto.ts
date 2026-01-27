@@ -46,4 +46,24 @@ export class CreateClassDiaryDto {
     @IsOptional()
     @IsArray()
     studyMaterial?: any[];
+
+    @ApiProperty({ required: false })
+    @IsOptional()
+    @IsString()
+    objective?: string;
+
+    @ApiProperty({ required: false })
+    @IsOptional()
+    @IsString()
+    activity?: string;
+
+    @ApiProperty({ required: false })
+    @IsOptional()
+    @IsString()
+    remarks?: string;
+
+    @ApiProperty({ required: false })
+    @IsOptional()
+    @IsArray()
+    media?: any[];
 }
