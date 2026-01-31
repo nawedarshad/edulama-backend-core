@@ -221,13 +221,56 @@ export class TeacherSubjectService {
             isCompleted = newStatus === 'COMPLETED';
         }
 
-        return this.prisma.syllabus.update({
-            where: { id: syllabusId },
-            data: {
-                status: newStatus,
-                isCompleted,
-                completedAt: isCompleted ? new Date() : null
+        // Transaction to update self and potentially children
+        return this.prisma.$transaction(async (tx) => {
+            // Update the item itself
+            const updated = await tx.syllabus.update({
+                where: { id: syllabusId },
+                data: {
+                    status: newStatus,
+                    isCompleted,
+                    completedAt: isCompleted ? new Date() : null
+                }
+            });
+
+            // If COMPLETED, cascade to all children recursively (or just direct descendants for now, assuming 3 levels max)
+            // Ideally we'd do a recursive CTE but Prisma doesn't support it natively yet easily.
+            // Since we know structure is Unit -> Chapter -> Topic/Subtopic, we can fetch children.
+
+            if (isCompleted) {
+                // Find all descendants
+                const children = await tx.syllabus.findMany({
+                    where: { parentId: syllabusId }
+                });
+
+                if (children.length > 0) {
+                    // Update children
+                    await tx.syllabus.updateMany({
+                        where: { parentId: syllabusId },
+                        data: {
+                            status: 'COMPLETED',
+                            isCompleted: true,
+                            completedAt: new Date()
+                        }
+                    });
+
+                    // Find grandchildren (topics of chapters)
+                    const childrenIds = children.map(c => c.id);
+                    await tx.syllabus.updateMany({
+                        where: { parentId: { in: childrenIds } },
+                        data: {
+                            status: 'COMPLETED',
+                            isCompleted: true,
+                            completedAt: new Date()
+                        }
+                    });
+
+                    // Subtopics (children of topics) - optional if depth > 3
+                    // Could implement a more generic approach later if depth increases
+                }
             }
+
+            return updated;
         });
     }
 
