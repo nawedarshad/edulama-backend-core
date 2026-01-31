@@ -173,6 +173,7 @@ export class TeacherSubjectService {
                 learningOutcomes: dto.learningOutcomes,
                 estimatedHours: dto.estimatedHours,
                 status: dto.status ?? 'PLANNED',
+                type: dto.type ?? 'TOPIC',
                 isCompleted: dto.status === 'COMPLETED'
             }
         });

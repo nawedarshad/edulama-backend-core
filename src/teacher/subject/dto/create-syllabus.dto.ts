@@ -41,4 +41,9 @@ export class CreateSyllabusDto {
     @IsOptional()
     @IsEnum(['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'DEFERRED'])
     status?: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'DEFERRED';
+
+    @ApiPropertyOptional({ description: 'Type of syllabus item', enum: ['UNIT', 'CHAPTER', 'TOPIC', 'SUBTOPIC'] })
+    @IsOptional()
+    @IsEnum(['UNIT', 'CHAPTER', 'TOPIC', 'SUBTOPIC'])
+    type?: 'UNIT' | 'CHAPTER' | 'TOPIC' | 'SUBTOPIC';
 }

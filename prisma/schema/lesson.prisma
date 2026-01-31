@@ -6,6 +6,13 @@ enum SyllabusStatus {
   DEFERRED
 }
 
+enum SyllabusType {
+  UNIT
+  CHAPTER
+  TOPIC
+  SUBTOPIC
+}
+
 model ClassDiary {
   id Int @id @default(autoincrement())
 
@@ -75,6 +82,7 @@ model Syllabus {
   orderIndex Int       @default(0)
 
   title       String
+  type        SyllabusType   @default(TOPIC)
   description String?
   learningOutcomes String? // "Student will be able to..."
 
