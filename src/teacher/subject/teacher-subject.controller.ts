@@ -47,4 +47,29 @@ export class TeacherSubjectController {
     ) {
         return this.subjectService.updateSyllabusStatus(req.user.schoolId, req.user.id, id, syllabusId, body.isCompleted);
     }
+
+    @Patch(':id/syllabus/:syllabusId')
+    @ApiOperation({ summary: 'Update syllabus details' })
+    @ApiResponse({ status: 200, description: 'Syllabus updated successfully.' })
+    updateSyllabus(
+        @Request() req,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('syllabusId', ParseIntPipe) syllabusId: number,
+        @Body() dto: CreateSyllabusDto
+    ) {
+        return this.subjectService.updateSyllabus(req.user.schoolId, req.user.id, id, syllabusId, dto);
+    }
+
+    @Delete(':id/syllabus/:syllabusId') // Delete is a reserved word in JS but valid HTTP method
+    @Post(':id/syllabus/:syllabusId/delete') // Alternative if Delete method has issues in some proxies, but usually @Delete is fine in Nest
+    @ApiOperation({ summary: 'Delete a syllabus item' })
+    @ApiResponse({ status: 200, description: 'Syllabus deleted successfully.' })
+    deleteSyllabus(
+        @Request() req,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('syllabusId', ParseIntPipe) syllabusId: number
+    ) {
+        // NestJS explicitly uses @Delete for HTTP DELETE
+        return this.subjectService.deleteSyllabus(req.user.schoolId, req.user.id, id, syllabusId);
+    }
 }

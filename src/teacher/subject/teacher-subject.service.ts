@@ -230,4 +230,75 @@ export class TeacherSubjectService {
             }
         });
     }
+
+    // 5. Update Syllabus Details
+    async updateSyllabus(schoolId: number, userId: number, assignmentId: number, syllabusId: number, dto: CreateSyllabusDto) {
+        const teacher = await this.prisma.teacherProfile.findUnique({
+            where: { userId },
+            select: { id: true }
+        });
+        if (!teacher) throw new ForbiddenException('Teacher profile not found');
+
+        const assignment = await this.prisma.subjectAssignment.findFirst({
+            where: { id: assignmentId, schoolId, teacherId: teacher.id }
+        });
+        if (!assignment) throw new ForbiddenException('Assignment not accessible');
+
+        // Check existence and ownership of syllabus item
+        const existingSyllabus = await this.prisma.syllabus.findFirst({
+            where: {
+                id: syllabusId,
+                classId: assignment.classId,
+                subjectId: assignment.subjectId
+            }
+        });
+
+        if (!existingSyllabus) throw new NotFoundException('Syllabus item not found');
+
+        return this.prisma.syllabus.update({
+            where: { id: syllabusId },
+            data: {
+                title: dto.title,
+                description: dto.description,
+                attachments: dto.attachments ?? existingSyllabus.attachments,
+                parentId: dto.parentId,
+                orderIndex: dto.orderIndex,
+                learningOutcomes: dto.learningOutcomes,
+                estimatedHours: dto.estimatedHours,
+                status: dto.status,
+                type: dto.type,
+                isCompleted: dto.status === 'COMPLETED' ? true : (dto.status ? false : existingSyllabus.isCompleted)
+            }
+        });
+    }
+
+    // 6. Delete Syllabus
+    async deleteSyllabus(schoolId: number, userId: number, assignmentId: number, syllabusId: number) {
+        const teacher = await this.prisma.teacherProfile.findUnique({
+            where: { userId },
+            select: { id: true }
+        });
+        if (!teacher) throw new ForbiddenException('Teacher profile not found');
+
+        const assignment = await this.prisma.subjectAssignment.findFirst({
+            where: { id: assignmentId, schoolId, teacherId: teacher.id }
+        });
+        if (!assignment) throw new ForbiddenException('Assignment not accessible');
+
+        const existingSyllabus = await this.prisma.syllabus.findFirst({
+            where: {
+                id: syllabusId,
+                classId: assignment.classId,
+                subjectId: assignment.subjectId
+            }
+        });
+
+        if (!existingSyllabus) throw new NotFoundException('Syllabus item not found');
+
+        // Note: If syllabus has children, this might fail unless cascade delete is enabled in DB
+        // or we handle recursive delete. Assuming generic Prisma handling for now.
+        return this.prisma.syllabus.delete({
+            where: { id: syllabusId }
+        });
+    }
 }
