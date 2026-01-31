@@ -260,7 +260,7 @@ export class TeacherSubjectService {
             data: {
                 title: dto.title,
                 description: dto.description,
-                attachments: dto.attachments ?? existingSyllabus.attachments,
+                attachments: (dto.attachments ?? existingSyllabus.attachments) as any,
                 parentId: dto.parentId,
                 orderIndex: dto.orderIndex,
                 learningOutcomes: dto.learningOutcomes,
