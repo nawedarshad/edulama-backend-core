@@ -128,7 +128,13 @@ export class TeacherSubjectService {
         });
 
         return {
-            assignment,
+            assignment: {
+                assignmentId: assignment.id,
+                subject: assignment.subject,
+                class: assignment.class,
+                section: assignment.section,
+                periodsPerWeek: assignment.periodsPerWeek
+            },
             syllabi,
             recentDiaries: diaries,
             studentCount
