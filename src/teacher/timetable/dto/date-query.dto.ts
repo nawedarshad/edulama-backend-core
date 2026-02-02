@@ -1,19 +1,19 @@
-import { IsDateString, IsOptional } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 
 export class DateQueryDto {
-    @ApiPropertyOptional({ description: 'Date in YYYY-MM-DD format', example: '2024-03-20' })
+    @ApiPropertyOptional({ description: 'Specific date (YYYY-MM-DD)' })
     @IsOptional()
-    @IsDateString()
+    @IsString()
     date?: string;
 
-    @ApiPropertyOptional({ description: 'Start date in YYYY-MM-DD format', example: '2024-03-20' })
+    @ApiPropertyOptional({ description: 'Start date (YYYY-MM-DD)' })
     @IsOptional()
-    @IsDateString()
+    @IsString()
     startDate?: string;
 
-    @ApiPropertyOptional({ description: 'End date in YYYY-MM-DD format', example: '2024-03-26' })
+    @ApiPropertyOptional({ description: 'End date (YYYY-MM-DD)' })
     @IsOptional()
-    @IsDateString()
+    @IsString()
     endDate?: string;
 }

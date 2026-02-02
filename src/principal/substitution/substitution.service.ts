@@ -115,10 +115,22 @@ export class SubstitutionService {
         const absentTeachers = await this.getAbsentTeachers(schoolId, academicYearId, dateString);
         const absentTeacherIds = absentTeachers.map(t => t.teacherId);
         this.logger.log(`Found ${absentTeacherIds.length} absent teachers for date ${dateString}`);
+        this.logger.log(`[DEBUG] Absent Teacher IDs: ${absentTeacherIds.join(', ')}`);
 
         if (absentTeacherIds.length === 0) {
             return [];
         }
+
+        // DEBUG: Check count without status filter to see if entries exist at all
+        const allEntriesCount = await this.prisma.timetableEntry.count({
+            where: {
+                schoolId,
+                academicYearId,
+                teacherId: { in: absentTeacherIds },
+                day: dayOfWeek,
+            }
+        });
+        this.logger.log(`[DEBUG] Total timetable entries (ignoring status) for these teachers on ${dayOfWeek}: ${allEntriesCount}`);
 
         // Find timetable entries for these teachers on this day
         const entries = await this.prisma.timetableEntry.findMany({
