@@ -1,8 +1,0 @@
-Targeted Status Check (School 2)...
-Checking entries for School 2, Year 1, Day: TUESDAY
-Found 3 entries for TUESDAY.
-[17] Kashish: LOCKED
-[21] Nawed Arshad: LOCKED
-[23] Kashish: LOCKED
-Status Summary:
-{"LOCKED":3}
