@@ -139,7 +139,7 @@ export class SubstitutionService {
                 academicYearId,
                 teacherId: { in: absentTeacherIds },
                 day: dayOfWeek,
-                status: 'PUBLISHED',
+                status: { in: ['PUBLISHED', 'LOCKED'] },
             },
             include: {
                 period: true,
@@ -303,7 +303,7 @@ export class SubstitutionService {
                 academicYearId,
                 day: dayOfWeek,
                 periodId: periodId,
-                status: 'PUBLISHED',
+                status: { in: ['PUBLISHED', 'LOCKED'] },
             },
             select: { id: true, teacherId: true }
         });
