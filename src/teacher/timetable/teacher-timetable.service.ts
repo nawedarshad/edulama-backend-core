@@ -231,21 +231,8 @@ export class TeacherTimetableService {
             };
         });
 
-        // Add substitutions I'm doing
-        const substitutionEntries = substitutions.map(sub => ({
-            ...sub.entry,
-            id: `sub-${sub.id}`, // specific ID format for frontend differentiation
-            originalEntryId: sub.entry.id,
-            status: 'SUBSTITUTION_DUTY',
-            room: sub.substituteRoom || sub.entry.room, // Use substituted room if assigned
-            originalTeacher: sub.entry.teacher,
-            note: sub.note
-        }));
-
-        const result = [...finalSchedule, ...substitutionEntries];
-
         // Sort by time
-        return result.sort((a, b) => {
+        return finalSchedule.sort((a, b) => {
             const timeA = a.period?.startTime || '00:00';
             const timeB = b.period?.startTime || '00:00';
             return timeA.localeCompare(timeB);

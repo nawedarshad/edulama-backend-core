@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateClassDiaryDto } from './dto/create-class-diary.dto';
 import { UpdateClassDiaryDto } from './dto/update-class-diary.dto';
@@ -44,6 +44,33 @@ export class TeacherClassDiaryService {
     async create(schoolId: number, userId: number, academicYearId: number | undefined, dto: CreateClassDiaryDto) {
         const teacherId = await this.getTeacherIdFromUser(userId);
         const resolvedYearId = await this.resolveAcademicYearId(schoolId, academicYearId);
+
+        // Check for existing entry for this specific date
+        // Convert input date to start/end of day range or just check exact match if frontend sends uniform time
+        // Better: Check for "Same Day"
+        const diaryDate = new Date(dto.lessonDate);
+        const startOfDay = new Date(diaryDate); startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(diaryDate); endOfDay.setHours(23, 59, 59, 999);
+
+        const existing = await this.prisma.classDiary.findFirst({
+            where: {
+                schoolId,
+                teacherId,
+                academicYearId: resolvedYearId,
+                classId: dto.classId,
+                subjectId: dto.subjectId,
+                lessonDate: {
+                    gte: startOfDay,
+                    lte: endOfDay
+                }
+            }
+        });
+
+        if (existing) {
+            // Instead of error, we could return it or just block. 
+            // User requirement says "one dairy per day".
+            throw new BadRequestException('A diary entry for this date already exists.');
+        }
 
         return this.prisma.classDiary.create({
             data: {
