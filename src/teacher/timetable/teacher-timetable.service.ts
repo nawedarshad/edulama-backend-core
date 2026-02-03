@@ -95,6 +95,35 @@ export class TeacherTimetableService {
         const endOfDay = new Date(dateObj);
         endOfDay.setUTCHours(23, 59, 59, 999);
 
+        // 0. Fetch ALL Periods for this day
+        const allPeriods = await this.prisma.timePeriod.findMany({
+            where: {
+                schoolId,
+                academicYearId: resolvedYearId,
+                days: { has: dayOfWeek }
+            },
+            orderBy: { startTime: 'asc' }
+        });
+
+        // 0.5 Fetch Assignments for ID mapping
+        const assignments = await this.prisma.subjectAssignment.findMany({
+            where: {
+                schoolId,
+                teacherId,
+                isActive: true,
+                academicYearId: resolvedYearId
+            },
+            select: { id: true, classId: true, sectionId: true, subjectId: true }
+        });
+
+        const getAssignmentId = (classId: number, sectionId: number, subjectId: number) => {
+            return assignments.find(a =>
+                a.classId === classId &&
+                a.sectionId === sectionId &&
+                a.subjectId === subjectId
+            )?.id;
+        };
+
         // 1. Get Regular Schedule
         const regularEntries = await this.prisma.timetableEntry.findMany({
             where: {
@@ -110,7 +139,6 @@ export class TeacherTimetableService {
                 period: true,
                 room: { select: { id: true, name: true } },
             },
-            orderBy: { period: { startTime: 'asc' } }
         });
 
         // 2. Get Overrides (Cancellations or Substitutions affecting this teacher's regular classes)
@@ -122,7 +150,7 @@ export class TeacherTimetableService {
                     gte: startOfDay,
                     lte: endOfDay
                 },
-                entry: { teacherId }, // Overrides on entries where I am the original teacher
+                entry: { teacherId },
             },
             include: {
                 substituteTeacher: { select: { id: true, user: { select: { name: true } } } }
@@ -148,25 +176,59 @@ export class TeacherTimetableService {
                         subject: { select: { id: true, name: true, code: true, color: true } },
                         period: true,
                         room: { select: { id: true, name: true } },
-                        teacher: { select: { id: true, user: { select: { name: true } } } } // Original teacher
+                        teacher: { select: { id: true, user: { select: { name: true } } } }
                     }
                 },
                 substituteRoom: { select: { id: true, name: true } }
             }
         });
 
-        // 4. Merge Data
-        const finalSchedule = regularEntries.map(entry => {
-            const override = myOverrides.find(o => o.entryId === entry.id);
-            if (override) {
+        // 4. Construct Final Schedule (Map over ALL periods to include FREE slots)
+        const finalSchedule = allPeriods.map(period => {
+            // Check for substitutions I'm doing in this period
+            const substitutionDuty = substitutions.find(sub => sub.entry.periodId === period.id);
+            if (substitutionDuty) {
                 return {
-                    ...entry,
-                    status: override.type === TimetableOverrideType.CANCELLED ? 'CANCELLED' : 'SUBSTITUTED',
-                    overrideNote: override.note,
-                    substituteTeacher: override.substituteTeacher
+                    ...substitutionDuty.entry,
+                    id: `sub-${substitutionDuty.id}`,
+                    originalEntryId: substitutionDuty.entry.id,
+                    status: 'SUBSTITUTION_DUTY',
+                    room: substitutionDuty.substituteRoom || substitutionDuty.entry.room,
+                    originalTeacher: substitutionDuty.entry.teacher,
+                    note: substitutionDuty.note,
+                    period: period,
+                    assignmentId: getAssignmentId(substitutionDuty.entry.classId, substitutionDuty.entry.sectionId, substitutionDuty.entry.subjectId)
                 };
             }
-            return { ...entry, status: 'REGULAR' };
+
+            // Check for regular class
+            const regularEntry = regularEntries.find(e => e.periodId === period.id);
+            if (regularEntry) {
+                const override = myOverrides.find(o => o.entryId === regularEntry.id);
+                const assignmentId = getAssignmentId(regularEntry.classId, regularEntry.sectionId, regularEntry.subjectId);
+
+                if (override) {
+                    return {
+                        ...regularEntry,
+                        status: override.type === TimetableOverrideType.CANCELLED ? 'CANCELLED' : 'SUBSTITUTED',
+                        overrideNote: override.note,
+                        substituteTeacher: override.substituteTeacher,
+                        assignmentId
+                    };
+                }
+                return { ...regularEntry, status: 'REGULAR', assignmentId };
+            }
+
+            // No class = Free Period
+            return {
+                id: `free-${period.id}`,
+                status: 'FREE',
+                period: period,
+                subject: null,
+                class: null,
+                section: null,
+                room: null
+            };
         });
 
         // Add substitutions I'm doing
