@@ -176,9 +176,10 @@ export class DashboardService {
             select: { id: true }
         });
 
+        const mySectionIds = mySections.map(s => s.id);
+
         let pendingLeaveRequests = 0;
         if (mySections.length > 0) {
-            const mySectionIds = mySections.map(s => s.id);
             pendingLeaveRequests = await this.prisma.leaveRequest.count({
                 where: {
                     schoolId,
@@ -192,7 +193,6 @@ export class DashboardService {
         // J. Critical Alert: Recent Discipline Reports (Last 48 hours)
         let recentDisciplineCount = 0;
         if (mySections.length > 0) {
-            const mySectionIds = mySections.map(s => s.id);
             const fortyEightHoursAgo = new Date();
             fortyEightHoursAgo.setHours(fortyEightHoursAgo.getHours() - 48);
 
@@ -207,13 +207,15 @@ export class DashboardService {
         }
 
         // K. Syllabus Progress Tracker
-        const syllabusProgress: {
+        interface SyllabusItem {
+            key?: string;
             subject: string;
             percentage: number;
             total: number;
             completed: number;
             nextTopic: { title: string; parent: string | null } | null;
-        }[] = [];
+        }
+        const syllabusProgress: SyllabusItem[] = [];
         // Unique Class-Subjects to avoid double counting if schema is shared
         const uniqueSubjects = new Map<string, { classId: number; subjectId: number; name: string }>();
 
@@ -274,7 +276,9 @@ export class DashboardService {
 
                 const percentage = Math.round((completed / total) * 100);
 
+
                 syllabusProgress.push({
+                    key: `${item.classId}-${item.subjectId}`, // Add key for sorting
                     subject: item.name,
                     percentage,
                     total,
@@ -286,6 +290,34 @@ export class DashboardService {
                 });
             }
         }
+
+        // Calculate sort order based on timeline
+        const todayOrder = new Map<string, number>();
+        timelineEntries.forEach((entry, index) => {
+            if (entry.classId && entry.subjectId) {
+                const key = `${entry.classId}-${entry.subjectId}`;
+                if (!todayOrder.has(key)) {
+                    todayOrder.set(key, index);
+                }
+            }
+        });
+
+        const sortedSyllabus = syllabusProgress.sort((a, b) => {
+            const indexA = todayOrder.get(a.key);
+            const indexB = todayOrder.get(b.key);
+
+            // 1. Both in today's schedule: Sort by earliest period
+            if (indexA !== undefined && indexB !== undefined) return indexA - indexB;
+
+            // 2. Only A is today: A comes first
+            if (indexA !== undefined) return -1;
+
+            // 3. Only B is today: B comes first
+            if (indexB !== undefined) return 1;
+
+            // 4. Neither today: Sort by percentage (Lowest completed first - "Needs Attention")
+            return a.percentage - b.percentage;
+        }).map(({ key, ...rest }) => rest); // Remove key from final output
 
         return {
             subjects: subjectsCount,
@@ -323,10 +355,92 @@ export class DashboardService {
                 pendingLeaves: pendingLeaveRequests,
                 discipline: recentDisciplineCount
             },
-            syllabus: syllabusProgress.sort((a, b) => a.percentage - b.percentage)
+            syllabus: sortedSyllabus,
+            birthdays: await this.getBirthdays(schoolId, academicYearId, mySectionIds),
+            atRisk: await this.getAtRiskStudents(schoolId, academicYearId, mySectionIds)
         };
+    }
 
+    // New Helper: Get Birthdays
+    private async getBirthdays(schoolId: number, academicYearId: number, sectionIds: number[]) {
+        if (sectionIds.length === 0) return [];
 
+        const today = new Date();
+        const currentMonth = today.getMonth() + 1; // JS months are 0-indexed
+        const currentDate = today.getDate();
+
+        // Prisma doesn't support date extraction natively cleanly w/o Raw, 
+        // but fetching basic profile for section students is efficient enough.
+        const students = await this.prisma.studentProfile.findMany({
+            where: {
+                schoolId,
+                academicYearId,
+                sectionId: { in: sectionIds },
+                isActive: true
+            },
+            select: {
+                id: true,
+                fullName: true,
+                dob: true,
+                photo: true,
+                class: { select: { name: true } },
+                section: { select: { name: true } }
+            }
+        });
+
+        return students.filter(s => {
+            if (!s.dob) return false;
+            const d = new Date(s.dob);
+            return d.getMonth() + 1 === currentMonth && d.getDate() === currentDate;
+        }).map(s => ({
+            id: s.id,
+            name: s.fullName,
+            class: `${s.class.name}-${s.section.name}`,
+            photo: s.photo
+        }));
+    }
+
+    // New Helper: Get At-Risk Students (< 75% Attendance)
+    private async getAtRiskStudents(schoolId: number, academicYearId: number, sectionIds: number[]) {
+        if (sectionIds.length === 0) return [];
+
+        // Aggregation for Daily Attendance
+        const summaries = await this.prisma.attendanceSummary.groupBy({
+            by: ['studentId'],
+            where: {
+                schoolId,
+                academicYearId,
+                subjectId: null, // Daily Attendance
+                sectionId: { in: sectionIds }
+            },
+            _sum: {
+                present: true,
+                totalDays: true
+            }
+        });
+
+        const atRiskIds = summaries
+            .filter(s => {
+                const total = s._sum?.totalDays || 0;
+                const present = s._sum?.present || 0;
+                return total > 0 && (present / total) < 0.75;
+            })
+            .map(s => s.studentId);
+
+        if (atRiskIds.length === 0) return [];
+
+        return this.prisma.studentProfile.findMany({
+            where: { id: { in: atRiskIds } },
+            select: {
+                id: true,
+                fullName: true,
+                photo: true,
+                rollNo: true,
+                class: { select: { name: true } },
+                section: { select: { name: true } }
+            },
+            take: 5 // Limit to top 5 critical cases
+        });
     }
 
     private getCurrentTimeHash(): string {
