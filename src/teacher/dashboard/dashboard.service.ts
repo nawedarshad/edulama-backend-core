@@ -189,6 +189,77 @@ export class DashboardService {
             });
         }
 
+        // J. Critical Alert: Recent Discipline Reports (Last 48 hours)
+        let recentDisciplineCount = 0;
+        if (mySections.length > 0) {
+            const mySectionIds = mySections.map(s => s.id);
+            const fortyEightHoursAgo = new Date();
+            fortyEightHoursAgo.setHours(fortyEightHoursAgo.getHours() - 48);
+
+            recentDisciplineCount = await this.prisma.incidentReport.count({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    createdAt: { gte: fortyEightHoursAgo },
+                    student: { sectionId: { in: mySectionIds } }
+                }
+            });
+        }
+
+        // K. Syllabus Progress Tracker
+        const syllabusProgress = [];
+        // Unique Class-Subjects to avoid double counting if schema is shared
+        const uniqueSubjects = new Map<string, { classId: number; subjectId: number; name: string }>();
+
+        // Need names for display, fetch details
+        const assignmentsWithDetails = await this.prisma.classSubject.findMany({
+            where: { id: { in: Array.from(assignmentMap.values()) } },
+            include: { subject: true, class: true, section: true }
+        });
+
+        for (const assign of assignmentsWithDetails) {
+            const key = `${assign.classId}-${assign.subjectId}`;
+            if (!uniqueSubjects.has(key)) {
+                uniqueSubjects.set(key, {
+                    classId: assign.classId,
+                    subjectId: assign.subjectId,
+                    name: `${assign.subject.name} (${assign.class.name})`
+                });
+            }
+        }
+
+        for (const item of uniqueSubjects.values()) {
+            const total = await this.prisma.syllabus.count({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    classId: item.classId,
+                    subjectId: item.subjectId,
+                    type: 'TOPIC'
+                }
+            });
+
+            if (total > 0) {
+                const completed = await this.prisma.syllabus.count({
+                    where: {
+                        schoolId,
+                        academicYearId,
+                        classId: item.classId,
+                        subjectId: item.subjectId,
+                        type: 'TOPIC',
+                        status: 'COMPLETED'
+                    }
+                });
+                const percentage = Math.round((completed / total) * 100);
+                syllabusProgress.push({
+                    subject: item.name,
+                    percentage,
+                    total,
+                    completed
+                });
+            }
+        }
+
         return {
             subjects: subjectsCount,
             students: studentsCount,
@@ -222,8 +293,10 @@ export class DashboardService {
             })),
             alerts: {
                 unmarkedAttendance: unmarkedAttendanceCount,
-                pendingLeaves: pendingLeaveRequests
-            }
+                pendingLeaves: pendingLeaveRequests,
+                discipline: recentDisciplineCount
+            },
+            syllabus: syllabusProgress.sort((a, b) => a.percentage - b.percentage)
         };
 
 
