@@ -131,6 +131,25 @@ export class DashboardService {
             }
         });
 
+        // G. Get My Assignments for linking (Optimization: Fetch once)
+        const myAssignments = await this.prisma.classSubject.findMany({
+            where: {
+                schoolId,
+                academicYearId,
+                teacherProfileId: teacher.id
+            },
+            select: { id: true, classId: true, sectionId: true, subjectId: true }
+        });
+
+        const assignmentMap = new Map<string, number>();
+        myAssignments.forEach(a => {
+            assignmentMap.set(`${a.classId}-${a.sectionId}-${a.subjectId}`, a.id);
+        });
+
+        // Helper to find assignment ID
+        const getAssignmentId = (cId: number, sId: number, subId: number) =>
+            assignmentMap.get(`${cId}-${sId}-${subId}`) || null;
+
         return {
             subjects: subjectsCount,
             students: studentsCount,
@@ -148,7 +167,11 @@ export class DashboardService {
                 className: entry.class?.name ? `${entry.class.name}-${entry.section.name}` : 'N/A',
                 subject: entry.subject?.name || 'Free / Activity',
                 room: entry.room?.name || 'N/A',
-                type: entry.period.type
+                type: entry.period.type,
+                // Add Assignment ID for navigation
+                assignmentId: entry.classId && entry.sectionId && entry.subjectId
+                    ? getAssignmentId(entry.classId, entry.sectionId, entry.subjectId)
+                    : null
             })),
             substitutions: substitutions.map(sub => ({
                 id: sub.id,
@@ -156,7 +179,9 @@ export class DashboardService {
                 subject: sub.entry.subject.name,
                 period: sub.entry.period.name,
                 time: `${sub.entry.period.startTime} - ${sub.entry.period.endTime}`,
-                note: sub.note
+                note: sub.note,
+                // Substitutions usually don't have a direct assignment, but check anyway
+                assignmentId: null
             }))
         };
     }
