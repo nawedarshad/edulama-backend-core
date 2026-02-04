@@ -367,6 +367,40 @@ export class TeacherAttendanceService {
         return count > 0;
     }
 
+    async getSelfAttendance(schoolId: number, userId: number, month: number, year: number) {
+        const teacherProfile = await this.prisma.teacherProfile.findUnique({
+            where: { userId },
+            select: { id: true }
+        });
+
+        if (!teacherProfile) {
+            return [];
+        }
+
+        const startDate = new Date(year, month - 1, 1);
+        const endDate = new Date(year, month, 0);
+        endDate.setUTCHours(23, 59, 59, 999);
+
+        return this.prisma.staffAttendance.findMany({
+            where: {
+                schoolId,
+                teacherId: teacherProfile.id,
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            },
+            select: {
+                date: true,
+                status: true,
+                checkInTime: true,
+                checkOutTime: true,
+                isLate: true
+            },
+            orderBy: { date: 'asc' }
+        });
+    }
+
     private getDayOfWeek(date: Date): DayOfWeek {
         const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
         return days[date.getDay()] as DayOfWeek;

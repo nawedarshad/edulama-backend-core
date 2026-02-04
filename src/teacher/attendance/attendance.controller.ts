@@ -53,4 +53,21 @@ export class TeacherAttendanceController {
             periodId ? parseInt(periodId) : undefined,
         );
     }
+
+    @ApiOperation({ summary: 'Get Self Attendance', description: 'Get logged in teachers own attendance for a month.' })
+    @Get('self')
+    getSelfAttendance(
+        @Request() req,
+        @Query('month') month: string,
+        @Query('year') year: string,
+    ) {
+        const schoolId = req.user.schoolId;
+        const userId = req.user.id;
+        return this.attendanceService.getSelfAttendance(
+            schoolId,
+            userId,
+            parseInt(month),
+            parseInt(year)
+        );
+    }
 }

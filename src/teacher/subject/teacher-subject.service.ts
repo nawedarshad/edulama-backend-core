@@ -55,12 +55,54 @@ export class TeacherSubjectService {
             ]
         });
 
-        return assignments.map(a => ({
-            assignmentId: a.id,
-            subject: a.subject,
-            class: a.class,
-            section: a.section,
-            periodsPerWeek: a.periodsPerWeek
+        return Promise.all(assignments.map(async (a) => {
+            const studentCount = await this.prisma.studentProfile.count({
+                where: {
+                    schoolId,
+                    classId: a.classId,
+                    sectionId: a.sectionId!, // Assuming section is always present for assignments
+                    isActive: true
+                }
+            });
+
+            // Calculate Syllabus Progress
+            // We count all 'TOPIC' type items or leaf nodes. 
+            // For simplicity, we'll count all items where type is 'TOPIC' or null (legacy)
+            // and check completion status.
+            const totalTopics = await this.prisma.syllabus.count({
+                where: {
+                    schoolId,
+                    classId: a.classId,
+                    subjectId: a.subjectId,
+                    academicYearId: a.academicYearId,
+                    type: 'TOPIC'
+                }
+            });
+
+            const completedTopics = await this.prisma.syllabus.count({
+                where: {
+                    schoolId,
+                    classId: a.classId,
+                    subjectId: a.subjectId,
+                    academicYearId: a.academicYearId,
+                    type: 'TOPIC',
+                    isCompleted: true
+                }
+            });
+
+            return {
+                assignmentId: a.id,
+                subject: a.subject,
+                class: a.class,
+                section: a.section,
+                periodsPerWeek: a.periodsPerWeek,
+                studentCount,
+                syllabusProgress: {
+                    total: totalTopics,
+                    completed: completedTopics,
+                    percentage: totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0
+                }
+            };
         }));
     }
 
