@@ -150,6 +150,45 @@ export class DashboardService {
         const getAssignmentId = (cId: number, sId: number, subId: number) =>
             assignmentMap.get(`${cId}-${sId}-${subId}`) || null;
 
+        // H. Critical Alert: Unmarked Attendance
+        let unmarkedAttendanceCount = 0;
+        const currentHash = this.getCurrentTimeHash();
+
+        for (const entry of timelineEntries) {
+            if (entry.period.startTime <= currentHash && entry.period.type === 'TEACHING') {
+                const sessionExists = await this.prisma.attendanceSession.count({
+                    where: {
+                        schoolId,
+                        academicYearId,
+                        classId: entry.classId,
+                        sectionId: entry.sectionId,
+                        subjectId: entry.subjectId,
+                        date: { gte: startOfDay, lte: endOfDay }
+                    }
+                });
+                if (sessionExists === 0) unmarkedAttendanceCount++;
+            }
+        }
+
+        // I. Pending Actions: Leave Requests
+        const mySections = await this.prisma.section.findMany({
+            where: { classTeacher: { teacherId: teacher.id } },
+            select: { id: true }
+        });
+
+        let pendingLeaveRequests = 0;
+        if (mySections.length > 0) {
+            const mySectionIds = mySections.map(s => s.id);
+            pendingLeaveRequests = await this.prisma.leaveRequest.count({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    status: 'PENDING',
+                    applicant: { studentProfile: { sectionId: { in: mySectionIds } } }
+                }
+            });
+        }
+
         return {
             subjects: subjectsCount,
             students: studentsCount,
@@ -168,7 +207,6 @@ export class DashboardService {
                 subject: entry.subject?.name || 'Free / Activity',
                 room: entry.room?.name || 'N/A',
                 type: entry.period.type,
-                // Add Assignment ID for navigation
                 assignmentId: entry.classId && entry.sectionId && entry.subjectId
                     ? getAssignmentId(entry.classId, entry.sectionId, entry.subjectId)
                     : null
@@ -180,10 +218,15 @@ export class DashboardService {
                 period: sub.entry.period.name,
                 time: `${sub.entry.period.startTime} - ${sub.entry.period.endTime}`,
                 note: sub.note,
-                // Substitutions usually don't have a direct assignment, but check anyway
                 assignmentId: null
-            }))
+            })),
+            alerts: {
+                unmarkedAttendance: unmarkedAttendanceCount,
+                pendingLeaves: pendingLeaveRequests
+            }
         };
+
+
     }
 
     private getCurrentTimeHash(): string {
