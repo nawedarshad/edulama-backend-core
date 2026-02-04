@@ -229,6 +229,7 @@ export class DashboardService {
         }
 
         for (const item of uniqueSubjects.values()) {
+            // 1. Calculations
             const total = await this.prisma.syllabus.count({
                 where: {
                     schoolId,
@@ -250,12 +251,32 @@ export class DashboardService {
                         status: 'COMPLETED'
                     }
                 });
+
+                // 2. Get Next Topic (What to teach today/next)
+                const nextTopic = await this.prisma.syllabus.findFirst({
+                    where: {
+                        schoolId,
+                        academicYearId,
+                        classId: item.classId,
+                        subjectId: item.subjectId,
+                        type: 'TOPIC',
+                        status: { not: 'COMPLETED' } // Pending or In Progress
+                    },
+                    orderBy: { orderIndex: 'asc' },
+                    include: { parent: true } // Get Unit/Chapter info
+                });
+
                 const percentage = Math.round((completed / total) * 100);
+
                 syllabusProgress.push({
                     subject: item.name,
                     percentage,
                     total,
-                    completed
+                    completed,
+                    nextTopic: nextTopic ? {
+                        title: nextTopic.title,
+                        parent: nextTopic.parent ? nextTopic.parent.title : null
+                    } : null
                 });
             }
         }
