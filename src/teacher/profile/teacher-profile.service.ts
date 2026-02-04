@@ -15,6 +15,7 @@ export class TeacherProfileService {
                         name: true,
                         photo: true,
                         role: true,
+                        departmentHeadOf: true,
                     }
                 },
                 personalInfo: true,
