@@ -70,4 +70,17 @@ export class TeacherAttendanceController {
             parseInt(year)
         );
     }
+    @Get('weekly')
+    getWeeklyClassAttendance(
+        @Request() req,
+        @Query('classId') classId: string,
+        @Query('sectionId') sectionId: string,
+    ) {
+        const schoolId = req.user.schoolId;
+        return this.attendanceService.getWeeklyClassAttendance(
+            schoolId,
+            parseInt(classId),
+            parseInt(sectionId)
+        );
+    }
 }

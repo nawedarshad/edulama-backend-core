@@ -401,6 +401,79 @@ export class TeacherAttendanceService {
         });
     }
 
+    async getWeeklyClassAttendance(schoolId: number, classId: number, sectionId: number) {
+        const result: { date: string, percentage: number }[] = [];
+        const today = new Date();
+
+        // Loop for last 7 days including today
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date(today);
+            d.setDate(today.getDate() - i);
+
+            // Skip Sunday
+            if (d.getDay() === 0) continue;
+
+            const startOfDay = new Date(d); startOfDay.setUTCHours(0, 0, 0, 0);
+            const endOfDay = new Date(d); endOfDay.setUTCHours(23, 59, 59, 999);
+
+            // Get session for this day
+            // Only consider DAILY attendance or just take the first session found if multiple?
+            // Usually for stats, we care about overall presence. 
+            // If PERIOD_WISE, it's harder. Let's assume DAILY or take average of periods?
+            // For MVP, lets try to find a session that represents "Daily" attendance or generally any session.
+            const sessions = await this.prisma.attendanceSession.findMany({
+                where: {
+                    schoolId,
+                    classId,
+                    sectionId,
+                    date: { gte: startOfDay, lte: endOfDay }
+                },
+                include: {
+                    attendances: {
+                        select: { status: true }
+                    }
+                }
+            });
+
+            if (sessions.length > 0) {
+                // Aggregate all sessions (if multiple periods, this might handle it roughly)
+                // Better strategy: Unique students present at least once? 
+                // Or just average of session percentages?
+                // Let's go with: Average percentage of all sessions found for that day.
+
+                let totalPercentage = 0;
+
+                sessions.forEach(session => {
+                    const total = session.attendances.length;
+                    if (total > 0) {
+                        const present = session.attendances.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
+                        totalPercentage += (present / total) * 100;
+                    }
+                });
+
+                const avgPercentage = Math.round(totalPercentage / sessions.length);
+
+                result.push({
+                    date: d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
+                    percentage: avgPercentage
+                });
+            } else {
+                // No session explicitly recorded? 
+                // Maybe show 0? Or maybe skip?
+                // If it's a working day but no attendance taken, it effectively is 0 data.
+                // But for chart continuity, 0 might look wrong if it was just a holiday.
+                // Let's assume if no session, we skip it (unless we want to enforce showing data failure).
+                // Let's push 0 for now to indicate "No Data/Attendance Not Taken"
+                result.push({
+                    date: d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
+                    percentage: 0
+                });
+            }
+        }
+
+        return result;
+    }
+
     private getDayOfWeek(date: Date): DayOfWeek {
         const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
         return days[date.getDay()] as DayOfWeek;
