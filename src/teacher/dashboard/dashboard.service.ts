@@ -13,15 +13,14 @@ export class DashboardService {
             select: { id: true, schoolId: true }
         });
 
-        if (!teacher) return { subjects: 0, students: 0, todayLectures: 0 };
+        if (!teacher) return { subjects: 0, students: 0, todayLectures: 0, timeline: [], substitutions: [] };
 
         // 2. Get Current Academic Year (Assuming active year)
-        // ideally passed or fetched from school config, simpler here:
         const academicYear = await this.prisma.academicYear.findFirst({
             where: { schoolId, status: 'ACTIVE' }
         });
 
-        if (!academicYear) return { subjects: 0, students: 0, todayLectures: 0 };
+        if (!academicYear) return { subjects: 0, students: 0, todayLectures: 0, timeline: [], substitutions: [] };
 
         const academicYearId = academicYear.id;
 
@@ -37,7 +36,6 @@ export class DashboardService {
         });
 
         // B. Total Students (Active students in sections I teach at least one subject to)
-        // This avoids double counting if I teach Math and Science to 9A.
         const studentsCount = await this.prisma.studentProfile.count({
             where: {
                 schoolId,
@@ -45,9 +43,7 @@ export class DashboardService {
                 isActive: true,
                 section: {
                     OR: [
-                        // Case 1: I am the Class Teacher (Section Teacher)
                         { classTeacher: { teacherId: teacher.id } },
-                        // Case 2: I teach a subject in this section
                         { ClassSubject: { some: { teacherProfileId: teacher.id } } }
                     ]
                 }
@@ -65,11 +61,7 @@ export class DashboardService {
                 academicYearId,
                 teacherId: teacher.id,
                 day: currentDayEnum,
-                period: {
-                    // Filter for teaching periods if necessary, 
-                    // generally all entries in timetable for a teacher are relevant
-                    type: 'TEACHING'
-                }
+                period: { type: 'TEACHING' }
             }
         });
 
@@ -95,6 +87,50 @@ export class DashboardService {
             }
         });
 
+        // E. Timeline (Full Schedule for Today)
+        const timelineEntries = await this.prisma.timetableEntry.findMany({
+            where: {
+                schoolId,
+                academicYearId,
+                teacherId: teacher.id,
+                day: currentDayEnum
+            },
+            orderBy: { period: { startTime: 'asc' } },
+            include: {
+                class: { select: { name: true } },
+                section: { select: { name: true } },
+                subject: { select: { name: true, code: true } },
+                period: { select: { id: true, name: true, startTime: true, endTime: true, type: true } },
+                room: { select: { name: true } }
+            }
+        });
+
+        // F. Substitutions (Where I am the substitute teacher today)
+        const startOfDay = new Date(today.setHours(0, 0, 0, 0));
+        const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+
+        const substitutions = await this.prisma.timetableOverride.findMany({
+            where: {
+                schoolId,
+                academicYearId,
+                substituteTeacherId: teacher.id,
+                date: {
+                    gte: startOfDay,
+                    lte: endOfDay
+                }
+            },
+            include: {
+                entry: {
+                    include: {
+                        class: { select: { name: true } },
+                        section: { select: { name: true } },
+                        subject: { select: { name: true } },
+                        period: { select: { name: true, startTime: true, endTime: true } }
+                    }
+                }
+            }
+        });
+
         return {
             subjects: subjectsCount,
             students: studentsCount,
@@ -103,7 +139,25 @@ export class DashboardService {
                 className: `${nextClass.class.name}-${nextClass.section.name}`,
                 subject: nextClass.subject.name,
                 time: `${nextClass.period.startTime} - ${nextClass.period.endTime}`
-            } : null
+            } : null,
+            timeline: timelineEntries.map(entry => ({
+                id: entry.id,
+                periodName: entry.period.name,
+                startTime: entry.period.startTime,
+                endTime: entry.period.endTime,
+                className: entry.class?.name ? `${entry.class.name}-${entry.section.name}` : 'N/A',
+                subject: entry.subject?.name || 'Free / Activity',
+                room: entry.room?.name || 'N/A',
+                type: entry.period.type
+            })),
+            substitutions: substitutions.map(sub => ({
+                id: sub.id,
+                className: `${sub.entry.class.name}-${sub.entry.section.name}`,
+                subject: sub.entry.subject.name,
+                period: sub.entry.period.name,
+                time: `${sub.entry.period.startTime} - ${sub.entry.period.endTime}`,
+                note: sub.note
+            }))
         };
     }
 
