@@ -303,8 +303,8 @@ export class DashboardService {
         });
 
         const sortedSyllabus = syllabusProgress.sort((a, b) => {
-            const indexA = todayOrder.get(a.key);
-            const indexB = todayOrder.get(b.key);
+            const indexA = a.key ? todayOrder.get(a.key) : undefined;
+            const indexB = b.key ? todayOrder.get(b.key) : undefined;
 
             // 1. Both in today's schedule: Sort by earliest period
             if (indexA !== undefined && indexB !== undefined) return indexA - indexB;
