@@ -1,11 +1,11 @@
 import { Controller, Get, Request, UseGuards } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
-import { PrincipalTeacherGuard } from '../../common/guards/principal-teacher.guard';
+import { PrincipalOrTeacherGuard } from '../../common/guards/principal-teacher.guard';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Teacher Dashboard')
 @Controller('teacher/dashboard')
-@UseGuards(PrincipalTeacherGuard)
+@UseGuards(PrincipalOrTeacherGuard)
 export class DashboardController {
     constructor(private readonly dashboardService: DashboardService) { }
 
