@@ -207,7 +207,7 @@ export class DashboardService {
         }
 
         // K. Syllabus Progress Tracker
-        const syllabusProgress = [];
+        const syllabusProgress: { subject: string; percentage: number; total: number; completed: number }[] = [];
         // Unique Class-Subjects to avoid double counting if schema is shared
         const uniqueSubjects = new Map<string, { classId: number; subjectId: number; name: string }>();
 
