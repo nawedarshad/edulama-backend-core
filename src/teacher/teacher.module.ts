@@ -16,6 +16,8 @@ import { ConfigModule } from '@nestjs/config';
 import { TeacherAnnouncementModule } from './announcement/teacher-announcement.module';
 import { TeacherProfileModule } from './profile/teacher-profile.module';
 
+import { DashboardModule } from './dashboard/dashboard.module';
+
 @Module({
     imports: [
         TeacherStudentModule,
@@ -33,6 +35,7 @@ import { TeacherProfileModule } from './profile/teacher-profile.module';
         ConfigModule,
         TeacherAnnouncementModule,
         TeacherProfileModule,
+        DashboardModule,
     ],
     controllers: [TeacherCalendarController],
 })
