@@ -135,6 +135,11 @@ export class PrincipalAnnouncementService {
         const payload = {
             targetUserIds: Array.from(targetUserIds),
             targetRoleIds: Array.from(targetRoleIds),
+            announcementId: announcement.id,
+            isEmergency: announcement.isEmergency,
+            priority: announcement.priority,
+            voiceAudioUrl: announcement.voiceAudioUrl,
+            voiceDuration: announcement.voiceDuration,
         };
 
         // 2. Send Standard Notification
