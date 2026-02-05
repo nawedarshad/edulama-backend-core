@@ -27,4 +27,7 @@ export class CreateNotificationDto {
     @IsInt({ each: true })
     @IsOptional()
     targetRoleIds?: number[];
+
+    @IsOptional()
+    data?: Record<string, any>;
 }

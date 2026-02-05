@@ -69,7 +69,15 @@ export class NotificationService {
 
                 // Send Push
                 if (pushTokens.length > 0) {
-                    this.sendPushNotifications(pushTokens.map(p => p.token), dto.title, dto.message, { notificationId: notification.id });
+                    this.sendPushNotifications(
+                        pushTokens.map(p => p.token),
+                        dto.title,
+                        dto.message,
+                        {
+                            notificationId: notification.id,
+                            ...(dto.data || {}) // Merge custom data
+                        }
+                    );
                 }
             }
         }
@@ -116,7 +124,15 @@ export class NotificationService {
 
                     // Send Push
                     if (pushTokens.length > 0) {
-                        this.sendPushNotifications(pushTokens, dto.title, dto.message, { notificationId: notification.id });
+                        this.sendPushNotifications(
+                            pushTokens,
+                            dto.title,
+                            dto.message,
+                            {
+                                notificationId: notification.id,
+                                ...(dto.data || {}) // Merge custom data
+                            }
+                        );
                     }
                 }
             }

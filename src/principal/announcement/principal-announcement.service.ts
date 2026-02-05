@@ -147,7 +147,7 @@ export class PrincipalAnnouncementService {
             title: 'New Announcement',
             message: announcement.title,
             type: NotificationType.ANNOUNCEMENT,
-            ...payload
+            data: payload // Pass payload in 'data' field
         });
 
         // 3. Send Emergency Alert if applicable
@@ -156,7 +156,7 @@ export class PrincipalAnnouncementService {
                 title: announcement.isEmergency ? 'EMERGENCY ALERT' : 'URGENT ANNOUNCEMENT',
                 message: `${announcement.isEmergency ? 'URGENT' : 'Attention'}: ${announcement.title}`,
                 type: NotificationType.ALERT,
-                ...payload
+                data: payload // Pass payload in 'data' field
             });
         }
     }
