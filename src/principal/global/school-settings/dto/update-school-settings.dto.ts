@@ -181,4 +181,8 @@ export class UpdateSchoolSettingsDto {
     @Min(1)
     @IsOptional()
     maxConsecutiveSameSubject?: number;
+
+    @ApiPropertyOptional({ description: 'Landing page configuration object', example: { hero: { title: 'Welcome' } } })
+    @IsOptional()
+    landingPageConfig?: any;
 }

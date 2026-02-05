@@ -64,10 +64,12 @@ model SchoolSettings {
   schoolId Int @unique
 
   // Branding
-  motto              String?
-  backgroundImageUrl String?
-  logoUrl            String?
-  faviconUrl         String?
+  motto               String?
+  backgroundImageUrl  String?
+  logoUrl             String?
+  faviconUrl          String?
+  landingPageTemplate Int     @default(1)
+  landingPageConfig   Json?
 
   // Address
   street  String?
