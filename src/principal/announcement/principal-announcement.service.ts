@@ -132,9 +132,8 @@ export class PrincipalAnnouncementService {
             }
         }
 
-        const payload = {
-            targetUserIds: Array.from(targetUserIds),
-            targetRoleIds: Array.from(targetRoleIds),
+        // Prepare notification data (what the app receives)
+        const notificationData = {
             announcementId: announcement.id,
             isEmergency: announcement.isEmergency,
             priority: announcement.priority,
@@ -147,7 +146,9 @@ export class PrincipalAnnouncementService {
             title: 'New Announcement',
             message: announcement.title,
             type: NotificationType.ANNOUNCEMENT,
-            data: payload // Pass payload in 'data' field
+            targetUserIds: Array.from(targetUserIds),
+            targetRoleIds: Array.from(targetRoleIds),
+            data: notificationData // Pass only app-relevant data
         });
 
         // 3. Send Emergency Alert if applicable
@@ -156,7 +157,9 @@ export class PrincipalAnnouncementService {
                 title: announcement.isEmergency ? 'EMERGENCY ALERT' : 'URGENT ANNOUNCEMENT',
                 message: `${announcement.isEmergency ? 'URGENT' : 'Attention'}: ${announcement.title}`,
                 type: NotificationType.ALERT,
-                data: payload // Pass payload in 'data' field
+                targetUserIds: Array.from(targetUserIds),
+                targetRoleIds: Array.from(targetRoleIds),
+                data: notificationData // Pass only app-relevant data
             });
         }
     }
