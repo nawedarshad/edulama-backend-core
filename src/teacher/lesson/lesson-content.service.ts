@@ -1,29 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
-export interface CreateLessonDto {
-    syllabusId: number;
-    title: string;
-    description?: string;
-    content?: any; // Rich JSON content
-    durationMinutes?: number;
-    thumbnail?: string;
-}
-
-export interface CreateQuizDto {
-    title: string;
-    description?: string;
-    validUntil?: Date;
-    questions: {
-        text: string;
-        type: string;
-        points: number;
-        options: {
-            text: string;
-            isCorrect: boolean;
-        }[];
-    }[];
-}
+import { CreateLessonDto, CreateQuizDto } from './dto/create-lesson.dto';
 
 @Injectable()
 export class LessonContentService {
