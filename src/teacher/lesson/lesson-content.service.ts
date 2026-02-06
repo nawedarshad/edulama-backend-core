@@ -10,7 +10,19 @@ export class LessonContentService {
     // --- LESSONS ---
 
     async findAll(schoolId: number, academicYearId: number) {
-        return this.prisma.lesson.findMany({
+        // 1. Fetch Auto-Scheduled Lesson Plans
+        const plans = await this.prisma.lessonPlan.findMany({
+            where: { schoolId, academicYearId },
+            include: {
+                subject: true,
+                class: true,
+                section: true
+            },
+            orderBy: { planDate: 'asc' }
+        });
+
+        // 2. Fetch Advanced Lessons
+        const lessons = await this.prisma.lesson.findMany({
             where: { schoolId, academicYearId },
             include: {
                 syllabus: {
@@ -22,6 +34,39 @@ export class LessonContentService {
             },
             orderBy: { createdAt: 'desc' }
         });
+
+        // 3. Normalize & Merge (Polymorphic Return)
+        // We map them to a common shape that the frontend expects
+        const mappedPlans = plans.map(p => ({
+            id: p.id,
+            type: 'PLAN',
+            title: p.topicTitle, // Use topic as title for plans
+            description: p.description,
+            lessonDate: p.planDate,
+            status: p.status,
+            class: p.class,
+            section: p.section,
+            subject: p.subject,
+            syllabus: {
+                unit: p.unitTitle,
+                chapter: p.chapterTitle,
+                topic: p.topicTitle
+            }
+        }));
+
+        const mappedLessons = lessons.map(l => ({
+            id: l.id,
+            type: 'LESSON',
+            title: l.title,
+            description: l.description,
+            lessonDate: l.createdAt, // Lessons fallback to creation date if no specific date
+            status: 'DRAFT', // Default for now
+            class: l.syllabus.class,
+            section: null, // Advanced lessons often linked to Class, not Section specific until assigned
+            subject: l.syllabus.subject,
+        }));
+
+        return [...mappedPlans, ...mappedLessons];
     }
 
     async createLesson(schoolId: number, academicYearId: number, dto: CreateLessonDto) {
