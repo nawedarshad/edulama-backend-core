@@ -139,6 +139,9 @@ export class SchedulerService {
             };
         }
 
+        console.log(`[Scheduler] Simulating for Class: ${classId}, Section: ${dto.sectionId}, Subject: ${subjectId}`);
+        console.log(`[Scheduler] Topics to schedule: ${topicQueue.length}`);
+
         // 2. Fetch Constraints
         // a. Timetable
         const timetableEntries = await this.prisma.timetableEntry.findMany({
@@ -157,6 +160,8 @@ export class SchedulerService {
                 period: { startTime: 'asc' },
             },
         });
+
+        console.log(`[Scheduler] Found ${timetableEntries.length} timetable slots for this subject.`);
 
         // Map: DayOfWeek (MONDAY) -> Array of Periods
         // Schema uses 'day' enum
@@ -233,6 +238,9 @@ export class SchedulerService {
             currentDate = addDays(currentDate, 1);
             daysProcessed++;
         }
+
+        console.log(`[Scheduler] Simulation complete. Scheduled: ${schedule.length} items. Days processed: ${daysProcessed}`);
+        console.log(`[Scheduler] Topic Index reached: ${topicIndex}/${topicQueue.length}`);
 
         // 4. Construct Unit Timelines
         const unitTimelines: UnitTimeline[] = [];
