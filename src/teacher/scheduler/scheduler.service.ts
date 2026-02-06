@@ -1,13 +1,9 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { addDays, isSameDay, parseISO, format, startOfDay } from 'date-fns';
-const pdfParse = require('pdf-parse');
+import { SchedulePreviewDto } from './dto/schedule-preview.dto';
 import * as Tesseract from 'tesseract.js';
 
-import { SchedulePreviewDto } from './dto/schedule-preview.dto';
-
-// Remove inline interface
-// export interface SchedulePreviewDto ...
 
 export interface ScheduledSlot {
     date: Date;
@@ -28,6 +24,7 @@ export class SchedulerService {
         const mimeType = file.mimetype;
 
         if (mimeType === 'application/pdf') {
+            const pdfParse = require('pdf-parse');
             const data = await pdfParse(file.buffer);
             return this.cleanExtractedText(data.text);
         } else if (mimeType.startsWith('image/')) {
