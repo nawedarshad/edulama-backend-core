@@ -17,6 +17,7 @@ import { TeacherAnnouncementModule } from './announcement/teacher-announcement.m
 import { TeacherProfileModule } from './profile/teacher-profile.module';
 
 import { DashboardModule } from './dashboard/dashboard.module';
+import { TeacherSchedulerModule } from './scheduler/scheduler.module';
 
 @Module({
     imports: [
@@ -35,6 +36,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
         ConfigModule,
         TeacherAnnouncementModule,
         TeacherProfileModule,
+        TeacherSchedulerModule,
         DashboardModule,
     ],
     controllers: [TeacherCalendarController],
