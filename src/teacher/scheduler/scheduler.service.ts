@@ -151,7 +151,7 @@ export class SchedulerService {
                 classId,
                 sectionId: dto.sectionId,
                 subjectId,
-                status: 'PUBLISHED',
+                status: { in: ['PUBLISHED', 'DRAFT', 'LOCKED'] },
             },
             include: {
                 period: true,
