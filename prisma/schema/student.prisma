@@ -96,6 +96,10 @@ model StudentProfile {
   healthRecord      StudentHealthRecord?
   noticeAcks        NoticeAck[]
 
+  // Advanced Lesson Tracking
+  lessonProgress StudentLessonProgress[]
+  quizAttempts   StudentQuizAttempt[]
+
   @@unique([schoolId, academicYearId, admissionNo])
   @@index([schoolId, academicYearId])
   @@index([classId, sectionId])

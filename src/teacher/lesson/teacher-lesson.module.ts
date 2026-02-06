@@ -7,10 +7,13 @@ import { AuditLogModule } from '../../common/audit/audit-log.module';
 
 import { HttpModule } from '@nestjs/axios';
 
+import { LessonContentService } from './lesson-content.service';
+import { LessonAnalyticsService } from './lesson-analytics.service';
+
 @Module({
     imports: [PrismaModule, AuditLogModule, HttpModule],
     controllers: [TeacherClassDiaryController],
-    providers: [TeacherClassDiaryService],
-    exports: [TeacherClassDiaryService],
+    providers: [TeacherClassDiaryService, LessonContentService, LessonAnalyticsService],
+    exports: [TeacherClassDiaryService, LessonContentService, LessonAnalyticsService],
 })
 export class TeacherLessonModule { }

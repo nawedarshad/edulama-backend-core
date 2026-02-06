@@ -1,4 +1,3 @@
-
 enum SyllabusStatus {
   PLANNED
   IN_PROGRESS
@@ -35,15 +34,18 @@ model ClassDiary {
   topic       String? // e.g. "Photosynthesis"
   description String? // What was taught
   homework    String?
-  
+
   // Detailed Lesson Plan
-  objective   String? // Learning objective of the session
-  activity    String? // Activities performed (group work, lab, etc.)
-  remarks     String? // Teacher's remarks/notes
-  
+  objective String? // Learning objective of the session
+  activity  String? // Activities performed (group work, lab, etc.)
+  remarks   String? // Teacher's remarks/notes
+
   // Attachments/Links
   studyMaterial Json? // [{ "title": "Video", "url": "..." }]
   media         Json? // [{ "type": "image", "url": "..." }] for gallery view
+
+  // Link to Advanced Lesson (optional)
+  lessonId Int?
 
   lessonDate DateTime
 
@@ -57,6 +59,7 @@ model ClassDiary {
   section      Section       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   subject      Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   classSubject ClassSubject? @relation(fields: [classSubjectId], references: [id], onDelete: SetNull)
+  lesson       Lesson?       @relation(fields: [lessonId], references: [id], onDelete: SetNull)
 
   @@index([schoolId, academicYearId])
   @@index([teacherId])
@@ -75,23 +78,23 @@ model Syllabus {
   subjectId Int
 
   // Hierarchy and Ordering
-  parentId   Int?      // Null for Unit, set for Chapter/Topic
-  parent     Syllabus? @relation("SyllabusHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
-  children   Syllabus[] @relation("SyllabusHierarchy")
-  
-  orderIndex Int       @default(0)
+  parentId Int? // Null for Unit, set for Chapter/Topic
+  parent   Syllabus?  @relation("SyllabusHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children Syllabus[] @relation("SyllabusHierarchy")
 
-  title       String
-  type        SyllabusType   @default(TOPIC)
-  description String?
+  orderIndex Int @default(0)
+
+  title            String
+  type             SyllabusType @default(TOPIC)
+  description      String?
   learningOutcomes String? // "Student will be able to..."
 
   attachments Json? // [{ "title": "Syllabus PDF", "url": "..." }]
 
   // Tracking
   status         SyllabusStatus @default(PLANNED)
-  estimatedHours Float?         // For planning
-  
+  estimatedHours Float? // For planning
+
   isCompleted Boolean   @default(false) // Keeping for backward compatibility, sync with status
   completedAt DateTime?
 
@@ -103,8 +106,138 @@ model Syllabus {
   class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
   subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
+  lessons Lesson[]
+
   @@index([schoolId, academicYearId])
   @@index([classId, subjectId])
   @@index([parentId])
 }
 
+// ==========================
+// ADVANCED LESSON & ANALYTICS
+// ==========================
+
+model Lesson {
+  id Int @id @default(autoincrement())
+
+  schoolId       Int
+  academicYearId Int
+
+  syllabusId Int
+  syllabus   Syllabus @relation(fields: [syllabusId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+
+  // Rich Content (Video, HTML, etc.)
+  content Json?
+
+  // Meta
+  durationMinutes Int?    @default(0)
+  thumbnail       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  classDiaries ClassDiary[]
+  quizzes      Quiz[]
+  progress     StudentLessonProgress[]
+
+  @@index([schoolId, academicYearId])
+  @@index([syllabusId])
+}
+
+model Quiz {
+  id       Int    @id @default(autoincrement())
+  lessonId Int
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  validUntil  DateTime?
+
+  questions Question[]
+  attempts  StudentQuizAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([lessonId])
+}
+
+model Question {
+  id     Int  @id @default(autoincrement())
+  quizId Int
+  quiz   Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  text   String
+  type   String @default("MCQ") // MCQ, TEXT, BOOLEAN
+  points Int    @default(1)
+
+  // For ordering
+  orderIndex Int @default(0)
+
+  options QuestionOption[]
+
+  @@index([quizId])
+}
+
+model QuestionOption {
+  id         Int      @id @default(autoincrement())
+  questionId Int
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  text      String
+  isCorrect Boolean @default(false)
+
+  @@index([questionId])
+}
+
+// Analytics / Progress
+
+model StudentLessonProgress {
+  id Int @id @default(autoincrement())
+
+  schoolId       Int
+  academicYearId Int
+
+  studentId Int
+  student   StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  lessonId Int
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  status           String @default("NOT_STARTED") // STARTED, COMPLETED
+  progressPercent  Int    @default(0)
+  watchTimeSeconds Int    @default(0)
+
+  lastAccessedAt DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@unique([studentId, lessonId])
+  @@index([schoolId, academicYearId])
+}
+
+model StudentQuizAttempt {
+  id Int @id @default(autoincrement())
+
+  schoolId       Int
+  academicYearId Int
+
+  studentId Int
+  student   StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  quizId Int
+  quiz   Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  score       Int
+  totalPoints Int
+  passed      Boolean @default(false)
+  answers     Json? // Store student answers { questionId: optionId }
+
+  attemptedAt DateTime @default(now())
+
+  @@index([studentId, quizId])
+  @@index([schoolId, academicYearId])
+}

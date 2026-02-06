@@ -66,4 +66,9 @@ export class CreateClassDiaryDto {
     @IsOptional()
     @IsArray()
     media?: any[];
+
+    @ApiProperty({ required: false })
+    @IsOptional()
+    @IsInt()
+    lessonId?: number;
 }
