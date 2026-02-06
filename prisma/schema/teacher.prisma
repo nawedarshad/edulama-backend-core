@@ -47,6 +47,7 @@ model TeacherProfile {
   classDiaries           ClassDiary[]
   notices                Notice[]
   lateAttendanceMonitors LateAttendanceMonitor[]
+  lessonPlans            LessonPlan[]
 
   @@index([schoolId])
 }

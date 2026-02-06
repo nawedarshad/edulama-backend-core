@@ -303,7 +303,18 @@ export class SchedulerService {
         };
     }
 
-    async commitSchedule(schoolId: number, academicYearId: number, dto: SchedulePreviewDto, teacherId: number) {
+    async commitSchedule(schoolId: number, academicYearId: number, dto: SchedulePreviewDto, userId: number) {
+        // 1. Resolve Teacher Profile ID from User ID
+        const teacherProfile = await this.prisma.teacherProfile.findUnique({
+            where: { userId },
+        });
+
+        if (!teacherProfile) {
+            throw new BadRequestException("Teacher profile not found for this user.");
+        }
+
+        const teacherId = teacherProfile.id;
+
         const result = await this.simulateSchedule(schoolId, academicYearId, dto);
 
         if (result.schedule.length === 0) {
@@ -312,7 +323,7 @@ export class SchedulerService {
 
         await this.prisma.$transaction(
             result.schedule.map(slot =>
-                this.prisma.classDiary.create({
+                this.prisma.lessonPlan.create({
                     data: {
                         schoolId,
                         academicYearId,
@@ -320,9 +331,12 @@ export class SchedulerService {
                         classId: dto.classId,
                         sectionId: dto.sectionId,
                         subjectId: dto.subjectId,
-                        title: slot.topicTitle,
-                        lessonDate: slot.date,
+                        topicTitle: slot.topicTitle,
+                        unitTitle: slot.unitTitle,
+                        chapterTitle: slot.chapterTitle,
+                        planDate: slot.date,
                         description: `Auto-scheduled. Unit: ${slot.unitTitle} | Chapter: ${slot.chapterTitle}`,
+                        status: 'PLANNED',
                     }
                 })
             )

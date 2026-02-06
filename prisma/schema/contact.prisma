@@ -1,13 +1,13 @@
 model ContactInquiry {
-    id         String   @id @default(cuid())
-    name       String
-    email      String
-    phone      String?
-    schoolName String?
-    message    String
-    status     String   @default("pending") // pending, contacted, resolved
-    createdAt  DateTime @default(now())
-    updatedAt  DateTime @updatedAt
+  id         String   @id @default(cuid())
+  name       String
+  email      String
+  phone      String?
+  schoolName String?
+  message    String
+  status     String   @default("pending") // pending, contacted, resolved
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-    @@map("contact_inquiries")
+  @@map("contact_inquiries")
 }

@@ -98,6 +98,7 @@ model Class {
   notices              Notice[]
 
   schoolAdminScopes SchoolAdminScope[]
+  lessonPlans       LessonPlan[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -138,6 +139,7 @@ model Section {
   academicYearId       Int?
   notices              Notice[]
   schoolAdminScopes    SchoolAdminScope[]
+  lessonPlans          LessonPlan[]
 
   @@unique([schoolId, classId, name])
   @@index([schoolId])

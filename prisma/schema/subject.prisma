@@ -63,6 +63,7 @@ model Subject {
   academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
   academicYearId Int?
   notices        Notice[]
+  lessonPlans    LessonPlan[]
 
   @@unique([schoolId, code])
   @@index([schoolId])
