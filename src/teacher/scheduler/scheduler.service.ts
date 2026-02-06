@@ -5,40 +5,59 @@ import { ApiProperty } from '@nestjs/swagger';
 
 // --- DTO DEFINITIONS (Must be Classes for NestJS) ---
 
+import { IsString, IsInt, IsArray, ValidateNested, IsDateString, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
+
 export class TopicDto {
+    @IsString()
     @ApiProperty()
     title: string;
 }
 
 export class ChapterDto {
+    @IsString()
     @ApiProperty()
     title: string;
 
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => TopicDto)
     @ApiProperty({ type: [TopicDto] })
     topics: TopicDto[];
 }
 
 export class UnitDto {
+    @IsString()
     @ApiProperty()
     title: string;
 
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => ChapterDto)
     @ApiProperty({ type: [ChapterDto] })
     chapters: ChapterDto[];
 }
 
 export class SchedulePreviewDto {
+    @IsInt()
     @ApiProperty()
     classId: number;
 
+    @IsInt()
     @ApiProperty()
     sectionId: number;
 
+    @IsInt()
     @ApiProperty()
     subjectId: number;
 
+    @IsDateString()
     @ApiProperty({ example: '2024-01-01' })
     startDate: string;
 
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => UnitDto)
     @ApiProperty({ type: [UnitDto] })
     syllabus: UnitDto[];
 }
