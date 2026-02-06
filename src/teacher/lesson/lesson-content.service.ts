@@ -9,6 +9,21 @@ export class LessonContentService {
 
     // --- LESSONS ---
 
+    async findAll(schoolId: number, academicYearId: number) {
+        return this.prisma.lesson.findMany({
+            where: { schoolId, academicYearId },
+            include: {
+                syllabus: {
+                    include: {
+                        subject: true,
+                        class: true
+                    }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+    }
+
     async createLesson(schoolId: number, academicYearId: number, dto: CreateLessonDto) {
         return this.prisma.lesson.create({
             data: {

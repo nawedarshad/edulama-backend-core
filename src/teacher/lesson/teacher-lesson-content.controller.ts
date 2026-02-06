@@ -16,6 +16,14 @@ export class TeacherLessonContentController {
 
     // --- Content Management ---
 
+    @ApiOperation({ summary: 'Get all lessons' })
+    @Get()
+    findAll(@Request() req) {
+        const schoolId = req.user.schoolId;
+        const academicYearId = req.user.academicYearId;
+        return this.lessonService.findAll(schoolId, academicYearId);
+    }
+
     @ApiOperation({ summary: 'Create a new advanced lesson' })
     @Post('content')
     createLesson(@Request() req, @Body() dto: any) { // Using any for DTO to unblock, ideally CreateLessonDto
