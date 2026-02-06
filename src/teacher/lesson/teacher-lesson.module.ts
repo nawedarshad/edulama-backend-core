@@ -11,10 +11,13 @@ import { HttpModule } from '@nestjs/axios';
 import { LessonContentService } from './lesson-content.service';
 import { LessonAnalyticsService } from './lesson-analytics.service';
 
+import { SchedulerController } from '../scheduler/scheduler.controller';
+import { SchedulerService } from '../scheduler/scheduler.service';
+
 @Module({
     imports: [PrismaModule, AuditLogModule, HttpModule],
-    controllers: [TeacherClassDiaryController, TeacherLessonContentController],
-    providers: [TeacherClassDiaryService, LessonContentService, LessonAnalyticsService],
-    exports: [TeacherClassDiaryService, LessonContentService, LessonAnalyticsService],
+    controllers: [TeacherClassDiaryController, TeacherLessonContentController, SchedulerController],
+    providers: [TeacherClassDiaryService, LessonContentService, LessonAnalyticsService, SchedulerService],
+    exports: [TeacherClassDiaryService, LessonContentService, LessonAnalyticsService, SchedulerService],
 })
 export class TeacherLessonModule { }
