@@ -1,5 +1,6 @@
-import { Controller, Post, Body, UseGuards, Request } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Controller, Post, Body, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { TeacherAuthGuard } from '../../common/guards/teacher.guard';
 import { SchedulerService } from './scheduler.service';
 import { SchedulePreviewDto } from './dto/schedule-preview.dto';
@@ -10,6 +11,26 @@ import { SchedulePreviewDto } from './dto/schedule-preview.dto';
 @Controller('teacher/scheduler')
 export class SchedulerController {
     constructor(private readonly schedulerService: SchedulerService) { }
+
+    @ApiOperation({ summary: 'Extract text from PDF or Image' })
+    @ApiConsumes('multipart/form-data')
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                file: {
+                    type: 'string',
+                    format: 'binary',
+                },
+            },
+        },
+    })
+    @Post('extract')
+    @UseInterceptors(FileInterceptor('file'))
+    async extract(@UploadedFile() file: any) {
+        const text = await this.schedulerService.extractText(file);
+        return { text };
+    }
 
     @ApiOperation({ summary: 'Preview the auto-generated schedule' })
     @Post('preview')

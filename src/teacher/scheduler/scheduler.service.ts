@@ -1,12 +1,13 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { addDays, isSameDay, parseISO, format, startOfDay } from 'date-fns';
+const pdfParse = require('pdf-parse');
+import * as Tesseract from 'tesseract.js';
 
 import { SchedulePreviewDto } from './dto/schedule-preview.dto';
 
 // Remove inline interface
 // export interface SchedulePreviewDto ...
-
 
 export interface ScheduledSlot {
     date: Date;
@@ -18,6 +19,31 @@ export interface ScheduledSlot {
 @Injectable()
 export class SchedulerService {
     constructor(private readonly prisma: PrismaService) { }
+
+    // --- FILE EXTRACTION ---
+
+    async extractText(file: Express.Multer.File): Promise<string> {
+        if (!file) throw new BadRequestException('No file uploaded');
+
+        const mimeType = file.mimetype;
+
+        if (mimeType === 'application/pdf') {
+            const data = await pdfParse(file.buffer);
+            return this.cleanExtractedText(data.text);
+        } else if (mimeType.startsWith('image/')) {
+            const { data: { text } } = await Tesseract.recognize(file.buffer, 'eng');
+            return this.cleanExtractedText(text);
+        } else {
+            throw new BadRequestException('Unsupported file type. Please upload a PDF or Image.');
+        }
+    }
+
+    private cleanExtractedText(text: string): string {
+        // Basic cleanup: remove excessive newlines, try to find lines that look like topics
+        // For now, raw text is better so the user can edit it.
+        // We just trim and maybe remove empty lines.
+        return text.split('\n').map(line => line.trim()).filter(line => line.length > 0).join('\n');
+    }
 
     // --- CORE ALGORITHM ---
 
@@ -53,6 +79,7 @@ export class SchedulerService {
         const slotsByDay = new Map<string, any[]>();
         timetableEntries.forEach(entry => {
             const day = entry.day; // Enum: MONDAY, TUESDAY...
+            if (!slotsByDay.has(day)) slotsByDay.set(day, []);
             if (!slotsByDay.has(day)) slotsByDay.set(day, []);
             slotsByDay.get(day)!.push(entry);
         });
