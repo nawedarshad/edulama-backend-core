@@ -4,10 +4,14 @@ import { TeacherAuthGuard } from '../../common/guards/teacher.guard';
 import { TeacherTimetableService } from './teacher-timetable.service';
 import { DateQueryDto } from './dto/date-query.dto';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Teacher - Timetable')
 @ApiBearerAuth()
 @Controller('teacher/timetable')
-@UseGuards(TeacherAuthGuard)
+@UseGuards(TeacherAuthGuard, ModuleGuard)
+@RequiredModule('TIMETABLE')
 export class TeacherTimetableController {
     constructor(private readonly timetableService: TeacherTimetableService) { }
 

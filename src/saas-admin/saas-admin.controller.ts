@@ -25,6 +25,9 @@ export class SaaSAdminController {
         adminEmail: string;
         adminName: string;
         initialPassword?: string;
+        type?: 'SCHOOL' | 'COLLEGE' | 'COACHING';
+        academicYearName?: string;
+        startDate?: string;
     }) {
         return this.saasAdminService.createSchool(createSchoolDto);
     }
@@ -78,5 +81,19 @@ export class SaaSAdminController {
         @Body('isActive') isActive: boolean
     ) {
         return this.saasAdminService.updateSchoolStatus(id, isActive);
+    }
+
+    @Patch(':id')
+    update(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() updateSchoolDto: {
+            name?: string;
+            code?: string;
+            subdomain?: string;
+            isActive?: boolean;
+            type?: any; // SchoolType
+        }
+    ) {
+        return this.saasAdminService.updateSchool(id, updateSchoolDto);
     }
 }

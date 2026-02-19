@@ -48,6 +48,7 @@ model TeacherProfile {
   notices                Notice[]
   lateAttendanceMonitors LateAttendanceMonitor[]
   lessonPlans            LessonPlan[]
+  invigilatorAssignments InvigilatorAssignment[]
 
   @@index([schoolId])
 }

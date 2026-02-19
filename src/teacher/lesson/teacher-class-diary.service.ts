@@ -102,7 +102,13 @@ export class TeacherClassDiaryService {
 
         if (query.date) {
             const date = new Date(query.date);
-            where.lessonDate = date;
+            const startOfDay = new Date(date); startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(date); endOfDay.setHours(23, 59, 59, 999);
+
+            where.lessonDate = {
+                gte: startOfDay,
+                lte: endOfDay
+            };
         } else if (query.startDate && query.endDate) {
             where.lessonDate = {
                 gte: new Date(query.startDate),

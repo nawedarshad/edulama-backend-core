@@ -30,10 +30,13 @@ model Room {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  assignments        RoomAssignment[]
-  timetableEntries   TimetableEntry[]
-  timetableOverrides TimetableOverride[]
+  school                 School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  assignments            RoomAssignment[]
+  timetableEntries       TimetableEntry[]
+  timetableOverrides     TimetableOverride[]
+  examSchedules          ExamSchedule[]
+  seatingArrangements    SeatingArrangement[]
+  invigilatorAssignments InvigilatorAssignment[]
 
   @@unique([schoolId, code])
   @@index([schoolId])

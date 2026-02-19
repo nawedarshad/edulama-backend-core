@@ -5,10 +5,14 @@ import { UpdateAttendanceSettingsDto } from './dto/update-attendance-settings.dt
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Principal - Attendance')
 @ApiBearerAuth()
 @Controller('principal/attendance')
-@UseGuards(PrincipalAuthGuard)
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('ATTENDANCE')
 export class AttendanceController {
     constructor(private readonly attendanceService: AttendanceService) { }
 

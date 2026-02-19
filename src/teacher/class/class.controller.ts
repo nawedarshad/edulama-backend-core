@@ -3,10 +3,14 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagg
 import { UserAuthGuard } from '../../common/guards/user.guard';
 import { TeacherClassService } from './class.service';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Teacher - Classes')
 @ApiBearerAuth()
 @Controller('teacher/classes')
-@UseGuards(UserAuthGuard)
+@UseGuards(UserAuthGuard, ModuleGuard)
+@RequiredModule('CLASSES')
 export class TeacherClassController {
     constructor(private readonly classService: TeacherClassService) { }
 

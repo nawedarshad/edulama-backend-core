@@ -4,9 +4,13 @@ import { UserAuthGuard } from '../../common/guards/user.guard';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AnnouncementQueryDto } from '../../principal/announcement/dto/announcement-query.dto';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Teacher - Announcements')
 @ApiBearerAuth()
-@UseGuards(UserAuthGuard)
+@UseGuards(UserAuthGuard, ModuleGuard)
+@RequiredModule('ANNOUNCEMENTS')
 @Controller('teacher/announcements')
 export class TeacherAnnouncementController {
     constructor(private readonly announcementService: TeacherAnnouncementService) { }

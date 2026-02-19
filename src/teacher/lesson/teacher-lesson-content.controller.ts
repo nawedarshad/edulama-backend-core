@@ -37,7 +37,18 @@ export class TeacherLessonContentController {
     getLesson(@Request() req, @Param('id') id: string) {
         const schoolId = req.user.schoolId;
         const academicYearId = req.user.academicYearId;
-        return this.lessonService.getLessonDetails(schoolId, academicYearId, +id);
+        // Keep explicit content route for backward compatibility if needed, 
+        // but likely this was what I saw in 404 logs? No, logs said /teacher/lessons/1.
+        // Actually, let's keep this as 'content/:id' AND add ':id'.
+        return this.lessonService.getLessonUnion(schoolId, academicYearId, +id);
+    }
+
+    @ApiOperation({ summary: 'Get generic lesson/plan by ID' })
+    @Get(':id')
+    getLessonOrPlan(@Request() req, @Param('id') id: string) {
+        const schoolId = req.user.schoolId;
+        const academicYearId = req.user.academicYearId;
+        return this.lessonService.getLessonUnion(schoolId, academicYearId, +id);
     }
 
     @ApiOperation({ summary: 'Get lessons by syllabus node' })
@@ -46,6 +57,17 @@ export class TeacherLessonContentController {
         const schoolId = req.user.schoolId;
         const academicYearId = req.user.academicYearId;
         return this.lessonService.getLessonsBySyllabus(schoolId, academicYearId, +syllabusId);
+    }
+
+
+
+    @ApiOperation({ summary: 'Mark lesson as complete and add to diary' })
+    @Patch(':id/complete')
+    completeLesson(@Request() req, @Param('id') id: string, @Body() dto: any) {
+        const schoolId = req.user.schoolId;
+        const academicYearId = req.user.academicYearId;
+        const userId = req.user.id;
+        return this.lessonService.completeLesson(schoolId, userId, academicYearId, +id, dto);
     }
 
     // --- Analytics ---

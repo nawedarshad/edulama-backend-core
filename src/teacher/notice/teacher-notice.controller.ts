@@ -16,7 +16,11 @@ import { TeacherAuthGuard } from '../../common/guards/teacher.guard';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { NoticeQueryDto } from './dto/notice-query.dto';
 
-@UseGuards(TeacherAuthGuard)
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
+@UseGuards(TeacherAuthGuard, ModuleGuard)
+@RequiredModule('NOTICES')
 @Controller('teacher/notices')
 export class TeacherNoticeController {
     constructor(private readonly noticeService: TeacherNoticeService) { }

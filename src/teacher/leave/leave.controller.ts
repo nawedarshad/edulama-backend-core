@@ -5,10 +5,14 @@ import { UpdateLeaveDto } from './dto/update-leave.dto';
 import { UserAuthGuard } from '../../common/guards/user.guard';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Teacher Leave Management')
 @ApiBearerAuth()
 @Controller('teacher/leave')
-@UseGuards(UserAuthGuard)
+@UseGuards(UserAuthGuard, ModuleGuard)
+@RequiredModule('LEAVE_MANAGEMENT')
 export class TeacherLeaveController {
     constructor(private readonly leaveService: TeacherLeaveService) { }
 

@@ -185,4 +185,9 @@ export class UpdateSchoolSettingsDto {
     @ApiPropertyOptional({ description: 'Landing page configuration object', example: { hero: { title: 'Welcome' } } })
     @IsOptional()
     landingPageConfig?: any;
+
+    @ApiPropertyOptional({ description: 'Landing page template ID', example: 1 })
+    @IsInt()
+    @IsOptional()
+    landingPageTemplate?: number;
 }

@@ -5,7 +5,7 @@ import { CreateFeatureDto } from './dto/create-feature.dto';
 import { ManageSchoolFeatureDto } from './dto/manage-school-feature.dto';
 import { AdminAuthGuard } from '../../common/guards/admin.guard';
 
-@Controller('admin/features')
+@Controller('api/admin/features')
 @UseGuards(AdminAuthGuard)
 export class FeaturesController {
     constructor(private readonly featuresService: FeaturesService) { }

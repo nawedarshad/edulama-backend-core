@@ -6,9 +6,13 @@ import { UpdateClassDiaryDto } from './dto/update-class-diary.dto';
 import { ClassDiaryQueryDto } from './dto/class-diary-query.dto';
 import { TeacherAuthGuard } from '../../common/guards/teacher.guard';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Teacher - Class Diary')
 @ApiBearerAuth()
-@UseGuards(TeacherAuthGuard)
+@UseGuards(TeacherAuthGuard, ModuleGuard)
+@RequiredModule('LESSON_PLANNING')
 @Controller('teacher/diary')
 export class TeacherClassDiaryController {
     constructor(private readonly classDiaryService: TeacherClassDiaryService) { }

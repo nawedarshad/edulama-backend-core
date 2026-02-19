@@ -8,9 +8,14 @@ import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { UserAuthGuard } from '../../common/guards/user.guard'; // Import Generic User Guard
 import { PrismaService } from '../../prisma/prisma.service';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Principal - Grievances')
 @ApiBearerAuth()
 @Controller('principal/grievances')
+@RequiredModule('GRIEVANCES')
+@UseGuards(ModuleGuard) // Applied globally to class, auth controlled per method/mixed
 // Removed class-level @UseGuards(PrincipalAuthGuard) to allow mixed access
 export class GrievanceController {
     constructor(

@@ -27,6 +27,9 @@ import { SubstitutionModule } from './substitution/substitution.module';
 import { AttendanceMonitorModule } from './attendance-monitor/attendance-monitor.module';
 import { PrincipalProfileModule } from './profile/principal-profile.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { PrincipalLessonTrackerModule } from './lesson-tracker/lesson-tracker.module';
+import { InquiryModule } from './inquiry/inquiry.module';
+
 
 
 @Module({
@@ -57,6 +60,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
         AttendanceMonitorModule,
         PrincipalProfileModule,
         DashboardModule,
+        PrincipalLessonTrackerModule,
+        InquiryModule,
     ],
 })
 export class PrincipalModule { }

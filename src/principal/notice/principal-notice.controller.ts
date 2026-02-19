@@ -16,7 +16,11 @@ import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { PrincipalNoticeQueryDto } from './dto/principal-notice-query.dto';
 import { CreatePrincipalNoticeDto } from './dto/create-principal-notice.dto';
 
-@UseGuards(PrincipalAuthGuard)
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('NOTICES')
 @Controller('principal/notices')
 export class PrincipalNoticeController {
     constructor(private readonly noticeService: PrincipalNoticeService) { }

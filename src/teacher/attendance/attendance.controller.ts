@@ -10,10 +10,14 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 // For now, I'll import PrincipalTeacherGuard as it likely allows both.
 import { PrincipalOrTeacherGuard } from '../../common/guards/principal-teacher.guard';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Teacher - Attendance')
 @ApiBearerAuth()
 @Controller('teacher/attendance')
-@UseGuards(PrincipalOrTeacherGuard)
+@UseGuards(PrincipalOrTeacherGuard, ModuleGuard)
+@RequiredModule('ATTENDANCE')
 export class TeacherAttendanceController {
     constructor(private readonly attendanceService: TeacherAttendanceService) { }
 

@@ -9,11 +9,13 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { HttpModule } from '@nestjs/axios';
 import { CalendarModule } from 'src/principal/calendar/calendar.module';
 import { ParentCalendarController } from './calendar/parent-calendar.controller';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
     imports: [
         PrismaModule,
         HttpModule,
+        ConfigModule,
         ParentLeaveModule,
         ParentTimetableModule,
         ParentClassDiaryModule,

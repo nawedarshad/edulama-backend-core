@@ -4,8 +4,12 @@ import { CalendarService } from './calendar.service';
 import { SetWorkingPatternDto, CreateCalendarExceptionDto, UpdateCalendarExceptionDto } from './dto/calendar.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Principal - Calendar')
-@UseGuards(PrincipalAuthGuard)
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('CALENDAR')
 @Controller('principal/calendar')
 export class CalendarController {
     constructor(private service: CalendarService) { }

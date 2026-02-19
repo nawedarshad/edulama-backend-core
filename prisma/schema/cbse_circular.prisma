@@ -1,0 +1,59 @@
+enum CbseCircularType {
+    ACADEMIC
+    ADMINISTRATIVE
+    EXAM
+    GENERAL
+}
+
+model CbseCircular {
+    id        Int              @id @default(autoincrement())
+    title     String
+    content   String // HTML/Rich Text
+    type      CbseCircularType @default(GENERAL)
+    date      DateTime         @default(now()) @db.Date // The date displayed on the circular
+    createdAt DateTime         @default(now())
+    updatedAt DateTime         @updatedAt
+
+    attachments CbseCircularAttachment[]
+    views       CbseCircularView[]
+    downloads   CbseCircularDownload[]
+
+    @@index([date])
+    @@index([type])
+}
+
+model CbseCircularAttachment {
+    id             Int    @id @default(autoincrement())
+    cbseCircularId Int
+    fileName       String
+    fileUrl        String
+    fileType       String // PDF, IMAGE, VIDEO, LINK
+
+    cbseCircular CbseCircular @relation(fields: [cbseCircularId], references: [id], onDelete: Cascade)
+}
+
+model CbseCircularView {
+    id             Int      @id @default(autoincrement())
+    cbseCircularId Int
+    userId         Int // ID of the user (Principal/Teacher)
+    userRole       String // ROLE of the user
+    viewedAt       DateTime @default(now())
+
+    cbseCircular CbseCircular @relation(fields: [cbseCircularId], references: [id], onDelete: Cascade)
+
+    @@unique([cbseCircularId, userId]) // Ensure unique views per user per circular
+    @@index([cbseCircularId])
+}
+
+model CbseCircularDownload {
+    id             Int      @id @default(autoincrement())
+    cbseCircularId Int
+    attachmentId   Int
+    userId         Int
+    userRole       String
+    downloadedAt   DateTime @default(now())
+
+    cbseCircular CbseCircular @relation(fields: [cbseCircularId], references: [id], onDelete: Cascade)
+
+    @@index([cbseCircularId])
+}

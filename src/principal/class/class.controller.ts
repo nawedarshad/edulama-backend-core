@@ -10,9 +10,13 @@ import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 
 import { BulkCreateClassDto } from './dto/bulk-create-class.dto';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Class')
 @Controller('principal/classes')
-@UseGuards(PrincipalAuthGuard)
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('CLASSES')
 @Audit('Class')
 export class ClassController {
     constructor(private readonly classService: ClassService) { }

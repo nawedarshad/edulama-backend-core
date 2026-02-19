@@ -7,6 +7,7 @@ import { TeacherClassDiaryService } from './teacher-class-diary.service';
 import { AuditLogModule } from '../../common/audit/audit-log.module';
 
 import { HttpModule } from '@nestjs/axios';
+import { ConfigModule } from '@nestjs/config';
 
 import { LessonContentService } from './lesson-content.service';
 import { LessonAnalyticsService } from './lesson-analytics.service';
@@ -15,7 +16,7 @@ import { SchedulerController } from '../scheduler/scheduler.controller';
 import { SchedulerService } from '../scheduler/scheduler.service';
 
 @Module({
-    imports: [PrismaModule, AuditLogModule, HttpModule],
+    imports: [PrismaModule, AuditLogModule, HttpModule, ConfigModule],
     controllers: [TeacherClassDiaryController, TeacherLessonContentController, SchedulerController],
     providers: [TeacherClassDiaryService, LessonContentService, LessonAnalyticsService, SchedulerService],
     exports: [TeacherClassDiaryService, LessonContentService, LessonAnalyticsService, SchedulerService],

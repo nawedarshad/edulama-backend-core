@@ -24,9 +24,13 @@ import { BulkCreateRoomDto } from './dto/bulk-create-room.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Room')
 @Controller('principal/rooms')
-@UseGuards(PrincipalAuthGuard)
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('FACILITY_MANAGEMENT')
 @Audit('Room')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
 export class RoomController {

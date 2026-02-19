@@ -90,15 +90,13 @@ model StudentProfile {
   viceCaptainOf House[] @relation("HouseViceCaptain")
 
   // Extended Details
-  personalInfo      StudentPersonalInfo?
-  documents         StudentDocument[]
-  previousEducation StudentPreviousEducation[]
-  healthRecord      StudentHealthRecord?
-  noticeAcks        NoticeAck[]
-
-  // Advanced Lesson Tracking
-  lessonProgress StudentLessonProgress[]
-  quizAttempts   StudentQuizAttempt[]
+  personalInfo        StudentPersonalInfo?
+  documents           StudentDocument[]
+  previousEducation   StudentPreviousEducation[]
+  healthRecord        StudentHealthRecord?
+  noticeAcks          NoticeAck[]
+  seatingArrangements SeatingArrangement[]
+  examResults         ExamResult[]
 
   @@unique([schoolId, academicYearId, admissionNo])
   @@index([schoolId, academicYearId])

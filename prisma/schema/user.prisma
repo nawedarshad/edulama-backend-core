@@ -25,12 +25,19 @@ enum AcademicYearStatus {
 // TENANT (SCHOOL)
 // ==========================
 
+enum SchoolType {
+  SCHOOL
+  COLLEGE
+  COACHING
+}
+
 model School {
-  id        Int     @id @default(autoincrement())
+  id        Int        @id @default(autoincrement())
   name      String
-  code      String  @unique // mobile login
-  subdomain String  @unique // web login
-  isActive  Boolean @default(true)
+  code      String     @unique // mobile login
+  subdomain String     @unique // web login
+  type      SchoolType @default(SCHOOL)
+  isActive  Boolean    @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
@@ -85,6 +92,14 @@ model School {
   notices                Notice[]
   attendanceConfigs      AttendanceConfig[]
   lateAttendanceMonitors LateAttendanceMonitor[]
+  exams                  Exam[]
+  examSchedules          ExamSchedule[]
+  seatingArrangements    SeatingArrangement[]
+  invigilatorAssignments InvigilatorAssignment[]
+  questionPapers         QuestionPaper[]
+  examResults            ExamResult[]
+  webPages               WebPage[]
+  inquiries              Inquiry[]
 
   @@index([code])
   @@index([subdomain])
@@ -135,6 +150,12 @@ model AcademicYear {
   notices                Notice[]
   attendanceConfigs      AttendanceConfig[]
   lateAttendanceMonitors LateAttendanceMonitor[]
+  exams                  Exam[]
+  examSchedules          ExamSchedule[]
+  seatingArrangements    SeatingArrangement[]
+  invigilatorAssignments InvigilatorAssignment[]
+  questionPapers         QuestionPaper[]
+  examResults            ExamResult[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -326,6 +347,8 @@ model RolePermission {
 model Module {
   id            Int            @id @default(autoincrement())
   key           String         @unique // ATTENDANCE, FEES, EVENTS, EXAMS
+  name          String         @default("")
+  description   String?
   schoolModules SchoolModule[]
 }
 

@@ -21,7 +21,11 @@ import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 // import { RolesGuard } from '../../auth/guard/roles.guard'; // Not found
 // import { Roles } from '../../auth/decorator/roles.decorator'; // Not found
 
-@UseGuards(PrincipalAuthGuard)
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
+@RequiredModule('ANNOUNCEMENTS')
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
 // @Roles('PRINCIPAL', 'ADMIN', 'DIRECTOR') // PrincipalAuthGuard enforces Principal role
 @Controller('principal/announcements')
 export class PrincipalAnnouncementController {

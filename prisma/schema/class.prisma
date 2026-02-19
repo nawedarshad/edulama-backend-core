@@ -99,6 +99,8 @@ model Class {
 
   schoolAdminScopes SchoolAdminScope[]
   lessonPlans       LessonPlan[]
+  examSchedules     ExamSchedule[]
+  exams             Exam[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -140,6 +142,7 @@ model Section {
   notices              Notice[]
   schoolAdminScopes    SchoolAdminScope[]
   lessonPlans          LessonPlan[]
+  examSchedules        ExamSchedule[]
 
   @@unique([schoolId, classId, name])
   @@index([schoolId])

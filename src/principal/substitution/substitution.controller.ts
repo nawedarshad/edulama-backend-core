@@ -6,7 +6,11 @@ import { GetUser } from '../../common/decorators/get-user.decorator';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import type { User } from '@prisma/client';
 
-@UseGuards(PrincipalAuthGuard)
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('SUBSTITUTIONS')
 @Controller('principal/substitution')
 export class SubstitutionController {
     constructor(private service: SubstitutionService) { }

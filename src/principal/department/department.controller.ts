@@ -5,9 +5,13 @@ import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { Audit } from '../../common/audit/audit.decorator';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Department')
 @Controller('principal/departments')
-@UseGuards(PrincipalAuthGuard)
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('DEPARTMENTS')
 @Audit('Department')
 export class DepartmentController {
     constructor(private readonly departmentService: DepartmentService) { }

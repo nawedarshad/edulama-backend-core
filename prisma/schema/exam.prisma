@@ -1,0 +1,362 @@
+// ============================================================
+// EXAM SYSTEM SCHEMA
+// ============================================================
+// This schema handles the complete exam lifecycle:
+// - Exam creation and management
+// - Exam scheduling (datesheet)
+// - Seating arrangements
+// - Invigilator assignments
+// - Question papers
+// - Results and performance tracking
+// ============================================================
+
+// --- ENUMS ---
+
+enum ExamType {
+  UNIT_TEST
+  MID_TERM
+  FINAL_TERM
+  QUARTERLY
+  HALF_YEARLY
+  ANNUAL
+  PRACTICAL
+  ORAL
+  ASSIGNMENT
+  PROJECT
+}
+
+enum ExamCategory {
+  INTERNAL
+  EXTERNAL
+}
+
+enum ExamStatus {
+  DRAFT
+  SCHEDULED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum QuestionType {
+  MCQ
+  SHORT_ANSWER
+  LONG_ANSWER
+  TRUE_FALSE
+  FILL_BLANK
+  PRACTICAL
+}
+
+enum ResultStatus {
+  PENDING
+  PUBLISHED
+  WITHHELD
+}
+
+enum GradeStatus {
+  PASS
+  FAIL
+  ABSENT
+  EXEMPTED
+}
+
+// ============================================================
+// EXAM MASTER
+// ============================================================
+
+model Exam {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+
+  // Basic Info
+  name        String // e.g., "Mid-Term Examination 2024"
+  code        String // e.g., "MT-2024"
+  type        ExamType
+  status      ExamStatus @default(DRAFT)
+  description String?
+
+  // Date Range
+  startDate DateTime
+  endDate   DateTime
+
+  // Configuration
+  totalMarks    Float?
+  passingMarks  Float?
+  gradeSystemId Int? // Link to grading system if exists
+  category      ExamCategory @default(INTERNAL)
+
+  // Result Settings
+  resultDate      DateTime? // When results will be published
+  isResultPublic  Boolean   @default(false)
+  classesContinue Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  schedules              ExamSchedule[]
+  seatingArrangements    SeatingArrangement[]
+  invigilatorAssignments InvigilatorAssignment[]
+  questionPapers         QuestionPaper[]
+  results                ExamResult[]
+  classes                Class[]
+
+  @@unique([schoolId, academicYearId, code])
+  @@index([schoolId, academicYearId])
+  @@index([status])
+}
+
+// ============================================================
+// EXAM SCHEDULE (Datesheet)
+// ============================================================
+
+model ExamSchedule {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  examId         Int
+
+  // Subject & Class
+  classId   Int
+  sectionId Int?
+  subjectId Int
+
+  // Timing
+  examDate  DateTime
+  startTime String // HH:mm format
+  endTime   String // HH:mm format
+  duration  Int // minutes
+
+  // Exam Details
+  maxMarks     Float
+  passingMarks Float?
+
+  // Room Assignment
+  roomId Int?
+
+  // Instructions
+  instructions String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  exam         Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section?     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  room         Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  seatingArrangements    SeatingArrangement[]
+  invigilatorAssignments InvigilatorAssignment[]
+  questionPaper          QuestionPaper?
+  results                ExamResult[]
+
+  @@unique([examId, classId, sectionId, subjectId])
+  @@index([schoolId, academicYearId])
+  @@index([examDate])
+}
+
+// ============================================================
+// SEATING ARRANGEMENT
+// ============================================================
+
+model SeatingArrangement {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  examId         Int
+  scheduleId     Int
+
+  // Student & Room
+  studentId Int
+  roomId    Int
+
+  // Seat Details
+  seatNumber String? // e.g., "A-12", "Row 3 Seat 5"
+  rollNumber String? // Roll number for exam
+
+  // Special Needs
+  requiresScribe    Boolean @default(false)
+  requiresExtraTime Boolean @default(false)
+  specialNotes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school       School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  exam         Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
+  schedule     ExamSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  student      StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  room         Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, studentId])
+  @@index([schoolId, academicYearId])
+  @@index([roomId])
+}
+
+// ============================================================
+// INVIGILATOR ASSIGNMENT
+// ============================================================
+
+model InvigilatorAssignment {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  examId         Int
+  scheduleId     Int
+
+  // Invigilator
+  teacherId Int
+  roomId    Int
+
+  // Role
+  isChiefInvigilator Boolean @default(false)
+
+  // Instructions
+  specialInstructions String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school       School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  exam         Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
+  schedule     ExamSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  teacher      TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  room         Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, teacherId, roomId])
+  @@index([schoolId, academicYearId])
+  @@index([teacherId])
+}
+
+// ============================================================
+// QUESTION PAPER
+// ============================================================
+
+model QuestionPaper {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  examId         Int
+  scheduleId     Int @unique
+
+  // Paper Details
+  title        String
+  instructions String?
+
+  // Files
+  paperUrl    String? // PDF/Document URL
+  solutionUrl String? // Answer key URL
+
+  // Metadata
+  totalQuestions Int?
+  totalMarks     Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy Int? // Teacher who created it
+
+  // Relations
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  exam         Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  schedule     ExamSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  questions Question[]
+
+  @@index([schoolId, academicYearId])
+}
+
+// ============================================================
+// QUESTION (Optional - for digital question banks)
+// ============================================================
+
+model Question {
+  id              Int @id @default(autoincrement())
+  questionPaperId Int
+
+  // Question Details
+  questionText String
+  questionType QuestionType
+  marks        Float
+  order        Int          @default(0)
+
+  // For MCQ
+  options       Json? // Array of options
+  correctAnswer String?
+
+  // Metadata
+  difficultyLevel String? // EASY, MEDIUM, HARD
+  bloomsLevel     String? // REMEMBER, UNDERSTAND, APPLY, etc.
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  questionPaper QuestionPaper @relation(fields: [questionPaperId], references: [id], onDelete: Cascade)
+
+  @@index([questionPaperId])
+}
+
+// ============================================================
+// EXAM RESULT
+// ============================================================
+
+model ExamResult {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  examId         Int
+  scheduleId     Int
+
+  // Student
+  studentId Int
+
+  // Marks
+  marksObtained Float?
+  maxMarks      Float
+  percentage    Float?
+  grade         String?
+  gradePoint    Float?
+
+  // Status
+  status      ResultStatus @default(PENDING)
+  gradeStatus GradeStatus?
+
+  // Attendance
+  isPresent Boolean @default(true)
+
+  // Remarks
+  remarks      String?
+  teacherNotes String?
+
+  // Evaluation
+  evaluatedBy Int? // Teacher ID
+  evaluatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school       School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  exam         Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
+  schedule     ExamSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  student      StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, studentId])
+  @@index([schoolId, academicYearId])
+  @@index([studentId])
+  @@index([status])
+}

@@ -4,7 +4,11 @@ import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { UserAuthGuard } from 'src/common/guards/user.guard';
 import { GetCalendarDto } from 'src/principal/calendar/dto/calendar.dto';
 
-@UseGuards(UserAuthGuard)
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
+@UseGuards(UserAuthGuard, ModuleGuard)
+@RequiredModule('CALENDAR')
 @Controller('teacher/calendar')
 export class TeacherCalendarController {
     constructor(private calendarService: CalendarService) { }

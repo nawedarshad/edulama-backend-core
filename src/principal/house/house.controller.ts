@@ -16,10 +16,14 @@ import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('House Management')
 @ApiBearerAuth()
 @Controller('principal/houses')
-@UseGuards(PrincipalAuthGuard)
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('HOUSES')
 export class HouseController {
     constructor(private readonly houseService: HouseService) { }
 

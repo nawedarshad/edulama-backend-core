@@ -1,4 +1,7 @@
 import { Module, MiddlewareConsumer, RequestMethod, NestModule } from '@nestjs/common';
+import { RouteLoggerMiddleware } from './common/middleware/route-logger.middleware';
+import { APP_GUARD } from '@nestjs/core';
+import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
@@ -14,6 +17,15 @@ import { AuditLogModule } from './common/audit/audit-log.module';
 import { TodoModule } from './todo/todo.module';
 import { SaaSAdminModule } from './saas-admin/saas-admin.module';
 import { UserModule } from './user/user.module';
+import { ExamModule } from './exam/exam.module';
+import { WebPageModule } from './web-page/web-page.module';
+import { SchoolConfigController } from './common/school-config.controller';
+import { SaasAdminCbseCircularModule } from './saas-admin/cbse-circular/saas-admin-cbse-circular.module';
+import { PrincipalCbseCircularModule } from './principal/cbse-circular/principal-cbse-circular.module';
+import { InquiryModule } from './principal/inquiry/inquiry.module';
+import { PublicInquiryController } from './principal/inquiry/public-inquiry.controller';
+
+
 
 @Module({
   imports: [
@@ -30,15 +42,24 @@ import { UserModule } from './user/user.module';
     TodoModule,
     SaaSAdminModule,
     UserModule,
+    ExamModule,
+    SaasAdminCbseCircularModule,
+    PrincipalCbseCircularModule,
     EventEmitterModule.forRoot(),
+    HttpModule,
+    WebPageModule,
+    InquiryModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AppController, SchoolConfigController, PublicInquiryController],
+  providers: [
+    AppService,
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
-      .apply(LoggerMiddleware)
+      .apply(RouteLoggerMiddleware)
       .forRoutes({ path: '*', method: RequestMethod.ALL });
   }
 }
+

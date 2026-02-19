@@ -19,9 +19,13 @@ import { CreateTimePeriodDto } from './dto/create-time-period.dto';
 import { CreateTimetableEntryDto } from './dto/create-timetable-entry.dto';
 import { DayOfWeek } from '@prisma/client';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @ApiTags('Principal - Timetable')
 @ApiBearerAuth()
-@UseGuards(PrincipalAuthGuard)
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('TIMETABLE')
 @Controller('principal/timetable')
 export class TimetableController {
     constructor(private readonly timetableService: TimetableService) { }

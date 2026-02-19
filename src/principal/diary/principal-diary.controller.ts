@@ -20,7 +20,11 @@ interface ExtendedUser extends User {
     academicYearId: number;
 }
 
-@UseGuards(PrincipalAuthGuard)
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('LESSON_PLANNING')
 @Controller('principal/class-diaries')
 export class PrincipalDiaryController {
     constructor(private readonly diaryService: PrincipalDiaryService) { }

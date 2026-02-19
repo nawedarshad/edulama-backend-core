@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { DEFAULT_MODULES } from '../common/constants/school-type.constants';
 
 @Injectable()
 export class SaaSAdminService {
@@ -49,6 +50,9 @@ export class SaaSAdminService {
         adminName: string;
         adminPhone?: string;
         initialPassword?: string;
+        type?: 'SCHOOL' | 'COLLEGE' | 'COACHING';
+        academicYearName?: string;
+        startDate?: string;
     }) {
         // 1. Check uniqueness
         const existing = await this.prisma.school.findFirst({
@@ -64,13 +68,17 @@ export class SaaSAdminService {
         // 2. Transaction
         return this.prisma.$transaction(async (tx) => {
             // Create School
+            // Cast type to any to avoid TS error before prisma generate
+            const schoolType = (data.type || 'SCHOOL') as any; // SchoolType
+
             const school = await tx.school.create({
                 data: {
                     name: data.name,
                     code: data.code,
                     subdomain: data.subdomain,
+                    type: schoolType,
                     isActive: true,
-                },
+                } as any,
             });
 
             // Get School Admin Role
@@ -78,28 +86,21 @@ export class SaaSAdminService {
                 where: { name: 'SCHOOL_ADMIN' },
             });
 
-            // Fallback if role doesn't exist (bootstrapping issue) in some envs
-            // ideally seeded, but safest to findFirst
+            // Fallback if role doesn't exist (bootstrapping issue)
             if (!adminRole) {
-                // Try finding any role meant for admins or throw
-                // For now, assuming standard seed exists.
-                // throw new BadRequestException("SCHOOL_ADMIN role not found in system.");
+                // Log warning or handle?
             }
-
-            // If role ID is needed and strictly required, ensure DB is seeded. 
-            // Assuming 'SCHOOL_ADMIN' exists as per standard seeds. 
-            // If not, we might fail or default to a safe value? Better to fail.
 
             // Create Admin User
             const user = await tx.user.create({
                 data: {
                     schoolId: school.id,
                     name: data.adminName,
-                    roleId: adminRole ? adminRole.id : 1, // Fallback to 1 if missing, risky but prevents crash if seed missing. BETTER: Find by name.
+                    roleId: adminRole ? adminRole.id : 1, // Fallback
                 },
             });
 
-            // Assign Role explicitly in UserRole if needed (User model has roleId, but UserRole also exists)
+            // Assign Role explicitly
             if (adminRole) {
                 await tx.userRole.create({
                     data: {
@@ -110,7 +111,7 @@ export class SaaSAdminService {
             }
 
             // Create Auth Identity (Email)
-            const hashedPassword = await argon2.hash(data.initialPassword || 'password123'); // Default unless provided
+            const hashedPassword = await argon2.hash(data.initialPassword || 'password123');
 
             await tx.authIdentity.create({
                 data: {
@@ -119,9 +120,46 @@ export class SaaSAdminService {
                     type: 'EMAIL',
                     value: data.adminEmail,
                     secret: hashedPassword,
-                    verified: true, // Auto-verify initial admin
+                    verified: true,
                 },
             });
+
+            // --- CREATE ACADEMIC YEAR ---
+            if (data.startDate && data.academicYearName) {
+                const start = new Date(data.startDate);
+                const end = new Date(start);
+                end.setFullYear(end.getFullYear() + 1);
+                end.setDate(end.getDate() - 1);
+
+                await tx.academicYear.create({
+                    data: {
+                        schoolId: school.id,
+                        name: data.academicYearName,
+                        startDate: start,
+                        endDate: end,
+                        status: 'ACTIVE', // AcademicYearStatus.ACTIVE
+                    },
+                });
+            }
+
+            // --- ASSIGN DEFAULT MODULES ---
+            const defaultModuleKeys = DEFAULT_MODULES[schoolType] || [];
+
+            if (defaultModuleKeys.length > 0) {
+                const modules = await tx.module.findMany({
+                    where: { key: { in: defaultModuleKeys } }
+                });
+
+                if (modules.length > 0) {
+                    await tx.schoolModule.createMany({
+                        data: modules.map(m => ({
+                            schoolId: school.id,
+                            moduleId: m.id,
+                            enabled: true
+                        }))
+                    });
+                }
+            }
 
             return school;
         });
@@ -131,6 +169,25 @@ export class SaaSAdminService {
         return this.prisma.school.update({
             where: { id },
             data: { isActive },
+        });
+    }
+
+    async updateSchool(id: number, data: {
+        name?: string;
+        code?: string;
+        subdomain?: string;
+        isActive?: boolean;
+        type?: any; // SchoolType
+    }) {
+        return this.prisma.school.update({
+            where: { id },
+            data: {
+                name: data.name,
+                code: data.code,
+                subdomain: data.subdomain,
+                isActive: data.isActive,
+                type: data.type,
+            } as any,
         });
     }
 
@@ -179,4 +236,5 @@ export class SaaSAdminService {
         }
         return results;
     }
+
 }

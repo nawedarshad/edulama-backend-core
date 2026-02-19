@@ -4,8 +4,12 @@ import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { UserAuthGuard } from '../../common/guards/user.guard';
 import { LeaveActionDto } from './dto/leave-action.dto';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @Controller('principal/leave-requests')
-@UseGuards(UserAuthGuard)
+@UseGuards(UserAuthGuard, ModuleGuard)
+@RequiredModule('LEAVE_MANAGEMENT')
 // @UseGuards(PrincipalAuthGuard) // Enable in prod
 export class PrincipalLeaveController {
     constructor(private readonly leaveService: PrincipalLeaveService) { }

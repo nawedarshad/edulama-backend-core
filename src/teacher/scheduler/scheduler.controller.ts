@@ -26,4 +26,20 @@ export class SchedulerController {
         const teacherId = req.user.id;
         return this.schedulerService.commitSchedule(schoolId, academicYearId, dto, teacherId);
     }
+
+    @ApiOperation({ summary: 'Check if a schedule already exists' })
+    @Post('check-existing')
+    async checkExisting(@Request() req, @Body() body: { classId: number, sectionId: number, subjectId: number }) {
+        const schoolId = req.user.schoolId;
+        const academicYearId = req.user.academicYearId;
+        return this.schedulerService.checkExisting(schoolId, academicYearId, body.classId, body.sectionId, body.subjectId);
+    }
+
+    @ApiOperation({ summary: 'Load existing schedule for editing' })
+    @Post('load-existing')
+    async loadExisting(@Request() req, @Body() body: { classId: number, sectionId: number, subjectId: number }) {
+        const schoolId = req.user.schoolId;
+        const academicYearId = req.user.academicYearId;
+        return this.schedulerService.loadExistingSchedule(schoolId, academicYearId, body.classId, body.sectionId, body.subjectId);
+    }
 }
