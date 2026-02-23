@@ -24,6 +24,7 @@ import { SaasAdminCbseCircularModule } from './saas-admin/cbse-circular/saas-adm
 import { PrincipalCbseCircularModule } from './principal/cbse-circular/principal-cbse-circular.module';
 import { InquiryModule } from './principal/inquiry/inquiry.module';
 import { PublicInquiryController } from './principal/inquiry/public-inquiry.controller';
+import { HealthController } from './health/health.controller';
 
 
 
@@ -50,7 +51,7 @@ import { PublicInquiryController } from './principal/inquiry/public-inquiry.cont
     WebPageModule,
     InquiryModule,
   ],
-  controllers: [AppController, SchoolConfigController, PublicInquiryController],
+  controllers: [AppController, SchoolConfigController, PublicInquiryController, HealthController],
   providers: [
     AppService,
   ],
