@@ -125,17 +125,20 @@ model ExamSchedule {
   sectionId Int?
   subjectId Int
 
-  // Timing
-  examDate  DateTime
-  startTime String // HH:mm format
-  endTime   String // HH:mm format
-  duration  Int // minutes
+  // Step 2 — Marks Structure (set during subject mapping)
+  maxMarks       Float  @default(100)
+  passingMarks   Float?
+  theoryMarks    Float? // Theory component marks
+  practicalMarks Float? // Practical / Lab component marks
 
-  // Exam Details
-  maxMarks     Float
-  passingMarks Float?
+  // Step 3 — Timing (set when timetable/datesheet is finalized)
+  examDate  DateTime?
+  startTime String? // HH:mm format
+  endTime   String? // HH:mm format
+  duration  Int? // minutes
+  session   String? // e.g. MORNING / AFTERNOON
 
-  // Room Assignment
+  // Room Assignment (Step 3+)
   roomId Int?
 
   // Instructions
@@ -324,11 +327,13 @@ model ExamResult {
   studentId Int
 
   // Marks
-  marksObtained Float?
-  maxMarks      Float
-  percentage    Float?
-  grade         String?
-  gradePoint    Float?
+  marksObtained  Float?
+  theoryMarks    Float?
+  practicalMarks Float?
+  maxMarks       Float
+  percentage     Float?
+  grade          String?
+  gradePoint     Float?
 
   // Status
   status      ResultStatus @default(PENDING)

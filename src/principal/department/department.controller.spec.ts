@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DepartmentController } from './department.controller';
 import { DepartmentService } from './department.service';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
+import { ModuleGuard } from '../../common/guards/module.guard';
 import { CreateDepartmentDto, DepartmentQueryDto } from './dto/department.dto';
 
 describe('DepartmentController', () => {
@@ -34,6 +35,8 @@ describe('DepartmentController', () => {
             ],
         })
             .overrideGuard(PrincipalAuthGuard)
+            .useValue({ canActivate: () => true })
+            .overrideGuard(ModuleGuard)
             .useValue({ canActivate: () => true })
             .compile();
 

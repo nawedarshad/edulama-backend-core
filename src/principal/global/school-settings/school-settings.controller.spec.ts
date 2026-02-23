@@ -72,11 +72,16 @@ describe('SchoolSettingsController', () => {
             const mockResult = { id: 1, ...dto };
             (service.updateSettings as jest.Mock).mockResolvedValue(mockResult);
 
-            const req = { user: { schoolId: 1, id: 101 } };
+            const req = {
+                user: { schoolId: 1, id: 101 },
+                headers: {},
+                connection: { remoteAddress: '127.0.0.1' },
+                ip: '127.0.0.1',
+            };
             const result = await controller.updateSettings(req, dto);
 
             expect(result).toEqual(mockResult);
-            expect(service.updateSettings).toHaveBeenCalledWith(1, 101, dto);
+            expect(service.updateSettings).toHaveBeenCalledWith(1, 101, dto, '127.0.0.1');
         });
     });
 });

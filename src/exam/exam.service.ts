@@ -1,8 +1,8 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsNumber, IsDate, IsBoolean } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsNumber, IsDate, IsBoolean, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PrismaService } from '../prisma/prisma.service';
-import { ExamType, ExamStatus, ExamCategory } from '@prisma/client';
+import { ExamType, ExamStatus, ExamCategory, RoomType } from '@prisma/client';
 
 // DTOs
 export class CreateExamDto {
@@ -56,6 +56,18 @@ export class CreateExamDto {
     @IsBoolean()
     @IsOptional()
     classesContinue?: boolean;
+
+    @IsNumber()
+    @IsOptional()
+    theoryMarks?: number;
+
+    @IsNumber()
+    @IsOptional()
+    practicalMarks?: number;
+
+    @IsBoolean()
+    @IsOptional()
+    autoAssignRooms?: boolean;
 }
 
 export class UpdateExamDto {
@@ -101,17 +113,58 @@ export class UpdateExamDto {
     @IsBoolean()
     @IsOptional()
     isResultPublic?: boolean;
+
+    @IsNumber()
+    @IsOptional()
+    theoryMarks?: number;
+
+    @IsNumber()
+    @IsOptional()
+    practicalMarks?: number;
+
+    @IsBoolean()
+    @IsOptional()
+    autoAssignRooms?: boolean;
 }
 
 import { CalendarService } from '../principal/calendar/calendar.service';
 import { DayType } from '@prisma/client';
 
 export class AutoScheduleDto {
+    @IsNotEmpty()
     startDate: string | Date;
+
+    @IsNotEmpty()
     endDate: string | Date;
+
+    @IsArray()
+    @IsNotEmpty()
     scheduleItems: { classId: number; subjectIds: number[] }[];
+
+    @IsBoolean()
+    @IsOptional()
     jumbleSubjects?: boolean;
+
+    @IsBoolean()
+    @IsOptional()
     maximizeGaps?: boolean;
+
+    @IsBoolean()
+    @IsOptional()
+    autoAssignRooms?: boolean;
+
+    @IsNumber()
+    @IsOptional()
+    theoryMarks?: number;
+
+    @IsNumber()
+    @IsOptional()
+    practicalMarks?: number;
+
+    @IsArray()
+    @IsNumber({}, { each: true })
+    @IsOptional()
+    roomIds?: number[];
 }
 
 @Injectable()
@@ -139,7 +192,7 @@ export class ExamService {
             throw new BadRequestException(`Exam with code "${dto.code}" already exists`);
         }
 
-        const { classIds, ...rest } = dto;
+        const { classIds, theoryMarks, practicalMarks, autoAssignRooms, ...rest } = dto;
 
         return this.prisma.exam.create({
             data: {
@@ -231,9 +284,11 @@ export class ExamService {
             throw new NotFoundException('Exam not found');
         }
 
+        const { theoryMarks, practicalMarks, autoAssignRooms, ...rest } = dto;
+
         return this.prisma.exam.update({
             where: { id },
-            data: dto,
+            data: rest,
         });
     }
 
@@ -268,7 +323,7 @@ export class ExamService {
 
         const totalSchedules = exam.schedules.length;
         const completedSchedules = exam.schedules.filter(
-            s => new Date(s.examDate) < new Date()
+            s => s.examDate && new Date(s.examDate) < new Date()
         ).length;
 
         const totalStudents = await this.prisma.seatingArrangement.count({
@@ -326,6 +381,34 @@ export class ExamService {
         const schedules: any[] = [];
         const totalWorkingDays = workingDays.length;
 
+        // Pre-fetch rooms if auto-assign is requested
+        let availableRooms: { id: number; name: string; code: string | null; capacity: number | null; roomType: RoomType }[] = [];
+        // Track room bookings within THIS generated schedule to avoid intra-batch conflicts
+        // Key: `${roomId}-${date}-${startTime}`
+        const roomBookings = new Set<string>();
+
+        if (dto.autoAssignRooms) {
+            const roomWhere: any = { schoolId, status: 'ACTIVE' };
+            if (dto.roomIds) {
+                roomWhere.id = { in: dto.roomIds };
+            }
+            availableRooms = await this.prisma.room.findMany({
+                where: roomWhere,
+                select: { id: true, name: true, code: true, capacity: true, roomType: true },
+            });
+
+            // Sort: CLASSROOM first, then by capacity (smallest first)
+            availableRooms.sort((a, b) => {
+                if (a.roomType === 'CLASSROOM' && b.roomType !== 'CLASSROOM') return -1;
+                if (a.roomType !== 'CLASSROOM' && b.roomType === 'CLASSROOM') return 1;
+                return (a.capacity ?? 0) - (b.capacity ?? 0);
+            });
+        }
+
+        // Track remaining capacity for rooms per slot
+        // Key: `${roomId}-${date}-${startTime}`
+        const roomCapacityTracker = new Map<string, number>();
+
         for (const item of dto.scheduleItems) {
             const classId = item.classId;
 
@@ -337,9 +420,16 @@ export class ExamService {
                 select: { id: true, name: true, code: true }
             });
 
-            // A. Jumble Subjects if requested
+            // Get student count for this class
+            let studentCount = 0;
+            if (dto.autoAssignRooms) {
+                studentCount = await this.prisma.studentProfile.count({
+                    where: { schoolId, classId, isActive: true },
+                });
+            }
+
+            // A. Jumble Subjects
             if (dto.jumbleSubjects) {
-                // Fisher-Yates shuffle
                 for (let i = classSubjects.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
                     [classSubjects[i], classSubjects[j]] = [classSubjects[j], classSubjects[i]];
@@ -347,34 +437,97 @@ export class ExamService {
             }
 
             // B. Allocation Logic
-            classSubjects.forEach((subject, index) => {
+            for (let index = 0; index < classSubjects.length; index++) {
+                const subject = classSubjects[index];
                 let dayIndex = 0;
 
                 if (dto.maximizeGaps && classSubjects.length > 1 && totalWorkingDays >= classSubjects.length) {
-                    // Spread evenly across available days: floor(i * available / count)
-                    // We distribute such that the last exam is on the last possible day
                     dayIndex = Math.floor((index * (totalWorkingDays - 1)) / (classSubjects.length - 1));
                 } else {
-                    // Default tight packing
                     dayIndex = index;
                 }
 
                 if (dayIndex < totalWorkingDays) {
                     const examDay = workingDays[dayIndex];
+                    const startTime = '09:00';
+
+                    // C. Auto Room Assignment (Refined: Empty Room Priority)
+                    let assignedRoomId: number | null = null;
+                    let assignedRoomName: string | null = null;
+
+                    if (dto.autoAssignRooms && availableRooms.length > 0) {
+                        const slotKeyBase = `${examDay.date}-${startTime}`;
+
+                        // Pass 1: Look for a completely empty room (following the preference sort)
+                        for (const room of availableRooms) {
+                            const slotKey = `${room.id}-${slotKeyBase}`;
+
+                            // Initialize tracker if needed
+                            if (!roomCapacityTracker.has(slotKey)) {
+                                const existingExams = await this.prisma.examSchedule.findMany({
+                                    where: {
+                                        schoolId,
+                                        roomId: room.id,
+                                        examDate: new Date(examDay.date),
+                                        startTime,
+                                    },
+                                    select: { classId: true }
+                                });
+
+                                let usedCapacity = 0;
+                                for (const ex of existingExams) {
+                                    const exCount = await this.prisma.studentProfile.count({
+                                        where: { schoolId, classId: ex.classId, isActive: true }
+                                    });
+                                    usedCapacity += exCount;
+                                }
+                                roomCapacityTracker.set(slotKey, (room.capacity ?? 0) - usedCapacity);
+                            }
+
+                            const remainingCapacity = roomCapacityTracker.get(slotKey) || 0;
+                            const isTotallyEmpty = remainingCapacity === (room.capacity ?? 0);
+
+                            if (isTotallyEmpty && remainingCapacity >= studentCount) {
+                                assignedRoomId = room.id;
+                                assignedRoomName = room.name;
+                                roomCapacityTracker.set(slotKey, remainingCapacity - studentCount);
+                                break;
+                            }
+                        }
+
+                        // Pass 2: If no empty room found, look for ANY room with enough capacity
+                        if (!assignedRoomId) {
+                            for (const room of availableRooms) {
+                                const slotKey = `${room.id}-${slotKeyBase}`;
+                                const remainingCapacity = roomCapacityTracker.get(slotKey) || 0;
+
+                                if (remainingCapacity >= studentCount) {
+                                    assignedRoomId = room.id;
+                                    assignedRoomName = room.name;
+                                    roomCapacityTracker.set(slotKey, remainingCapacity - studentCount);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     schedules.push({
                         classId,
                         subjectId: subject.id,
                         subjectName: subject.name,
                         subjectCode: subject.code,
                         examDate: examDay.date,
-                        startTime: '09:00',
+                        startTime,
                         endTime: '12:00',
                         duration: 180,
                         maxMarks: 100,
                         passingMarks: 33,
+                        theoryMarks: dto.theoryMarks,
+                        practicalMarks: dto.practicalMarks,
+                        ...(assignedRoomId ? { roomId: assignedRoomId, roomName: assignedRoomName } : {}),
                     });
                 }
-            });
+            }
         }
 
         return schedules;

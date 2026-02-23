@@ -69,22 +69,25 @@ describe('SubjectService', () => {
 
     describe('create', () => {
         it('should create a subject if it does not exist in the active academic year', async () => {
-            mockPrismaService.academicYear.findFirst.mockResolvedValue(mockAcademicYear);
             mockPrismaService.subject.findUnique.mockResolvedValue(null);
             mockPrismaService.subject.create.mockResolvedValue({ id: 1, name: 'Math' });
 
             const dto: CreateSubjectDto = { name: 'Math', code: 'MATH101' };
             const result = await service.create(mockSchoolId, dto);
 
-            expect(mockPrismaService.academicYear.findFirst).toHaveBeenCalledWith({
-                where: { schoolId: mockSchoolId, status: AcademicYearStatus.ACTIVE }
+            expect(mockPrismaService.subject.findUnique).toHaveBeenCalledWith({
+                where: {
+                    schoolId_code: {
+                        schoolId: mockSchoolId,
+                        code: 'MATH101'
+                    }
+                }
             });
             expect(mockPrismaService.subject.create).toHaveBeenCalled();
             expect(result).toEqual({ id: 1, name: 'Math' });
         });
 
         it('should throw ConflictException if subject code exists in the active academic year', async () => {
-            mockPrismaService.academicYear.findFirst.mockResolvedValue(mockAcademicYear);
             mockPrismaService.subject.findUnique.mockResolvedValue({ id: 1 });
 
             const dto: CreateSubjectDto = { name: 'Math', code: 'MATH101' };
@@ -95,14 +98,14 @@ describe('SubjectService', () => {
 
     describe('findAll', () => {
         it('should return subjects for the active academic year', async () => {
-            mockPrismaService.academicYear.findFirst.mockResolvedValue(mockAcademicYear);
             mockPrismaService.subject.findMany.mockResolvedValue([{ id: 1, name: 'Math' }]);
+            mockPrismaService.subject.count.mockResolvedValue(1);
 
             const result = await service.findAll(mockSchoolId, {});
             expect(mockPrismaService.subject.findMany).toHaveBeenCalledWith(expect.objectContaining({
-                where: { schoolId: mockSchoolId, academicYearId: mockAcademicYear.id }
+                where: { schoolId: mockSchoolId }
             }));
-            expect(result).toHaveLength(1);
+            expect(result.data).toHaveLength(1);
         });
     });
 

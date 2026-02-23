@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { SetWorkingPatternDto, CreateCalendarExceptionDto, UpdateCalendarExceptionDto, CalendarResponse, CalendarDay } from './dto/calendar.dto';
 import { DayOfWeek, DayType, AcademicYearStatus } from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';

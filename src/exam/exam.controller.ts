@@ -17,6 +17,11 @@ import {
     ExamScheduleService,
     CreateExamScheduleDto,
     UpdateExamScheduleDto,
+    CreateSubjectMappingDto,
+    UpdateSubjectMappingDto,
+    BulkSubjectMappingDto,
+    SetTimetableEntryDto,
+    SetTimetableBulkDto,
 } from './exam-schedule.service';
 import {
     SeatingService,
@@ -45,7 +50,7 @@ import {
 @ApiTags('Principal - Exam Management')
 @ApiBearerAuth()
 @UseGuards(PrincipalAuthGuard)
-@Controller('principal/exam')
+@Controller('api/principal/exam')
 export class ExamController {
     constructor(
         private readonly examService: ExamService,
@@ -148,11 +153,131 @@ export class ExamController {
     }
 
     @Post(':examId/schedule/bulk')
-    @ApiOperation({ summary: 'Create multiple schedules' })
+    @ApiOperation({ summary: 'Create multiple schedules (Step 3 — with dates)' })
     createBulkSchedules(@Request() req, @Param('examId') examId: string, @Body() dto: { schedules: CreateExamScheduleDto[] }) {
         const { schoolId, academicYearId } = req.user;
         const schedulesWithExamId = dto.schedules.map(s => ({ ...s, examId: +examId }));
         return this.scheduleService.createBulk(schoolId, academicYearId, schedulesWithExamId);
+    }
+
+    // ============================================================
+    // STEP 3 — TIMETABLE (assign dates/times/rooms to mappings)
+    // ============================================================
+
+    @Put(':examId/timetable/entry')
+    @ApiOperation({ summary: 'Assign date/time/room to a single subject mapping (Step 3)' })
+    setTimetableEntry(
+        @Request() req,
+        @Body() dto: SetTimetableEntryDto,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.scheduleService.setTimetableEntry(schoolId, academicYearId, dto);
+    }
+
+    @Put(':examId/timetable/bulk')
+    @ApiOperation({ summary: 'Bulk assign dates/times/rooms to subject mappings (Step 3)' })
+    setTimetableBulk(
+        @Request() req,
+        @Param('examId') examId: string,
+        @Body() dto: SetTimetableBulkDto,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.scheduleService.setTimetableBulk(schoolId, academicYearId, +examId, dto.entries);
+    }
+
+    @Get(':examId/timetable')
+    @ApiOperation({ summary: 'Get timetable grouped by date (Step 3)' })
+    getTimetable(
+        @Request() req,
+        @Param('examId') examId: string,
+        @Query('classId') classId?: string,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.scheduleService.getTimetable(schoolId, academicYearId, +examId, classId ? +classId : undefined);
+    }
+
+    @Get(':examId/timetable/summary')
+    @ApiOperation({ summary: 'Get timetable completion summary (scheduled vs unscheduled)' })
+    getTimetableSummary(
+        @Request() req,
+        @Param('examId') examId: string,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.scheduleService.getTimetableSummary(schoolId, academicYearId, +examId);
+    }
+
+    @Delete(':examId/timetable')
+    @ApiOperation({ summary: 'Clear timetable (reset dates/times/rooms) for an exam' })
+    clearTimetable(
+        @Request() req,
+        @Param('examId') examId: string,
+        @Query('classId') classId?: string,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.scheduleService.clearTimetable(schoolId, academicYearId, +examId, classId ? +classId : undefined);
+    }
+
+    // ============================================================
+    // STEP 2 — SUBJECT MAPPING (marks structure, no dates yet)
+    // ============================================================
+
+    @Post(':examId/subjects')
+    @ApiOperation({ summary: 'Add a subject to exam (Step 2 — marks only, no date)' })
+    addSubjectMapping(
+        @Request() req,
+        @Param('examId') examId: string,
+        @Body() dto: CreateSubjectMappingDto,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.scheduleService.addSubjectMapping(schoolId, academicYearId, { ...dto, examId: +examId });
+    }
+
+    @Post(':examId/subjects/bulk')
+    @ApiOperation({ summary: 'Bulk add/update subject mappings for an exam (upsert)' })
+    addSubjectMappingsBulk(
+        @Request() req,
+        @Param('examId') examId: string,
+        @Body() dto: BulkSubjectMappingDto,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.scheduleService.addSubjectMappingsBulk(
+            schoolId,
+            academicYearId,
+            +examId,
+            dto.subjects.map(s => ({ ...s, examId: +examId })),
+        );
+    }
+
+    @Get(':examId/subjects')
+    @ApiOperation({ summary: 'Get all subject mappings for an exam (optionally filter by class)' })
+    getSubjectMappings(
+        @Request() req,
+        @Param('examId') examId: string,
+        @Query('classId') classId?: string,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.scheduleService.getSubjectMappings(schoolId, academicYearId, +examId, classId ? +classId : undefined);
+    }
+
+    @Put('subjects/:scheduleId')
+    @ApiOperation({ summary: 'Update marks structure for a subject mapping' })
+    updateSubjectMapping(
+        @Request() req,
+        @Param('scheduleId') scheduleId: string,
+        @Body() dto: UpdateSubjectMappingDto,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.scheduleService.updateSubjectMapping(schoolId, academicYearId, +scheduleId, dto);
+    }
+
+    @Delete('subjects/:scheduleId')
+    @ApiOperation({ summary: 'Remove a subject from this exam' })
+    removeSubjectMapping(
+        @Request() req,
+        @Param('scheduleId') scheduleId: string,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.scheduleService.delete(schoolId, academicYearId, +scheduleId);
     }
 
     // ============================================================

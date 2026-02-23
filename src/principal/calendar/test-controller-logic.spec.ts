@@ -3,6 +3,8 @@ import { CalendarController } from './calendar.controller';
 import { CalendarService } from './calendar.service';
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
+import { ModuleGuard } from '../../common/guards/module.guard';
 
 // Mock Service
 const mockService = {
@@ -18,7 +20,12 @@ describe('CalendarController Manual Logic Test', () => {
             providers: [
                 { provide: CalendarService, useValue: mockService },
             ],
-        }).compile();
+        })
+            .overrideGuard(PrincipalAuthGuard)
+            .useValue({ canActivate: () => true })
+            .overrideGuard(ModuleGuard)
+            .useValue({ canActivate: () => true })
+            .compile();
 
         controller = module.get<CalendarController>(CalendarController);
     });

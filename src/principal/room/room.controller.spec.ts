@@ -5,6 +5,7 @@ import { CreateRoomDto } from './dto/create-room.dto';
 import { RoomType, RoomStatus } from '@prisma/client';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { CanActivate } from '@nestjs/common';
+import { ModuleGuard } from '../../common/guards/module.guard';
 
 const mockRoomService = {
     findAll: jest.fn(),
@@ -32,6 +33,8 @@ describe('RoomController', () => {
             ],
         })
             .overrideGuard(PrincipalAuthGuard)
+            .useValue(mockGuard)
+            .overrideGuard(ModuleGuard)
             .useValue(mockGuard)
             .compile();
 

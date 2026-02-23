@@ -17,6 +17,9 @@ const mockPrismaService = {
     section: {
         findFirst: jest.fn(),
     },
+    academicYear: {
+        findFirst: jest.fn(),
+    },
     roomAssignment: {
         upsert: jest.fn(),
         deleteMany: jest.fn(),
@@ -157,6 +160,7 @@ describe('RoomService', () => {
         it('should assign room successfully', async () => {
             (prisma.room.findFirst as jest.Mock).mockResolvedValue({ id: 1 });
             (prisma.section.findFirst as jest.Mock).mockResolvedValue({ id: 1, academicYearId: 2024 });
+            (prisma.academicYear.findFirst as jest.Mock).mockResolvedValue({ id: 2024 });
             (prisma.roomAssignment.upsert as jest.Mock).mockResolvedValue({ id: 1 });
 
             await service.assignRoom(1, { roomId: 1, sectionId: 1 });

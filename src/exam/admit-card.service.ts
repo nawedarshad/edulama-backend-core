@@ -45,6 +45,7 @@ export class AdmitCardService {
                 examId,
                 schoolId,
                 classId: student.classId,
+                examDate: { not: null }, // Only include scheduled subjects
                 // If sectionId is specific, match it. If null, valid for all.
                 OR: [
                     { sectionId: student.sectionId },

@@ -14,6 +14,14 @@ export class CreateResultDto {
     @IsOptional()
     marksObtained?: number;
 
+    @IsNumber()
+    @IsOptional()
+    theoryMarks?: number;
+
+    @IsNumber()
+    @IsOptional()
+    practicalMarks?: number;
+
     @IsBoolean()
     @IsOptional()
     isPresent?: boolean;
@@ -31,6 +39,14 @@ export class UpdateResultDto {
     @IsNumber()
     @IsOptional()
     marksObtained?: number;
+
+    @IsNumber()
+    @IsOptional()
+    theoryMarks?: number;
+
+    @IsNumber()
+    @IsOptional()
+    practicalMarks?: number;
 
     @IsNumber()
     @IsOptional()
@@ -113,6 +129,9 @@ export class ResultService {
             throw new NotFoundException('Schedule not found');
         }
 
+        // Validate marks against schedule
+        this.validateResultMarks(dto, schedule);
+
         // Check for duplicate
         const existing = await this.prisma.examResult.findFirst({
             where: { scheduleId, studentId: dto.studentId },
@@ -122,15 +141,17 @@ export class ResultService {
             throw new BadRequestException('Result already exists for this student');
         }
 
+        // Calculate marks obtained if split is provided
+        const marks = this.calculateFinalMarks(dto);
+
         // Calculate percentage and grade
-        const marksObtained = dto.marksObtained || 0;
         const maxMarks = schedule.maxMarks;
-        const percentage = (marksObtained / maxMarks) * 100;
+        const percentage = (marks / maxMarks) * 100;
         const passingMarks = schedule.passingMarks || maxMarks * 0.33;
 
         const gradeStatus: GradeStatus = !dto.isPresent
             ? 'ABSENT'
-            : marksObtained >= passingMarks
+            : marks >= passingMarks
                 ? 'PASS'
                 : 'FAIL';
 
@@ -143,7 +164,9 @@ export class ResultService {
                 examId,
                 scheduleId,
                 studentId: dto.studentId,
-                marksObtained,
+                marksObtained: marks,
+                theoryMarks: dto.theoryMarks,
+                practicalMarks: dto.practicalMarks,
                 maxMarks,
                 percentage,
                 grade,
@@ -186,49 +209,69 @@ export class ResultService {
             throw new NotFoundException('Schedule not found');
         }
 
-        // Clear existing results
-        await this.prisma.examResult.deleteMany({
-            where: { scheduleId },
+        // Use interactive transaction for bulk upsert
+        return this.prisma.$transaction(async (tx) => {
+            let count = 0;
+            for (const r of results) {
+                // Validate marks
+                this.validateResultMarks(r, schedule);
+
+                const marks = this.calculateFinalMarks(r);
+                const maxMarks = schedule.maxMarks;
+                const percentage = (marks / maxMarks) * 100;
+                const passingMarks = schedule.passingMarks || maxMarks * 0.33;
+
+                const gradeStatus: GradeStatus = !r.isPresent
+                    ? 'ABSENT'
+                    : marks >= passingMarks
+                        ? 'PASS'
+                        : 'FAIL';
+
+                await tx.examResult.upsert({
+                    where: {
+                        scheduleId_studentId: {
+                            scheduleId,
+                            studentId: r.studentId,
+                        },
+                    },
+                    update: {
+                        marksObtained: marks,
+                        theoryMarks: r.theoryMarks,
+                        practicalMarks: r.practicalMarks,
+                        percentage,
+                        grade: this.calculateGrade(percentage),
+                        gradeStatus,
+                        isPresent: r.isPresent ?? true,
+                        remarks: r.remarks,
+                        teacherNotes: r.teacherNotes,
+                        evaluatedBy,
+                        evaluatedAt: new Date(),
+                    },
+                    create: {
+                        schoolId,
+                        academicYearId,
+                        examId,
+                        scheduleId,
+                        studentId: r.studentId,
+                        marksObtained: marks,
+                        theoryMarks: r.theoryMarks,
+                        practicalMarks: r.practicalMarks,
+                        maxMarks,
+                        percentage,
+                        grade: this.calculateGrade(percentage),
+                        gradeStatus,
+                        isPresent: r.isPresent ?? true,
+                        remarks: r.remarks,
+                        teacherNotes: r.teacherNotes,
+                        evaluatedBy,
+                        evaluatedAt: new Date(),
+                        status: 'PENDING',
+                    },
+                });
+                count++;
+            }
+            return { count };
         });
-
-        // Prepare result data
-        const resultData = results.map(r => {
-            const marksObtained = r.marksObtained || 0;
-            const maxMarks = schedule.maxMarks;
-            const percentage = (marksObtained / maxMarks) * 100;
-            const passingMarks = schedule.passingMarks || maxMarks * 0.33;
-
-            const gradeStatus: GradeStatus = !r.isPresent
-                ? 'ABSENT'
-                : marksObtained >= passingMarks
-                    ? 'PASS'
-                    : 'FAIL';
-
-            return {
-                schoolId,
-                academicYearId,
-                examId,
-                scheduleId,
-                studentId: r.studentId,
-                marksObtained,
-                maxMarks,
-                percentage,
-                grade: this.calculateGrade(percentage),
-                gradeStatus,
-                isPresent: r.isPresent ?? true,
-                remarks: r.remarks,
-                teacherNotes: r.teacherNotes,
-                evaluatedBy,
-                evaluatedAt: new Date(),
-                status: 'PENDING' as ResultStatus,
-            };
-        });
-
-        const created = await this.prisma.examResult.createMany({
-            data: resultData,
-        });
-
-        return { count: created.count };
     }
 
     // ============================================================
@@ -398,5 +441,25 @@ export class ResultService {
         if (percentage >= 40) return 'C';
         if (percentage >= 33) return 'D';
         return 'F';
+    }
+
+    private calculateFinalMarks(dto: CreateResultDto | UpdateResultDto): number {
+        if (dto.theoryMarks !== undefined || dto.practicalMarks !== undefined) {
+            return (dto.theoryMarks || 0) + (dto.practicalMarks || 0);
+        }
+        return dto.marksObtained || 0;
+    }
+
+    private validateResultMarks(dto: CreateResultDto | { marksObtained?: number, theoryMarks?: number, practicalMarks?: number }, schedule: any) {
+        if (dto.theoryMarks !== undefined && schedule.theoryMarks !== null && dto.theoryMarks > schedule.theoryMarks) {
+            throw new BadRequestException(`Theory marks cannot exceed ${schedule.theoryMarks}`);
+        }
+        if (dto.practicalMarks !== undefined && schedule.practicalMarks !== null && dto.practicalMarks > schedule.practicalMarks) {
+            throw new BadRequestException(`Practical marks cannot exceed ${schedule.practicalMarks}`);
+        }
+        const total = this.calculateFinalMarks(dto as any);
+        if (total > schedule.maxMarks) {
+            throw new BadRequestException(`Total marks cannot exceed ${schedule.maxMarks}`);
+        }
     }
 }

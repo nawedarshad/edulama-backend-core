@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CalendarService } from './calendar.service';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DayType, AcademicYearStatus } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 describe('CalendarService', () => {
     let service: CalendarService;
@@ -33,12 +34,14 @@ describe('CalendarService', () => {
         },
         $transaction: jest.fn((ops) => Promise.all(ops)),
     };
+    const mockEventEmitter = { emit: jest.fn() };
 
     beforeEach(async () => {
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 CalendarService,
                 { provide: PrismaService, useValue: mockPrismaService },
+                { provide: EventEmitter2, useValue: mockEventEmitter },
             ],
         }).compile();
 
@@ -94,11 +97,13 @@ describe('CalendarService', () => {
             const wed = result.days.find(d => d.date === '2025-01-01');
             // Assuming default is Working if not in pattern, OR strict pattern. 
             // In service, "let isWorking = patternMap.get(dayOfWeek) ?? true" -> Default True
-            expect(wed.type).toBe(DayType.WORKING);
+            expect(wed).toBeDefined();
+            expect(wed!.type).toBe(DayType.WORKING);
 
             // Check Saturday (Holiday)
             const sat = result.days.find(d => d.date === '2025-01-04');
-            expect(sat.type).toBe(DayType.HOLIDAY);
+            expect(sat).toBeDefined();
+            expect(sat!.type).toBe(DayType.HOLIDAY);
         });
     });
 

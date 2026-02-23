@@ -3,6 +3,8 @@ import { CalendarController } from './calendar.controller';
 import { CalendarService } from './calendar.service';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
+import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
+import { ModuleGuard } from '../../common/guards/module.guard';
 
 describe('CalendarController', () => {
     let controller: CalendarController;
@@ -31,7 +33,12 @@ describe('CalendarController', () => {
                 { provide: HttpService, useValue: mockHttpService },
                 { provide: ConfigService, useValue: mockConfigService },
             ],
-        }).compile();
+        })
+            .overrideGuard(PrincipalAuthGuard)
+            .useValue({ canActivate: () => true })
+            .overrideGuard(ModuleGuard)
+            .useValue({ canActivate: () => true })
+            .compile();
 
         controller = module.get<CalendarController>(CalendarController);
         service = module.get<CalendarService>(CalendarService);
