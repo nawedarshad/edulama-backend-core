@@ -97,7 +97,15 @@ export class TimetableContextService {
                 },
             }),
             this.prisma.subjectAssignment.findMany({
-                where: { schoolId, academicYearId, groupId, isActive: true },
+                where: {
+                    schoolId,
+                    academicYearId,
+                    isActive: true,
+                    OR: [
+                        { groupId }, // Direct group assignment
+                        { classId: group.classId, sectionId: group.sectionId } // Class/Section assignment
+                    ]
+                },
                 include: {
                     subject: { select: { id: true, name: true, code: true, color: true } },
                     teacher: { select: { id: true, user: { select: { name: true } } } },
