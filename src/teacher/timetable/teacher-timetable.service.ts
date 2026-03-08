@@ -13,6 +13,32 @@ export class TeacherTimetableService {
         return days[date.getUTCDay()] as DayOfWeek;
     }
 
+    private mapEntry(entry: any) {
+        if (!entry) return null;
+
+        const period = {
+            id: entry.timeSlot?.id,
+            name: entry.timeSlot?.period?.name || (entry.status === 'FREE' ? 'Free' : `Period ${entry.timeSlot?.startTime}`),
+            startTime: entry.timeSlot?.startTime,
+            endTime: entry.timeSlot?.endTime
+        };
+
+        // Extract class/section info from group if missing
+        let classObj = entry.class;
+        let sectionObj = entry.section;
+
+        if (entry.group) {
+            // Some entries might have group but not class/section directly
+            // though Prisma include might differ
+        }
+
+        return {
+            ...entry,
+            period,
+            timeSlot: undefined // Frontend expects 'period'
+        };
+    }
+
     private async resolveAcademicYearId(schoolId: number, academicYearId?: number): Promise<number> {
         if (academicYearId) return academicYearId;
 
@@ -64,7 +90,7 @@ export class TeacherTimetableService {
             include: {
                 group: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true, color: true } },
-                timeSlot: true,
+                timeSlot: { include: { period: true } },
                 room: { select: { id: true, name: true } },
             },
             orderBy: [
@@ -80,7 +106,10 @@ export class TeacherTimetableService {
             return acc;
         }, {} as Record<string, typeof entries>);
 
-        return grouped;
+        return Object.keys(grouped).reduce((acc, day) => {
+            acc[day] = grouped[day].map(e => this.mapEntry(e));
+            return acc;
+        }, {} as any);
     }
 
     async getDailyTimetable(schoolId: number, userId: number, academicYearId: number | undefined, date: string) {
@@ -133,7 +162,7 @@ export class TeacherTimetableService {
             include: {
                 group: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true, color: true } },
-                timeSlot: true,
+                timeSlot: { include: { period: true } },
                 room: { select: { id: true, name: true } },
             },
         });
@@ -171,7 +200,7 @@ export class TeacherTimetableService {
                     include: {
                         group: { select: { id: true, name: true } },
                         subject: { select: { id: true, name: true, code: true, color: true } },
-                        timeSlot: true,
+                        timeSlot: { include: { period: true } },
                         room: { select: { id: true, name: true } },
                         teacher: { select: { id: true, user: { select: { name: true } } } }
                     }
@@ -181,11 +210,17 @@ export class TeacherTimetableService {
         });
 
         // 4. Construct Final Schedule (Map over ALL periods to include FREE slots)
-        const finalSchedule = allTimeSlots.map(slot => {
+        const finalSchedule = await Promise.all(allTimeSlots.map(async (slot) => {
+            // Slot needs period for mapEntry
+            const slotWithPeriod = await this.prisma.timeSlot.findUnique({
+                where: { id: slot.id },
+                include: { period: true }
+            });
+
             // Check for substitutions I'm doing in this period
             const substitutionDuty = substitutions.find(sub => sub.entry.timeSlotId === slot.id);
             if (substitutionDuty) {
-                return {
+                return this.mapEntry({
                     ...substitutionDuty.entry,
                     id: `sub-${substitutionDuty.id}`,
                     originalEntryId: substitutionDuty.entry.id,
@@ -193,9 +228,9 @@ export class TeacherTimetableService {
                     room: substitutionDuty.substituteRoom || substitutionDuty.entry.room,
                     originalTeacher: substitutionDuty.entry.teacher,
                     note: substitutionDuty.note,
-                    timeSlot: slot,
+                    timeSlot: slotWithPeriod,
                     assignmentId: getAssignmentId(substitutionDuty.entry.groupId, substitutionDuty.entry.subjectId!)
-                };
+                });
             }
 
             // Check for regular class
@@ -205,32 +240,32 @@ export class TeacherTimetableService {
                 const assignmentId = getAssignmentId(regularEntry.groupId, regularEntry.subjectId!);
 
                 if (override) {
-                    return {
+                    return this.mapEntry({
                         ...regularEntry,
                         status: override.type === TimetableOverrideType.CANCELLED ? 'CANCELLED' : 'SUBSTITUTED',
                         overrideNote: override.note,
                         substituteTeacher: override.substituteTeacher,
                         assignmentId
-                    };
+                    });
                 }
-                return { ...regularEntry, status: 'REGULAR', assignmentId };
+                return this.mapEntry({ ...regularEntry, status: 'REGULAR', assignmentId });
             }
 
             // No class = Free Period
-            return {
+            return this.mapEntry({
                 id: `free-${slot.id}`,
                 status: 'FREE',
-                timeSlot: slot,
+                timeSlot: slotWithPeriod,
                 subject: null,
                 group: null,
                 room: null
-            };
-        });
+            });
+        }));
 
         // Sort by time
-        return finalSchedule.sort((a, b) => {
-            const timeA = a.timeSlot?.startTime || '00:00';
-            const timeB = b.timeSlot?.startTime || '00:00';
+        return finalSchedule.sort((a: any, b: any) => {
+            const timeA = a.period?.startTime || '00:00';
+            const timeB = b.period?.startTime || '00:00';
             return timeA.localeCompare(timeB);
         });
     }
@@ -254,7 +289,7 @@ export class TeacherTimetableService {
                     include: {
                         group: { select: { id: true, name: true } },
                         subject: { select: { id: true, name: true, code: true, color: true } },
-                        timeSlot: true,
+                        timeSlot: { include: { period: true } },
                         room: { select: { id: true, name: true } },
                     }
                 }
@@ -262,7 +297,10 @@ export class TeacherTimetableService {
             orderBy: { date: 'asc' }
         });
 
-        return subs;
+        return subs.map(s => ({
+            ...s,
+            entry: this.mapEntry(s.entry)
+        }));
     }
 
     async getTimetableRange(schoolId: number, userId: number, academicYearId: number | undefined, fromDate: string, toDate: string) {
@@ -290,7 +328,7 @@ export class TeacherTimetableService {
             include: {
                 group: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true, color: true } },
-                timeSlot: true,
+                timeSlot: { include: { period: true } },
                 room: { select: { id: true, name: true } },
             },
         });
@@ -321,7 +359,7 @@ export class TeacherTimetableService {
                     include: {
                         group: { select: { id: true, name: true } },
                         subject: { select: { id: true, name: true, code: true, color: true } },
-                        timeSlot: true,
+                        timeSlot: { include: { period: true } },
                         room: { select: { id: true, name: true } },
                         teacher: { select: { id: true, user: { select: { name: true } } } }
                     }
@@ -364,9 +402,9 @@ export class TeacherTimetableService {
                     note: sub.note
                 }));
 
-            const combined = [...dailyEntries, ...dailySubs].sort((a, b) => {
-                const timeA = a.timeSlot?.startTime || '00:00';
-                const timeB = b.timeSlot?.startTime || '00:00';
+            const combined = [...dailyEntries, ...dailySubs].map(e => this.mapEntry(e)).sort((a: any, b: any) => {
+                const timeA = a.period?.startTime || '00:00';
+                const timeB = b.period?.startTime || '00:00';
                 return timeA.localeCompare(timeB);
             });
 
