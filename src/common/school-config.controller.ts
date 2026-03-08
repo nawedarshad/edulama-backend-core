@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UserAuthGuard } from './guards/user.guard';
 
 @ApiTags('School Configuration')
-@Controller('api/school-config')
+@Controller('school-config')
 @UseGuards(UserAuthGuard)
 export class SchoolConfigController {
     constructor(private readonly prisma: PrismaService) { }

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateGrievanceDto } from './dto/create-grievance.dto';
+import { CreateBulkGrievanceDto } from './dto/create-bulk-grievance.dto';
 import { UpdateGrievanceDto } from './dto/update-grievance.dto';
 import { GrievanceFilterDto } from './dto/grievance-filter.dto';
 import { NotificationService } from '../global/notification/notification.service';
@@ -115,6 +116,61 @@ export class GrievanceService {
         }
 
         return grievance;
+    }
+
+    // 2.5 Create Bulk Grievances
+    async createBulk(schoolId: number, academicYearId: number, userId: number, roleName: string, dto: CreateBulkGrievanceDto) {
+        this.logger.log(`Bulk creating grievance against ${dto.againstUserIds.length} users by ${userId} in school ${schoolId} with role ${roleName}`);
+
+        const role = await this.prisma.role.findUnique({ where: { name: roleName } });
+        if (!role) throw new BadRequestException(`Role ${roleName} not found`);
+
+        if (role.name !== 'PRINCIPAL' && role.name !== 'ADMIN') {
+            const config = await this.prisma.grievanceConfig.findUnique({
+                where: { schoolId_roleId: { schoolId, roleId: role.id } }
+            });
+
+            if (!config || !config.isEnabled) {
+                throw new ForbiddenException(`Role ${role.name} is not allowed to raise grievances.`);
+            }
+        }
+
+        const grievances = await this.prisma.$transaction(async (tx) => {
+            const results: any[] = [];
+            for (const againstUserId of dto.againstUserIds) {
+                const grievance = await tx.grievance.create({
+                    data: {
+                        schoolId,
+                        academicYearId,
+                        raisedById: userId,
+                        title: dto.title,
+                        description: dto.description,
+                        againstUserId: againstUserId,
+                        attachments: dto.attachmentUrls ? {
+                            create: dto.attachmentUrls.map(url => ({ fileUrl: url }))
+                        } : undefined
+                    }
+                });
+                results.push(grievance);
+            }
+            return results;
+        });
+
+        const principals = await this.prisma.user.findMany({
+            where: { schoolId, role: { name: 'PRINCIPAL' } },
+            select: { id: true }
+        });
+
+        if (principals.length > 0) {
+            await this.notificationService.create(schoolId, userId, {
+                type: NotificationType.GRIEVANCE,
+                title: 'New Bulk Grievances Raised',
+                message: `New bulk grievance "${dto.title}" has been raised against ${dto.againstUserIds.length} students.`,
+                targetUserIds: principals.map(p => p.id)
+            });
+        }
+
+        return grievances;
     }
 
     // 3. Find All

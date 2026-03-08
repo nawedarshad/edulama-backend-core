@@ -1,24 +1,27 @@
 model ParentProfile {
   id               Int             @id @default(autoincrement())
   userId           Int             @unique
-  studentId        Int?
   fatherName       String?
   fatherOccupation String?
   fatherContact    String?
-  fatherEmail      String?
+  primaryEmail     String?
   motherName       String?
   motherOccupation String?
   motherContact    String?
-  motherEmail      String?
   guardianName     String?
   guardianContact  String?
   guardianRelation String?
   emergencyContact String?
   annualIncome     Decimal?
   permanentAddress String?
-  student          StudentProfile? @relation(fields: [studentId], references: [id], onDelete: Cascade)
   user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   parentStudents   ParentStudent[]
+  studentProfile   StudentProfile? @relation(fields: [studentProfileId], references: [id])
+  studentProfileId Int?
+
+  @@index([fatherContact])
+  @@index([motherContact])
+  @@index([primaryEmail])
 }
 
 model ParentStudent {

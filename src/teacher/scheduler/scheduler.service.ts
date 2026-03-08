@@ -41,11 +41,7 @@ export class UnitDto {
 export class SchedulePreviewDto {
     @IsInt()
     @ApiProperty()
-    classId: number;
-
-    @IsInt()
-    @ApiProperty()
-    sectionId: number;
+    groupId: number;
 
     @IsInt()
     @ApiProperty()
@@ -103,10 +99,10 @@ export class SchedulerService {
     constructor(private readonly prisma: PrismaService) { }
 
     async simulateSchedule(schoolId: number, academicYearId: number, dto: SchedulePreviewDto): Promise<SimulationResult> {
-        const { classId, subjectId, startDate, syllabus } = dto;
+        const { groupId, subjectId, startDate, syllabus } = dto;
         const start = startOfDay(parseISO(startDate));
 
-        console.log(`[Scheduler] Simulating for Class: ${classId}, Section: ${dto.sectionId}, Subject: ${subjectId}`);
+        console.log(`[Scheduler] Simulating for Group: ${groupId}, Subject: ${subjectId}`);
 
         // --- 1. Flatten Syllabus ---
         // We now need a richer object to track hierarchy
@@ -149,11 +145,11 @@ export class SchedulerService {
         // a. Timetable
         const timetableEntries = await this.prisma.timetableEntry.findMany({
             where: {
-                schoolId, academicYearId, classId, sectionId: dto.sectionId, subjectId,
+                schoolId, academicYearId, groupId, subjectId,
                 status: { in: ['PUBLISHED', 'LOCKED'] },
             },
-            include: { period: true },
-            orderBy: { period: { startTime: 'asc' } },
+            include: { timeSlot: true },
+            orderBy: { timeSlot: { startTime: 'asc' } },
         });
 
         // Map Day -> Slots[]
@@ -190,7 +186,7 @@ export class SchedulerService {
                         date: new Date(curr),
                         dateStr,
                         dayOfWeek: dayName,
-                        periodName: ds.period.name
+                        periodName: `${ds.timeSlot.startTime} - ${ds.timeSlot.endTime}`
                     });
                 }
             }
@@ -411,8 +407,7 @@ export class SchedulerService {
             where: {
                 schoolId,
                 academicYearId,
-                classId: dto.classId,
-                sectionId: dto.sectionId,
+                groupId: dto.groupId,
                 subjectId: dto.subjectId
             }
         });
@@ -425,8 +420,7 @@ export class SchedulerService {
                         schoolId,
                         academicYearId,
                         teacherId,
-                        classId: dto.classId,
-                        sectionId: dto.sectionId,
+                        groupId: dto.groupId,
                         subjectId: dto.subjectId,
                         topicTitle: slot.topicTitle,
                         unitTitle: slot.unitTitle,
@@ -442,22 +436,21 @@ export class SchedulerService {
         return { count: result.schedule.length };
     }
 
-    async checkExisting(schoolId: number, academicYearId: number, classId: number, sectionId: number, subjectId: number) {
+    async checkExisting(schoolId: number, academicYearId: number, groupId: number, subjectId: number) {
         const count = await this.prisma.lessonPlan.count({
             where: {
                 schoolId,
                 academicYearId,
-                classId,
-                sectionId,
+                groupId,
                 subjectId
             }
         });
         return { exists: count > 0, count };
     }
 
-    async loadExistingSchedule(schoolId: number, academicYearId: number, classId: number, sectionId: number, subjectId: number): Promise<SimulationResult | null> {
+    async loadExistingSchedule(schoolId: number, academicYearId: number, groupId: number, subjectId: number): Promise<SimulationResult | null> {
         const plans = await this.prisma.lessonPlan.findMany({
-            where: { schoolId, academicYearId, classId, sectionId, subjectId },
+            where: { schoolId, academicYearId, groupId, subjectId },
             orderBy: { planDate: 'asc' }
         });
 

@@ -29,7 +29,8 @@ export class TimetableExportController {
         @Param('sectionId', ParseIntPipe) sectionId: number,
         @Res() res: Response,
     ) {
-        const buffer = await this.exportService.exportSectionPDF(schoolId, academicYearId, sectionId);
+        const group = await this.exportService.resolveGroupIdFromSection(schoolId, sectionId);
+        const buffer = await this.exportService.exportGroupPDF(schoolId, academicYearId, group.id);
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="timetable-section-${sectionId}.pdf"`);
@@ -63,7 +64,8 @@ export class TimetableExportController {
         @Param('sectionId', ParseIntPipe) sectionId: number,
         @Res() res: Response,
     ) {
-        const buffer = await this.exportService.exportSectionExcel(schoolId, academicYearId, sectionId);
+        const group = await this.exportService.resolveGroupIdFromSection(schoolId, sectionId);
+        const buffer = await this.exportService.exportGroupExcel(schoolId, academicYearId, group.id);
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="timetable-section-${sectionId}.xlsx"`);

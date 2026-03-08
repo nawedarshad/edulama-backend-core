@@ -100,7 +100,7 @@ export class SubstitutionService {
 
             return {
                 teacherId: teacher.id,
-                name: `${teacher.user.name}`,
+                name: (teacher.user as any).name,
                 reason: leave ? `Leave: ${leave.leaveType.name}` : (attendance ? `Attendance: ${attendance.status}` : 'Unknown'),
                 isLeave: !!leave,
                 isAttendance: !!attendance
@@ -142,9 +142,8 @@ export class SubstitutionService {
                 status: { in: ['PUBLISHED', 'LOCKED'] },
             },
             include: {
-                period: true,
-                class: true,
-                section: true,
+                timeSlot: { include: { period: true } },
+                group: true,
                 subject: true,
                 teacher: {
                     include: { user: true }
@@ -161,7 +160,7 @@ export class SubstitutionService {
                 }
             },
             orderBy: {
-                period: {
+                timeSlot: {
                     startTime: 'asc',
                 },
             },
@@ -173,8 +172,8 @@ export class SubstitutionService {
         // ---------------------------------------------------------
         // BULK FETCH OPTIMIZATION (Prevent N+1)
         // ---------------------------------------------------------
-        // 1. Get all relevant period IDs
-        const periodIds = [...new Set(entries.map(e => e.periodId))];
+        // 1. Get all relevant time slot IDs
+        const timeSlotIds = [...new Set(entries.map(e => e.timeSlotId))];
 
         // 2. Fetch all Regular Busy teachers in these periods
         const busyRegularRaw = await this.prisma.timetableEntry.findMany({
@@ -182,9 +181,9 @@ export class SubstitutionService {
                 schoolId,
                 academicYearId,
                 day: dayOfWeek,
-                periodId: { in: periodIds }
+                timeSlotId: { in: timeSlotIds }
             },
-            select: { teacherId: true, periodId: true }
+            select: { teacherId: true, timeSlotId: true }
         });
 
         // 3. Fetch all Substitution Busy teachers in these periods
@@ -192,10 +191,10 @@ export class SubstitutionService {
             where: {
                 schoolId,
                 date: date,
-                entry: { periodId: { in: periodIds } },
+                entry: { timeSlotId: { in: timeSlotIds } },
                 substituteTeacherId: { not: null }
             },
-            select: { substituteTeacherId: true, entry: { select: { periodId: true } } }
+            select: { substituteTeacherId: true, entry: { select: { timeSlotId: true } } }
         });
 
         // 4. Fetch All Active Teachers
@@ -213,16 +212,16 @@ export class SubstitutionService {
         });
 
         // 5. Build Lookups
-        // Map: PeriodID -> Set<TeacherID>
+        // Map: TimeSlotID -> Set<TeacherID>
         const busyMap = new Map<number, Set<number>>();
 
         busyRegularRaw.forEach(item => {
-            if (!busyMap.has(item.periodId)) busyMap.set(item.periodId, new Set());
-            busyMap.get(item.periodId)?.add(item.teacherId);
+            if (!busyMap.has(item.timeSlotId)) busyMap.set(item.timeSlotId, new Set());
+            busyMap.get(item.timeSlotId)?.add(item.teacherId as number);
         });
 
         busySubsRaw.forEach(item => {
-            const pid = item.entry.periodId;
+            const pid = item.entry.timeSlotId;
             if (item.substituteTeacherId) {
                 if (!busyMap.has(pid)) busyMap.set(pid, new Set());
                 busyMap.get(pid)?.add(item.substituteTeacherId);
@@ -236,7 +235,7 @@ export class SubstitutionService {
 
             // Only fetch suggestions if not covered
             if (!override) {
-                const busyInThisPeriod = busyMap.get(entry.periodId) || new Set();
+                const busyInThisPeriod = busyMap.get(entry.timeSlotId) || new Set();
 
                 // Exclude: Absent Teachers + Busy Teachers + Already Subbing Teachers (which are in busyMap)
                 // Note: absentTeacherIds is globally absent for the day.
@@ -258,19 +257,19 @@ export class SubstitutionService {
 
                 suggestions = ranked.slice(0, 3).map(t => ({
                     id: t.id,
-                    name: t.user.name,
-                    isSubjectMatch: t.preferredSubjects.some(ps => ps.subjectId === entry.subjectId)
+                    name: (t.user as any).name,
+                    isSubjectMatch: (t.preferredSubjects as any).some((ps: any) => ps.subjectId === entry.subjectId)
                 }));
             }
 
             return {
                 entryId: entry.id,
-                period: entry.period.name,
-                startTime: entry.period.startTime,
-                endTime: entry.period.endTime,
-                className: `${entry.class.name} - ${entry.section.name}`,
-                subject: entry.subject.name,
-                originalTeacher: `${entry.teacher.user.name}`,
+                period: entry.timeSlot.period?.name || 'Unnamed',
+                startTime: entry.timeSlot.startTime,
+                endTime: entry.timeSlot.endTime,
+                className: entry.group.name,
+                subject: entry.subject?.name || 'N/A',
+                originalTeacher: entry.teacher?.user?.name || 'N/A',
                 originalTeacherId: entry.teacherId,
                 isCovered: !!override,
                 isCancelled: override?.type === TimetableOverrideType.CANCELLED,
@@ -288,7 +287,7 @@ export class SubstitutionService {
         return enrichedEntries;
     }
 
-    async getAvailableTeachers(schoolId: number, academicYearId: number, dateString: string, periodId: number) {
+    async getAvailableTeachers(schoolId: number, academicYearId: number, dateString: string, timeSlotId: number) {
         const date = new Date(dateString);
         const dayOfWeek = this.getDayOfWeek(date);
 
@@ -302,7 +301,7 @@ export class SubstitutionService {
                 schoolId,
                 academicYearId,
                 day: dayOfWeek,
-                periodId: periodId,
+                timeSlotId: timeSlotId,
                 status: { in: ['PUBLISHED', 'LOCKED'] },
             },
             select: { id: true, teacherId: true }
@@ -337,7 +336,7 @@ export class SubstitutionService {
                 academicYearId,
                 date: date,
                 entry: {
-                    periodId: periodId
+                    timeSlotId: timeSlotId
                 },
                 substituteTeacherId: { not: null }
             },
@@ -345,7 +344,7 @@ export class SubstitutionService {
         });
         const substitutingTeacherIds = substitutingTeachers.map(t => t.substituteTeacherId).filter(Boolean) as number[];
 
-        const unavailableIds = [...new Set([...absentTeacherIds, ...busyTeacherIds, ...substitutingTeacherIds])];
+        const unavailableIds = [...new Set([...absentTeacherIds, ...busyTeacherIds, ...substitutingTeacherIds])].filter((id): id is number => id !== null);
 
         // 4. Fetch all active teachers excluding unavailable ones, strictly with role 'TEACHER'
         const availableTeachers = await this.prisma.teacherProfile.findMany({
@@ -360,25 +359,24 @@ export class SubstitutionService {
                 }
             },
             include: {
-                user: true,
-                preferredSubjects: {
-                    include: { subject: true }
-                }
+                user: { select: { name: true } },
+                preferredSubjects: { include: { subject: true } }
             }
         });
 
         return availableTeachers.map(t => ({
             id: t.id,
-            name: `${t.user.name}`,
-            subjects: t.preferredSubjects.map(ps => ps.subject.name).join(', ')
+            name: `${t.user?.name || 'Unknown'}`,
+            subjects: t.preferredSubjects.map((ps: any) => ps.subject.name).join(', ')
         }));
     }
+
 
     async createSubstitution(userId: number, schoolId: number, academicYearId: number, dto: CreateSubstitutionDto) {
         // 1. Fetch original entry to validate and get time details
         const entry = await this.prisma.timetableEntry.findUnique({
             where: { id: dto.entryId },
-            include: { period: true }
+            include: { timeSlot: true }
         });
 
         if (!entry || entry.schoolId !== schoolId) {
@@ -429,7 +427,7 @@ export class SubstitutionService {
                         academicYearId,
                         teacherId: dto.substituteTeacherId,
                         day: dayOfWeek,
-                        periodId: entry.periodId,
+                        timeSlotId: entry.timeSlotId,
                     }
                 });
 
@@ -460,7 +458,7 @@ export class SubstitutionService {
                         date: date,
                         substituteTeacherId: dto.substituteTeacherId,
                         entry: {
-                            periodId: entry.periodId // Same period
+                            timeSlotId: entry.timeSlotId // Same period
                         }
                     }
                 });
@@ -520,10 +518,9 @@ export class SubstitutionService {
                 },
                 entry: {
                     include: {
-                        class: true,
-                        section: true,
+                        group: true,
                         subject: true,
-                        period: true,
+                        timeSlot: { include: { period: true } },
                         teacher: {
                             include: { user: true }
                         }
@@ -536,11 +533,11 @@ export class SubstitutionService {
         return overrides.map(o => ({
             id: o.id,
             date: o.date,
-            originalTeacher: `${o.entry.teacher.user.name}`,
-            substituteTeacher: o.substituteTeacher ? `${o.substituteTeacher.user.name}` : 'N/A',
-            className: `${o.entry.class.name}-${o.entry.section.name}`,
-            subject: o.entry.subject.name,
-            period: `${o.entry.period.name} (${o.entry.period.startTime})`,
+            originalTeacher: o.entry.teacher?.user?.name || 'N/A',
+            substituteTeacher: o.substituteTeacher?.user?.name || 'N/A',
+            className: o.entry.group.name,
+            subject: o.entry.subject?.name || 'N/A',
+            period: `${o.entry.timeSlot.period?.name || 'Unnamed'} (${o.entry.timeSlot.startTime})`,
             note: o.note
         }));
     }
@@ -574,7 +571,7 @@ export class SubstitutionService {
                     academicYearId: existing.academicYearId,
                     teacherId: dto.substituteTeacherId,
                     day: dayOfWeek,
-                    periodId: existing.entry.periodId,
+                    timeSlotId: existing.entry.timeSlotId,
                 }
             });
 
@@ -602,7 +599,7 @@ export class SubstitutionService {
                     schoolId,
                     date: date,
                     substituteTeacherId: dto.substituteTeacherId,
-                    entry: { periodId: existing.entry.periodId },
+                    entry: { timeSlotId: existing.entry.timeSlotId },
                     id: { not: id } // Exclude self
                 }
             });
@@ -637,12 +634,12 @@ export class SubstitutionService {
                 substituteTeacherId: teacherId
             },
             include: {
+                substituteTeacher: { include: { user: true } },
                 entry: {
                     include: {
-                        class: true,
-                        section: true,
+                        group: true,
                         subject: true,
-                        period: true,
+                        timeSlot: { include: { period: true } },
                         teacher: { include: { user: true } } // The original teacher
                     }
                 }
@@ -664,10 +661,10 @@ export class SubstitutionService {
             const item = {
                 id: sub.id,
                 date: sub.date,
-                period: `${sub.entry.period.name} (${sub.entry.period.startTime})`,
-                className: `${sub.entry.class.name}-${sub.entry.section.name}`,
-                subject: sub.entry.subject.name,
-                originalTeacher: sub.entry.teacher.user.name,
+                period: `${sub.entry.timeSlot.period?.name || 'Unnamed'} (${sub.entry.timeSlot.startTime})`,
+                className: sub.entry.group.name,
+                subject: sub.entry.subject?.name || 'N/A',
+                originalTeacher: sub.entry.teacher?.user?.name || 'N/A',
                 note: sub.note
             };
 
@@ -683,7 +680,7 @@ export class SubstitutionService {
         // 3. Stats
         const stats = {
             totalSubstitutions: substitutions.length,
-            subjectsCovered: [...new Set(substitutions.map(s => s.entry.subject.name))].join(', ')
+            subjectsCovered: [...new Set(substitutions.map(s => s.entry.subject?.name || 'N/A'))].join(', ')
         };
 
         return {

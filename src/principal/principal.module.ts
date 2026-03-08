@@ -15,8 +15,10 @@ import { HouseModule } from './house/house.module';
 import { GrievanceModule } from './grievance/grievance.module';
 import { RoleModule } from './role/role.module';
 import { TimetableModule } from './timetable/timetable.module';
-import { AttendanceModule } from './attendance/attendance.module';
+import { SchoolAdminAttendanceModule } from './attendance/school-admin-attendance.module';
+import { AttendanceConfigModule } from './attendance-config/attendance-config.module';
 import { PrincipalLeaveTypeModule } from './leave-type/leave-type.module';
+import { AcademicGroupModule } from './academic-group/academic-group.module';
 
 import { PrincipalAnnouncementModule } from './announcement/principal-announcement.module';
 import { PrincipalNoticeModule } from './notice/principal-notice.module';
@@ -29,6 +31,7 @@ import { PrincipalProfileModule } from './profile/principal-profile.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { PrincipalLessonTrackerModule } from './lesson-tracker/lesson-tracker.module';
 import { InquiryModule } from './inquiry/inquiry.module';
+import { PrincipalHomeworkModule } from './homework/principal-homework.module';
 
 
 
@@ -49,8 +52,10 @@ import { InquiryModule } from './inquiry/inquiry.module';
         GrievanceModule,
         RoleModule,
         TimetableModule,
-        AttendanceModule,
+        SchoolAdminAttendanceModule,
+        AttendanceConfigModule,
         PrincipalLeaveTypeModule,
+        AcademicGroupModule,
         PrincipalLeaveModule,
         PrincipalAnnouncementModule,
         PrincipalNoticeModule,
@@ -62,6 +67,7 @@ import { InquiryModule } from './inquiry/inquiry.module';
         DashboardModule,
         PrincipalLessonTrackerModule,
         InquiryModule,
+        PrincipalHomeworkModule,
     ],
 })
 export class PrincipalModule { }

@@ -91,7 +91,7 @@ export class AdmitCardService {
             logoUrl: exam.school.schoolSettings?.logoUrl,
             examName: exam.name,
             academicYear: exam.academicYear.name,
-            studentName: student.user.name,
+            studentName: student.user?.name || student.fullName,
             rollNumber: student.rollNo,
             class: student.class.name,
             section: student.section?.name || '',

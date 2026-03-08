@@ -18,7 +18,6 @@ import { TimetableService } from './timetable.service';
 import { CreateTimePeriodDto } from './dto/create-time-period.dto';
 import { CreateTimetableEntryDto } from './dto/create-timetable-entry.dto';
 import { DayOfWeek } from '@prisma/client';
-
 import { RequiredModule } from '../../common/decorators/required-module.decorator';
 import { ModuleGuard } from '../../common/guards/module.guard';
 
@@ -130,19 +129,19 @@ export class TimetableController {
         return this.timetableService.deleteEntry(schoolId, id);
     }
 
-    @Get('entries/section/:sectionId')
-    @ApiOperation({ summary: 'Get timetable for a section', description: 'Retrieves the complete weekly schedule for a specific class section.' })
-    @ApiParam({ name: 'sectionId', description: 'Section ID' })
+    @Get('entries/group/:groupId')
+    @ApiOperation({ summary: 'Get timetable for an academic group', description: 'Retrieves the complete weekly schedule for a specific academic group (Section, Batch, etc).' })
+    @ApiParam({ name: 'groupId', description: 'Academic Group ID' })
     @ApiResponse({ status: 200, description: 'List of entries with detailed teacher and subject info.' })
-    getForSection(
+    getForGroup(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
-        @Param('sectionId', ParseIntPipe) sectionId: number,
+        @Param('groupId', ParseIntPipe) groupId: number,
     ) {
-        return this.timetableService.getTimetableForSection(
+        return this.timetableService.getTimetableForGroup(
             schoolId,
             academicYearId,
-            sectionId,
+            groupId,
         );
     }
 
@@ -216,32 +215,30 @@ export class TimetableController {
         );
     }
 
-    @Get('analytics/class-distribution/:classId/:sectionId')
-    @ApiOperation({ summary: 'Get subject distribution for a section', description: 'Shows how many periods are assigned to each subject for a class.' })
-    getClassDistribution(
+    @Get('analytics/group-distribution/:groupId')
+    @ApiOperation({ summary: 'Get subject distribution for a group', description: 'Shows how many periods are assigned to each subject for an academic group.' })
+    getGroupDistribution(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
-        @Param('classId', ParseIntPipe) classId: number,
-        @Param('sectionId', ParseIntPipe) sectionId: number,
+        @Param('groupId', ParseIntPipe) groupId: number,
     ) {
-        return this.timetableService.getClassSubjectDistribution(
+        return this.timetableService.getGroupSubjectDistribution(
             schoolId,
             academicYearId,
-            classId,
-            sectionId,
+            groupId,
         );
     }
 
     @Get('find-free-teachers')
-    @ApiOperation({ summary: 'Find available teachers', description: 'Finds teachers who are not teaching during a specific day and period.' })
+    @ApiOperation({ summary: 'Find available teachers', description: 'Finds teachers who are not teaching during a specific day and time slot.' })
     @ApiQuery({ name: 'day', enum: DayOfWeek })
-    @ApiQuery({ name: 'periodId', type: Number })
+    @ApiQuery({ name: 'timeSlotId', type: Number })
     @ApiQuery({ name: 'subjectId', required: false, type: Number, description: 'Filter by preferred subject expertise' })
     findFreeTeachers(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
         @Query('day') day: DayOfWeek,
-        @Query('periodId', ParseIntPipe) periodId: number,
+        @Query('timeSlotId', ParseIntPipe) timeSlotId: number,
         @Query('subjectId') subjectId?: string,
     ) {
         const subId = subjectId ? parseInt(subjectId) : undefined;
@@ -249,26 +246,26 @@ export class TimetableController {
             schoolId,
             academicYearId,
             day,
-            periodId,
+            timeSlotId,
             subId,
         );
     }
 
     @Get('find-free-rooms')
-    @ApiOperation({ summary: 'Find available rooms', description: 'Finds rooms that are not booked during a specific day and period.' })
+    @ApiOperation({ summary: 'Find available rooms', description: 'Finds rooms that are not booked during a specific day and time slot.' })
     @ApiQuery({ name: 'day', enum: DayOfWeek })
-    @ApiQuery({ name: 'periodId', type: Number })
+    @ApiQuery({ name: 'timeSlotId', type: Number })
     findFreeRooms(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
         @Query('day') day: DayOfWeek,
-        @Query('periodId', ParseIntPipe) periodId: number,
+        @Query('timeSlotId', ParseIntPipe) timeSlotId: number,
     ) {
         return this.timetableService.findFreeRooms(
             schoolId,
             academicYearId,
             day,
-            periodId,
+            timeSlotId,
         );
     }
 
@@ -287,20 +284,21 @@ export class TimetableController {
         );
     }
 
-    @Get('context/:classId/:sectionId')
-    @ApiOperation({ summary: 'Get full context for timetable grid', description: 'Fetches everything needed to render the timetable grid: period structure, existing entries, subject allocations, and available rooms.' })
+
+    @Get('context/:groupId')
+    @ApiOperation({ summary: 'Get full context for timetable grid', description: 'Fetches everything needed to render the timetable grid for a group.' })
     @ApiResponse({ status: 200, description: 'Complex object containing calendar structure, subjects, assignments, and schedule configuration.' })
     getContext(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
-        @Param('classId', ParseIntPipe) classId: number,
-        @Param('sectionId', ParseIntPipe) sectionId: number,
+        @GetUser() user: any,
+        @Param('groupId', ParseIntPipe) groupId: number,
     ) {
         return this.timetableService.getTimetableContext(
             schoolId,
             academicYearId,
-            classId,
-            sectionId,
+            groupId,
+            user.modules || [],
         );
     }
 }

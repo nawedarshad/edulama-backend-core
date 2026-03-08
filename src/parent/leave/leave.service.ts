@@ -83,6 +83,10 @@ export class ParentLeaveService {
                 throw new ForbiddenException('You can only apply for leaves for your own children');
             }
 
+            if (!student.userId) {
+                throw new BadRequestException('Student must have an active user account to apply for leave');
+            }
+
             // 3. Check for overlapping leaves
             const overlap = await this.prisma.leaveRequest.count({
                 where: {
@@ -133,7 +137,7 @@ export class ParentLeaveService {
                 data: {
                     schoolId,
                     academicYearId,
-                    applicantId: student.userId,
+                    applicantId: student.userId as number,
                     leaveTypeId,
                     startDate: new Date(startDate),
                     endDate: new Date(endDate),
@@ -175,7 +179,7 @@ export class ParentLeaveService {
                 ...leaveRequest,
                 _meta: {
                     message: `Leave request created for ${daysCount} working days`,
-                    studentName: leaveRequest.applicant?.studentProfile?.fullName,
+                    studentName: leaveRequest.applicant?.studentProfile?.fullName || 'Unknown Student',
                     workflow: leaveType.studentLeaveApprovalWorkflow,
                     nextApprover: initialStatus === LeaveStatus.PENDING_CLASS_TEACHER ? 'Class Teacher' : 'Principal'
                 }
@@ -207,7 +211,7 @@ export class ParentLeaveService {
                 select: { userId: true }
             });
 
-            const childUserIds = children.map(c => c.userId);
+            const childUserIds = children.map(c => c.userId).filter((id): id is number => id !== null);
 
             if (childUserIds.length === 0) {
                 return { data: [], meta: { total: 0, page, limit, totalPages: 0 } };
@@ -458,7 +462,7 @@ export class ParentLeaveService {
                 where: {
                     schoolId: parentUser.schoolId,
                     academicYearId: parentUser.academicYearId,
-                    applicantId: student.userId
+                    applicantId: student.userId as number
                 },
                 include: { leaveType: true }
             });

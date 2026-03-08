@@ -28,7 +28,60 @@ export class NotificationService {
             },
         });
 
-        // 2. If target users provided, create deliveries
+        // Helper to process users in chunks
+        const processUserChunk = async (usersChunk: any[]) => {
+            if (usersChunk.length === 0) return;
+            await this.prisma.notificationDelivery.createMany({
+                data: usersChunk.map((u: any) => ({ notificationId: notification.id, userId: u.id })),
+                skipDuplicates: true,
+            });
+
+            const pushTokens: { token: string, user: any }[] = [];
+            for (const user of usersChunk) {
+                this.gateway.sendToUser(user.id, 'notification', {
+                    title: dto.title,
+                    message: dto.message,
+                    type: dto.type,
+                    createdAt: new Date(),
+                });
+
+                if (user.deviceToken && Expo.isExpoPushToken(user.deviceToken)) {
+                    pushTokens.push({ token: user.deviceToken, user });
+                }
+            }
+
+            if (pushTokens.length > 0) {
+                this.sendPushNotifications(
+                    pushTokens.map(p => p.token),
+                    dto.title,
+                    dto.message,
+                    { notificationId: notification.id, ...(dto.data || {}) }
+                );
+            }
+        };
+
+        // 2. If global, fetch users in chunks and create deliveries
+        if (dto.isGlobal) {
+            let skip = 0;
+            const limit = 500;
+            while (true) {
+                const chunk = await this.prisma.user.findMany({
+                    where: { schoolId, isActive: true },
+                    select: { id: true, deviceToken: true },
+                    skip,
+                    take: limit,
+                    orderBy: { id: 'asc' },
+                });
+
+                if (chunk.length === 0) break;
+                await processUserChunk(chunk);
+                skip += limit;
+            }
+
+            return notification; // Return early if global, as everyone is covered
+        }
+
+        // 3. If target users provided, create deliveries
         if (dto.targetUserIds && dto.targetUserIds.length > 0) {
             // Verify users belong to school and fetch tokens
             const validUsers = await this.prisma.user.findMany({

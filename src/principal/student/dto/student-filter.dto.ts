@@ -45,6 +45,27 @@ export class StudentFilterDto {
     @IsString()
     religion?: string;
 
+    @ApiPropertyOptional()
+    @IsOptional()
+    @Type(() => Number)
+    @IsNumber()
+    houseId?: number;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    isActive?: string; // 'true' | 'false' | 'all'
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @Type(() => Boolean)
+    isRTE?: boolean;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @Type(() => Boolean)
+    isDisabled?: boolean;
+
     @ApiPropertyOptional({ default: 1 })
     @IsOptional()
     @Type(() => Number)

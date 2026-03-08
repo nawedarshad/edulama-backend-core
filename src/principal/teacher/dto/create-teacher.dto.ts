@@ -35,7 +35,13 @@ export class CreateTeacherDto {
     @IsOptional()
     joinDate?: string;
 
+    @IsString()
+    @IsOptional()
+    employmentType?: string;
 
+    @IsString()
+    @IsOptional()
+    department?: string;
 
     @IsOptional()
     @ValidateNested()
@@ -241,5 +247,41 @@ export class CreateDocumentDto {
     @IsString()
     @IsNotEmpty()
     ref: string; // S3 key / URL / document ID
+}
+
+export class UpsertSalaryConfigDto {
+    @IsNumber()
+    @IsNotEmpty()
+    basicSalary: number;
+
+    @IsNumber()
+    @IsOptional()
+    allowance?: number;
+
+    @IsNumber()
+    @IsOptional()
+    deduction?: number;
+}
+
+export class UpsertBankAccountDto {
+    @IsString()
+    @IsNotEmpty()
+    accountHolderName: string;
+
+    @IsString()
+    @IsNotEmpty()
+    bankName: string;
+
+    @IsString()
+    @IsNotEmpty()
+    accountNumber: string;
+
+    @IsString()
+    @IsNotEmpty()
+    ifscCode: string;
+
+    @IsInt()
+    @IsOptional()
+    id?: number;
 }
 

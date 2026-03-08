@@ -57,7 +57,7 @@ export class TeacherClassDiaryService {
                 schoolId,
                 teacherId,
                 academicYearId: resolvedYearId,
-                classId: dto.classId,
+                groupId: dto.groupId,
                 subjectId: dto.subjectId,
                 lessonDate: {
                     gte: startOfDay,
@@ -97,6 +97,7 @@ export class TeacherClassDiaryService {
             teacherId,
         };
 
+        if (query.groupId) where.groupId = query.groupId;
         if (query.classId) where.classId = query.classId;
         if (query.subjectId) where.subjectId = query.subjectId;
 
@@ -119,6 +120,7 @@ export class TeacherClassDiaryService {
         return this.prisma.classDiary.findMany({
             where,
             include: {
+                group: { select: { id: true, name: true } },
                 class: { select: { id: true, name: true } },
                 section: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true } },
@@ -133,6 +135,7 @@ export class TeacherClassDiaryService {
         const diary = await this.prisma.classDiary.findFirst({
             where: { id, schoolId, teacherId },
             include: {
+                group: { select: { id: true, name: true } },
                 class: { select: { id: true, name: true } },
                 section: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true } },

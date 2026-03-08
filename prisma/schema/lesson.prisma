@@ -24,8 +24,9 @@ model ClassDiary {
   teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
 
   // Academic mapping
-  classId        Int
-  sectionId      Int
+  groupId        Int
+  classId        Int?
+  sectionId      Int?
   subjectId      Int
   classSubjectId Int?
 
@@ -55,15 +56,16 @@ model ClassDiary {
   // Relations
   school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   academicYear AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  class        Class         @relation(fields: [classId], references: [id], onDelete: Cascade)
-  section      Section       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  group        AcademicGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  class        Class?        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section?      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   subject      Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   classSubject ClassSubject? @relation(fields: [classSubjectId], references: [id], onDelete: SetNull)
   lesson       Lesson?       @relation(fields: [lessonId], references: [id], onDelete: SetNull)
 
   @@index([schoolId, academicYearId])
   @@index([teacherId])
-  @@index([classId, sectionId])
+  @@index([groupId])
   @@index([subjectId])
   @@index([lessonDate])
 }
@@ -74,7 +76,8 @@ model Syllabus {
   schoolId       Int
   academicYearId Int
 
-  classId   Int
+  groupId   Int? // Optional for now
+  classId   Int? // Optional for now
   subjectId Int
 
   // Hierarchy and Ordering
@@ -101,15 +104,16 @@ model Syllabus {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
-  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  school       School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  group        AcademicGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  class        Class?         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject      Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
   lessons Lesson[]
 
   @@index([schoolId, academicYearId])
-  @@index([classId, subjectId])
+  @@index([groupId, subjectId])
   @@index([parentId])
 }
 
@@ -155,11 +159,14 @@ model LessonPlan {
   teacherId Int
   teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
 
-  classId Int
-  class   Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  groupId Int
+  group   AcademicGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
-  sectionId Int
-  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  classId Int?
+  class   Class? @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  sectionId Int?
+  section   Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   subjectId Int
   subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -178,6 +185,6 @@ model LessonPlan {
 
   @@index([schoolId, academicYearId])
   @@index([teacherId])
-  @@index([classId, sectionId])
+  @@index([groupId])
   @@index([subjectId])
 }

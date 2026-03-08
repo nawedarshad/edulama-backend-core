@@ -9,6 +9,7 @@ import { Audit } from '../../common/audit/audit.decorator';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 
 import { BulkCreateClassDto } from './dto/bulk-create-class.dto';
+import { CreateClassWithSectionsDto } from './dto/create-class-with-sections.dto';
 
 import { RequiredModule } from '../../common/decorators/required-module.decorator';
 import { ModuleGuard } from '../../common/guards/module.guard';
@@ -30,11 +31,13 @@ export class ClassController {
         @Req() req,
         @Query('page') page?: number,
         @Query('limit') limit?: number,
+        @Query('academicYearId') academicYearId?: string,
     ) {
         const schoolId = req.user.schoolId;
         const pageNumber = page ? +page : 1;
         const limitNumber = limit ? +limit : 10;
-        return this.classService.findAll(schoolId, pageNumber, limitNumber);
+        const yearId = academicYearId ? +academicYearId : undefined;
+        return this.classService.findAll(schoolId, pageNumber, limitNumber, yearId);
     }
 
     @Get('template')
@@ -58,6 +61,14 @@ export class ClassController {
     async create(@Req() req, @Body() createClassDto: CreateClassDto) {
         const schoolId = req.user.schoolId;
         return this.classService.create(schoolId, createClassDto);
+    }
+
+    @Post('with-sections')
+    @ApiOperation({ summary: 'Create a class with sections' })
+    @ApiResponse({ status: 201, description: 'The class and sections have been successfully created.' })
+    async createWithSections(@Req() req, @Body() dto: CreateClassWithSectionsDto) {
+        const schoolId = req.user.schoolId;
+        return this.classService.createWithSections(schoolId, dto);
     }
 
     @Post('bulk')

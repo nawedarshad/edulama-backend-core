@@ -3,6 +3,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { NotificationService } from '../global/notification/notification.service';
 import { NotificationType } from '@prisma/client';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import sanitizeHtml from 'sanitize-html';
 
 import { AnnouncementQueryDto } from './dto/announcement-query.dto';
 import { Prisma, AnnouncementPriority, AudienceType } from '@prisma/client';
@@ -11,7 +14,8 @@ import { Prisma, AnnouncementPriority, AudienceType } from '@prisma/client';
 export class PrincipalAnnouncementService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly notificationService: NotificationService
+        private readonly notificationService: NotificationService,
+        @InjectQueue('announcements') private readonly announcementQueue: Queue
     ) { }
 
     async create(schoolId: number, userId: number, dto: CreateAnnouncementDto) {
@@ -25,11 +29,45 @@ export class PrincipalAnnouncementService {
             throw new NotFoundException('Academic Year not found for this school');
         }
 
+        // Robust Server-Side HTML Sanitization
+        let safeBody = data.body;
+        if (safeBody) {
+            safeBody = sanitizeHtml(safeBody, {
+                allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img']),
+                allowedAttributes: {
+                    ...sanitizeHtml.defaults.allowedAttributes,
+                    'img': ['src', 'alt', 'width', 'height'],
+                },
+                allowedSchemesByTag: {
+                    img: ['http', 'https', 'data']
+                }
+            });
+        }
+
+        // Idempotency: Deduplicate emergency announcements within short window (1 minute)
+        if (data.isEmergency) {
+            const recent = await this.prisma.announcement.findFirst({
+                where: {
+                    schoolId,
+                    createdById: userId,
+                    title: data.title,
+                    isEmergency: true,
+                    createdAt: {
+                        gte: new Date(Date.now() - 60000) // created in last 60 seconds
+                    }
+                }
+            });
+            if (recent) {
+                return recent; // Silently return existing broadcast instead of failing or duplicating
+            }
+        }
+
         const result = await this.prisma.$transaction(async (tx) => {
             // 1. Create Announcement
             const announcement = await tx.announcement.create({
                 data: {
                     ...data,
+                    body: safeBody,
                     schoolId,
                     academicYearId,
                     createdById: userId,
@@ -64,105 +102,22 @@ export class PrincipalAnnouncementService {
             return announcement;
         });
 
-        // Send Notification (Fire & Forget to avoid blocking response)
-        this.sendAnnouncementNotification(schoolId, userId, result, audiences).catch(err => {
-            console.error('Failed to send announcement notification', err);
+        // Send Notification (Offloaded to BullMQ)
+        await this.announcementQueue.add('send-announcement', {
+            schoolId,
+            creatorId: userId,
+            announcement: result,
+            audiences
+        }, {
+            removeOnComplete: true,
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 1000 }
         });
 
         return result;
     }
 
-    private async sendAnnouncementNotification(
-        schoolId: number,
-        creatorId: number,
-        announcement: any,
-        audiences: any[]
-    ) {
-        if (!audiences || audiences.length === 0) return;
 
-        const targetUserIds = new Set<number>();
-        const targetRoleIds = new Set<number>();
-
-        // 1. Resolve Audiences
-        for (const audience of audiences) {
-            if (audience.studentId) targetUserIds.add(audience.studentId);
-            if (audience.staffId) targetUserIds.add(audience.staffId);
-            if (audience.roleId) targetRoleIds.add(audience.roleId);
-
-            // Resolve Class/Section to Students
-            if (audience.sectionId) {
-                const students = await this.prisma.studentProfile.findMany({
-                    where: { sectionId: audience.sectionId, schoolId },
-                    select: { userId: true }
-                });
-                students.forEach(s => targetUserIds.add(s.userId));
-            } else if (audience.classId) {
-                const students = await this.prisma.studentProfile.findMany({
-                    where: { classId: audience.classId, schoolId },
-                    select: { userId: true }
-                });
-                students.forEach(s => targetUserIds.add(s.userId));
-            }
-
-            // Resolve generic types if needed (simplified for now)
-            // Handle ALL_SCHOOL
-            if (audience.type === AudienceType.ALL_SCHOOL) {
-                const allUsers = await this.prisma.user.findMany({
-                    where: { schoolId, isActive: true },
-                    select: { id: true }
-                });
-                allUsers.forEach(u => targetUserIds.add(u.id));
-            }
-            // Handle Generic Role-based Audiences (TEACHER, STUDENT, PARENTS, STAFF)
-            else if ([AudienceType.TEACHER, AudienceType.STUDENT, AudienceType.PARENTS, AudienceType.STAFF].includes(audience.type)) {
-                // Fetch roles to find matching IDs
-                // Optimization: Cache roles or fetch only needed ones
-                const roles = await this.prisma.role.findMany();
-
-                let roleNameKeyword = '';
-                if (audience.type === AudienceType.TEACHER) roleNameKeyword = 'TEACHER';
-                else if (audience.type === AudienceType.STUDENT) roleNameKeyword = 'STUDENT';
-                else if (audience.type === AudienceType.PARENTS) roleNameKeyword = 'PARENT';
-                else if (audience.type === AudienceType.STAFF) roleNameKeyword = 'STAFF'; // Or 'ADMIN', 'CLERK' etc? STAFF usually implies non-teaching employees.
-
-                if (roleNameKeyword) {
-                    const matchingRoles = roles.filter(r => r.name.toUpperCase().includes(roleNameKeyword));
-                    matchingRoles.forEach(r => targetRoleIds.add(r.id));
-                }
-            }
-        }
-
-        // Prepare notification data (what the app receives)
-        const notificationData = {
-            announcementId: announcement.id,
-            isEmergency: announcement.isEmergency,
-            priority: announcement.priority,
-            voiceAudioUrl: announcement.voiceAudioUrl,
-            voiceDuration: announcement.voiceDuration,
-        };
-
-        // 2. Send Standard Notification
-        await this.notificationService.create(schoolId, creatorId, {
-            title: 'New Announcement',
-            message: announcement.title,
-            type: NotificationType.ANNOUNCEMENT,
-            targetUserIds: Array.from(targetUserIds),
-            targetRoleIds: Array.from(targetRoleIds),
-            data: notificationData // Pass only app-relevant data
-        });
-
-        // 3. Send Emergency Alert if applicable
-        if (announcement.isEmergency || announcement.priority === AnnouncementPriority.CRITICAL || announcement.priority === AnnouncementPriority.URGENT) {
-            await this.notificationService.create(schoolId, creatorId, {
-                title: announcement.isEmergency ? 'EMERGENCY ALERT' : 'URGENT ANNOUNCEMENT',
-                message: `${announcement.isEmergency ? 'URGENT' : 'Attention'}: ${announcement.title}`,
-                type: NotificationType.ALERT,
-                targetUserIds: Array.from(targetUserIds),
-                targetRoleIds: Array.from(targetRoleIds),
-                data: notificationData // Pass only app-relevant data
-            });
-        }
-    }
 
     async findAll(schoolId: number, query: AnnouncementQueryDto) {
         const { page = 1, limit = 10, search, type, startDate, endDate, academicYearId } = query;
@@ -188,10 +143,10 @@ export class PrincipalAnnouncementService {
             where.academicYearId = academicYearId;
         }
 
-        if (startDate && endDate) {
+        if (startDate || endDate) {
             where.createdAt = {
-                gte: new Date(startDate),
-                lte: new Date(endDate),
+                ...(startDate ? { gte: new Date(startDate) } : {}),
+                ...(endDate ? { lte: new Date(endDate) } : {})
             };
         }
 

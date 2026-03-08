@@ -11,12 +11,12 @@ import {
 } from '@nestjs/common';
 import { PrincipalDiaryService } from './principal-diary.service';
 import { GetUser } from '../../common/decorators/get-user.decorator';
-import type { User } from '@prisma/client';
+import type { AuthUserPayload } from '../../common/decorators/get-user.decorator';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { PrincipalDiaryQueryDto } from './dto/principal-diary-query.dto';
 import { CreatePrincipalDiaryDto } from './dto/create-principal-diary.dto';
 
-interface ExtendedUser extends User {
+interface ExtendedUser extends AuthUserPayload {
     academicYearId: number;
 }
 

@@ -1,0 +1,44 @@
+enum AcademicRole {
+  CLASS_TEACHER
+  HEAD_TEACHER
+  SUBJECT_TEACHER
+  COORDINATOR
+  MENTOR
+  FACULTY
+}
+
+model AcademicAssignment {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+
+  // Target
+  groupId   Int?
+  classId   Int?
+  sectionId Int?
+
+  // Assignee
+  teacherId Int // Relation to TeacherProfile.id
+  role      AcademicRole @default(FACULTY)
+
+  assignedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  school       School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  group        AcademicGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  class        Class?         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section?       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  teacher      TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  // Legacy User back-relation if needed for quick lookups
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([teacherId, sectionId, role, academicYearId])
+  @@unique([teacherId, groupId, role, academicYearId])
+  @@index([schoolId, academicYearId])
+  @@index([classId, sectionId])
+  @@index([groupId])
+  @@index([teacherId, role])
+}

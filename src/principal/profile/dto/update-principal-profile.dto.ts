@@ -11,4 +11,24 @@ export class UpdatePrincipalProfileDto {
     @IsString()
     @IsOptional()
     photo?: string;
+
+    @ApiProperty({ required: false })
+    @IsOptional()
+    employment?: {
+        designation?: string;
+        department?: string;
+        empCode?: string;
+        joiningDate?: string;
+        employmentType?: string;
+        qualifications?: string[];
+        certifications?: string[];
+    };
+
+    @ApiProperty({ required: false })
+    @IsOptional()
+    contact?: {
+        phone?: string;
+        email?: string;
+        address?: string;
+    };
 }

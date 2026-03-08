@@ -13,8 +13,7 @@ interface TimetableGrid {
 interface CellData {
     subject?: string;
     teacher?: string;
-    class?: string;
-    section?: string;
+    group?: string;
     room?: string;
     isBreak?: boolean;
 }
@@ -22,6 +21,19 @@ interface CellData {
 @Injectable()
 export class TimetableExportService {
     constructor(private readonly prisma: PrismaService) { }
+
+    async resolveGroupIdFromSection(schoolId: number, sectionId: number) {
+        const group = await this.prisma.academicGroup.findFirst({
+            where: {
+                schoolId,
+                type: 'CLASS_SECTION',
+                sectionId: sectionId
+            },
+            select: { id: true }
+        });
+        if (!group) throw new Error('Academic Group not found for this section');
+        return group;
+    }
 
     private async formatTimetableGrid(
         entries: any[],
@@ -42,11 +54,10 @@ export class TimetableExportService {
         // Fill with entries
         entries.forEach(entry => {
             if (!cells[entry.day]) cells[entry.day] = {};
-            cells[entry.day][entry.periodId] = {
+            cells[entry.day][entry.timeSlotId] = {
                 subject: entry.subject?.name,
                 teacher: forTeacher ? undefined : entry.teacher?.user?.name,
-                class: forTeacher ? entry.class?.name : undefined,
-                section: forTeacher ? entry.section?.name : undefined,
+                group: forTeacher ? entry.group?.name : undefined,
                 room: entry.room?.name,
                 isBreak: false,
             };
@@ -59,45 +70,45 @@ export class TimetableExportService {
         };
     }
 
-    async exportSectionPDF(schoolId: number, academicYearId: number, sectionId: number): Promise<Buffer> {
+    async exportGroupPDF(schoolId: number, academicYearId: number, groupId: number): Promise<Buffer> {
         // Fetch data
-        const [section, entries, periods, school] = await Promise.all([
-            this.prisma.section.findFirst({
-                where: { id: sectionId, schoolId },
-                include: { class: true },
+        const [group, entries, timeSlots, school] = await Promise.all([
+            this.prisma.academicGroup.findFirst({
+                where: { id: groupId, schoolId },
             }),
             this.prisma.timetableEntry.findMany({
-                where: { schoolId, academicYearId, sectionId, status: { in: ['PUBLISHED', 'LOCKED'] } },
+                where: { schoolId, academicYearId, groupId, status: { in: ['PUBLISHED', 'LOCKED'] } },
                 include: {
                     subject: true,
                     teacher: { select: { user: { select: { name: true } } } },
-                    period: true,
+                    timeSlot: true,
                     room: true,
+                    group: true,
                 },
             }),
-            this.prisma.timePeriod.findMany({
+            this.prisma.timeSlot.findMany({
                 where: { schoolId, academicYearId },
                 orderBy: { startTime: 'asc' },
             }),
             this.prisma.school.findFirst({ where: { id: schoolId } }),
         ]);
 
-        if (!section) throw new Error('Section not found');
+        if (!group) throw new Error('Group not found');
         if (!school) throw new Error('School not found');
 
-        const grid = await this.formatTimetableGrid(entries, periods, false);
+        const grid = await this.formatTimetableGrid(entries, timeSlots, false);
 
         // Generate PDF
         return this.generatePDF(
             school.name,
-            `Class Timetable - ${section.class.name} ${section.name}`,
+            `Group Timetable - ${group.name}`,
             grid,
             false
         );
     }
 
     async exportTeacherPDF(schoolId: number, academicYearId: number, teacherId: number): Promise<Buffer> {
-        const [teacher, entries, periods, school] = await Promise.all([
+        const [teacher, entries, timeSlots, school] = await Promise.all([
             this.prisma.teacherProfile.findFirst({
                 where: { id: teacherId, schoolId },
                 include: { user: true },
@@ -106,13 +117,12 @@ export class TimetableExportService {
                 where: { schoolId, academicYearId, teacherId, status: { in: ['PUBLISHED', 'LOCKED'] } },
                 include: {
                     subject: true,
-                    class: true,
-                    section: true,
-                    period: true,
+                    group: true,
+                    timeSlot: true,
                     room: true,
                 },
             }),
-            this.prisma.timePeriod.findMany({
+            this.prisma.timeSlot.findMany({
                 where: { schoolId, academicYearId },
                 orderBy: { startTime: 'asc' },
             }),
@@ -122,7 +132,7 @@ export class TimetableExportService {
         if (!teacher) throw new Error('Teacher not found');
         if (!school) throw new Error('School not found');
 
-        const grid = await this.formatTimetableGrid(entries, periods, true);
+        const grid = await this.formatTimetableGrid(entries, timeSlots, true);
 
         return this.generatePDF(
             school.name,
@@ -182,7 +192,7 @@ export class TimetableExportService {
                     } else if (cell?.subject) {
                         doc.rect(px, y, cellWidth, cellHeight).stroke();
                         doc.fontSize(9).text(cell.subject, px + 5, y + 5, { width: cellWidth - 10, align: 'center' });
-                        const secondLine = forTeacher ? `${cell.class} ${cell.section}` : cell.teacher;
+                        const secondLine = forTeacher ? cell.group : cell.teacher;
                         if (secondLine) {
                             doc.fontSize(7).text(secondLine, px + 5, y + 20, { width: cellWidth - 10, align: 'center' });
                         }
@@ -202,43 +212,43 @@ export class TimetableExportService {
         });
     }
 
-    async exportSectionExcel(schoolId: number, academicYearId: number, sectionId: number): Promise<Buffer> {
-        const [section, entries, periods, school] = await Promise.all([
-            this.prisma.section.findFirst({
-                where: { id: sectionId, schoolId },
-                include: { class: true },
+    async exportGroupExcel(schoolId: number, academicYearId: number, groupId: number): Promise<Buffer> {
+        const [group, entries, timeSlots, school] = await Promise.all([
+            this.prisma.academicGroup.findFirst({
+                where: { id: groupId, schoolId },
             }),
             this.prisma.timetableEntry.findMany({
-                where: { schoolId, academicYearId, sectionId, status: { in: ['PUBLISHED', 'LOCKED'] } },
+                where: { schoolId, academicYearId, groupId, status: { in: ['PUBLISHED', 'LOCKED'] } },
                 include: {
                     subject: true,
                     teacher: { select: { user: { select: { name: true } } } },
-                    period: true,
+                    timeSlot: true,
                     room: true,
+                    group: true,
                 },
             }),
-            this.prisma.timePeriod.findMany({
+            this.prisma.timeSlot.findMany({
                 where: { schoolId, academicYearId },
                 orderBy: { startTime: 'asc' },
             }),
             this.prisma.school.findFirst({ where: { id: schoolId } }),
         ]);
 
-        if (!section) throw new Error('Section not found');
+        if (!group) throw new Error('Group not found');
         if (!school) throw new Error('School not found');
 
-        const grid = await this.formatTimetableGrid(entries, periods, false);
+        const grid = await this.formatTimetableGrid(entries, timeSlots, false);
 
         return this.generateExcel(
             school.name,
-            `Class Timetable - ${section.class.name} ${section.name}`,
+            `Group Timetable - ${group.name}`,
             grid,
             false
         );
     }
 
     async exportTeacherExcel(schoolId: number, academicYearId: number, teacherId: number): Promise<Buffer> {
-        const [teacher, entries, periods, school] = await Promise.all([
+        const [teacher, entries, timeSlots, school] = await Promise.all([
             this.prisma.teacherProfile.findFirst({
                 where: { id: teacherId, schoolId },
                 include: { user: true },
@@ -247,13 +257,12 @@ export class TimetableExportService {
                 where: { schoolId, academicYearId, teacherId, status: { in: ['PUBLISHED', 'LOCKED'] } },
                 include: {
                     subject: true,
-                    class: true,
-                    section: true,
-                    period: true,
+                    group: true,
+                    timeSlot: true,
                     room: true,
                 },
             }),
-            this.prisma.timePeriod.findMany({
+            this.prisma.timeSlot.findMany({
                 where: { schoolId, academicYearId },
                 orderBy: { startTime: 'asc' },
             }),
@@ -263,7 +272,7 @@ export class TimetableExportService {
         if (!teacher) throw new Error('Teacher not found');
         if (!school) throw new Error('School not found');
 
-        const grid = await this.formatTimetableGrid(entries, periods, true);
+        const grid = await this.formatTimetableGrid(entries, timeSlots, true);
 
         return this.generateExcel(
             school.name,
@@ -314,7 +323,7 @@ export class TimetableExportService {
                     excelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
                 } else if (cell?.subject) {
                     excelCell.value = forTeacher
-                        ? `${cell.subject}\n${cell.class} ${cell.section}`
+                        ? `${cell.subject}\n${cell.group}`
                         : `${cell.subject}\n${cell.teacher}`;
                 } else {
                     excelCell.value = '';

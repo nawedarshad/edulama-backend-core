@@ -62,15 +62,14 @@ export class TeacherTimetableService {
                 teacherId,
             },
             include: {
-                class: { select: { id: true, name: true } },
-                section: { select: { id: true, name: true } },
+                group: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true, color: true } },
-                period: true,
+                timeSlot: true,
                 room: { select: { id: true, name: true } },
             },
             orderBy: [
                 { day: 'asc' },
-                { period: { startTime: 'asc' } }
+                { timeSlot: { startTime: 'asc' } }
             ]
         });
 
@@ -95,12 +94,12 @@ export class TeacherTimetableService {
         const endOfDay = new Date(dateObj);
         endOfDay.setUTCHours(23, 59, 59, 999);
 
-        // 0. Fetch ALL Periods for this day
-        const allPeriods = await this.prisma.timePeriod.findMany({
+        // 0. Fetch ALL TimeSlots for this day
+        const allTimeSlots = await this.prisma.timeSlot.findMany({
             where: {
                 schoolId,
                 academicYearId: resolvedYearId,
-                days: { has: dayOfWeek }
+                day: dayOfWeek
             },
             orderBy: { startTime: 'asc' }
         });
@@ -113,13 +112,12 @@ export class TeacherTimetableService {
                 isActive: true,
                 academicYearId: resolvedYearId
             },
-            select: { id: true, classId: true, sectionId: true, subjectId: true }
+            select: { id: true, groupId: true, subjectId: true }
         });
 
-        const getAssignmentId = (classId: number, sectionId: number, subjectId: number) => {
+        const getAssignmentId = (groupId: number, subjectId: number) => {
             return assignments.find(a =>
-                a.classId === classId &&
-                a.sectionId === sectionId &&
+                a.groupId === groupId &&
                 a.subjectId === subjectId
             )?.id;
         };
@@ -133,10 +131,9 @@ export class TeacherTimetableService {
                 day: dayOfWeek,
             },
             include: {
-                class: { select: { id: true, name: true } },
-                section: { select: { id: true, name: true } },
+                group: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true, color: true } },
-                period: true,
+                timeSlot: true,
                 room: { select: { id: true, name: true } },
             },
         });
@@ -167,14 +164,14 @@ export class TeacherTimetableService {
                     lte: endOfDay
                 },
                 substituteTeacherId: teacherId,
+                type: TimetableOverrideType.SUBSTITUTE,
             },
             include: {
                 entry: {
                     include: {
-                        class: { select: { id: true, name: true } },
-                        section: { select: { id: true, name: true } },
+                        group: { select: { id: true, name: true } },
                         subject: { select: { id: true, name: true, code: true, color: true } },
-                        period: true,
+                        timeSlot: true,
                         room: { select: { id: true, name: true } },
                         teacher: { select: { id: true, user: { select: { name: true } } } }
                     }
@@ -184,9 +181,9 @@ export class TeacherTimetableService {
         });
 
         // 4. Construct Final Schedule (Map over ALL periods to include FREE slots)
-        const finalSchedule = allPeriods.map(period => {
+        const finalSchedule = allTimeSlots.map(slot => {
             // Check for substitutions I'm doing in this period
-            const substitutionDuty = substitutions.find(sub => sub.entry.periodId === period.id);
+            const substitutionDuty = substitutions.find(sub => sub.entry.timeSlotId === slot.id);
             if (substitutionDuty) {
                 return {
                     ...substitutionDuty.entry,
@@ -196,16 +193,16 @@ export class TeacherTimetableService {
                     room: substitutionDuty.substituteRoom || substitutionDuty.entry.room,
                     originalTeacher: substitutionDuty.entry.teacher,
                     note: substitutionDuty.note,
-                    period: period,
-                    assignmentId: getAssignmentId(substitutionDuty.entry.classId, substitutionDuty.entry.sectionId, substitutionDuty.entry.subjectId)
+                    timeSlot: slot,
+                    assignmentId: getAssignmentId(substitutionDuty.entry.groupId, substitutionDuty.entry.subjectId!)
                 };
             }
 
             // Check for regular class
-            const regularEntry = regularEntries.find(e => e.periodId === period.id);
+            const regularEntry = regularEntries.find(e => e.timeSlotId === slot.id);
             if (regularEntry) {
                 const override = myOverrides.find(o => o.entryId === regularEntry.id);
-                const assignmentId = getAssignmentId(regularEntry.classId, regularEntry.sectionId, regularEntry.subjectId);
+                const assignmentId = getAssignmentId(regularEntry.groupId, regularEntry.subjectId!);
 
                 if (override) {
                     return {
@@ -221,20 +218,19 @@ export class TeacherTimetableService {
 
             // No class = Free Period
             return {
-                id: `free-${period.id}`,
+                id: `free-${slot.id}`,
                 status: 'FREE',
-                period: period,
+                timeSlot: slot,
                 subject: null,
-                class: null,
-                section: null,
+                group: null,
                 room: null
             };
         });
 
         // Sort by time
         return finalSchedule.sort((a, b) => {
-            const timeA = a.period?.startTime || '00:00';
-            const timeB = b.period?.startTime || '00:00';
+            const timeA = a.timeSlot?.startTime || '00:00';
+            const timeB = b.timeSlot?.startTime || '00:00';
             return timeA.localeCompare(timeB);
         });
     }
@@ -256,10 +252,9 @@ export class TeacherTimetableService {
             include: {
                 entry: {
                     include: {
-                        class: { select: { id: true, name: true } },
-                        section: { select: { id: true, name: true } },
+                        group: { select: { id: true, name: true } },
                         subject: { select: { id: true, name: true, code: true, color: true } },
-                        period: true,
+                        timeSlot: true,
                         room: { select: { id: true, name: true } },
                     }
                 }
@@ -293,10 +288,9 @@ export class TeacherTimetableService {
         const allEntries = await this.prisma.timetableEntry.findMany({
             where: { schoolId, academicYearId: resolvedYearId, teacherId },
             include: {
-                class: { select: { id: true, name: true } },
-                section: { select: { id: true, name: true } },
+                group: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true, color: true } },
-                period: true,
+                timeSlot: true,
                 room: { select: { id: true, name: true } },
             },
         });
@@ -325,10 +319,9 @@ export class TeacherTimetableService {
             include: {
                 entry: {
                     include: {
-                        class: { select: { id: true, name: true } },
-                        section: { select: { id: true, name: true } },
+                        group: { select: { id: true, name: true } },
                         subject: { select: { id: true, name: true, code: true, color: true } },
-                        period: true,
+                        timeSlot: true,
                         room: { select: { id: true, name: true } },
                         teacher: { select: { id: true, user: { select: { name: true } } } }
                     }
@@ -372,8 +365,8 @@ export class TeacherTimetableService {
                 }));
 
             const combined = [...dailyEntries, ...dailySubs].sort((a, b) => {
-                const timeA = a.period?.startTime || '00:00';
-                const timeB = b.period?.startTime || '00:00';
+                const timeA = a.timeSlot?.startTime || '00:00';
+                const timeB = b.timeSlot?.startTime || '00:00';
                 return timeA.localeCompare(timeB);
             });
 

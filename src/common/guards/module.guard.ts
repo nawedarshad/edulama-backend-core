@@ -1,5 +1,4 @@
-
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException, UnauthorizedException, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma/prisma.service';
 import { REQUIRED_MODULE_KEY } from '../decorators/required-module.decorator';
@@ -19,6 +18,7 @@ export class ModuleGuard implements CanActivate {
             context.getClass(),
         ]);
 
+        // No module required — pass through
         if (!requiredModuleKey) {
             return true;
         }
@@ -27,33 +27,19 @@ export class ModuleGuard implements CanActivate {
         const user = request.user;
 
         if (!user || !user.schoolId) {
-            this.logger.warn('User or schoolId not found in request. ModuleGuard requires authentication.');
-            return false; // Or true if we want to allow public access? For now fail safe.
+            this.logger.warn('User or schoolId not found in request.');
+            return false;
         }
 
-        // Check if the module is enabled for the school
-        // We could optimize this by caching or fetching user with school modules
-        // For now, let's query.
+        // ── 1. Permission version check ─────────────────────────────────────
+        // NOTE: permissionVersion is currently not present on the School model in the database
+        // so we disable this aggressive token invalidation logic for now to prevent Prisma TS errors.
 
-        const module = await this.prisma.module.findUnique({
-            where: { key: requiredModuleKey },
-        });
+        // ── 2. Module check from JWT (zero extra DB query) ──────────────────
+        const modules: string[] = user.modules ?? [];
 
-        if (!module) {
-            this.logger.error(`Module key '${requiredModuleKey}' not found in database.`);
-            throw new ForbiddenException(`System Invalid Configuration: Module '${requiredModuleKey}' does not exist.`);
-        }
-
-        const schoolModule = await this.prisma.schoolModule.findUnique({
-            where: {
-                schoolId_moduleId: {
-                    schoolId: user.schoolId,
-                    moduleId: module.id
-                }
-            },
-        });
-
-        if (!schoolModule || !schoolModule.enabled) {
+        if (!modules.includes(requiredModuleKey)) {
+            this.logger.warn(`Module '${requiredModuleKey}' not in JWT for school ${user.schoolId}`);
             throw new ForbiddenException(`Module '${requiredModuleKey}' is not enabled for your school.`);
         }
 

@@ -1,10 +1,12 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, ParseIntPipe, BadRequestException } from '@nestjs/common';
 import { TeacherService } from './teacher.service';
-import { CreateTeacherDto, CreateDocumentDto, CreateQualificationDto, CreateCertificationDto, CreateTrainingDto, CreateResponsibilityDto, CreateAppraisalDto } from './dto/create-teacher.dto';
+import { CreateTeacherDto, CreateDocumentDto, CreateQualificationDto, CreateCertificationDto, CreateTrainingDto, CreateResponsibilityDto, CreateAppraisalDto, UpsertSalaryConfigDto, UpsertBankAccountDto } from './dto/create-teacher.dto';
 import { BulkCreateTeacherDto } from './dto/bulk-create-teacher.dto';
 import { UpdateTeacherDto } from './dto/update-teacher.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { Audit } from '../../common/audit/audit.decorator';
+import { Query } from '@nestjs/common';
+import { TeacherFilterDto } from './dto/teacher-filter.dto';
 
 @Controller('principal/teachers')
 @UseGuards(PrincipalAuthGuard)
@@ -23,8 +25,13 @@ export class TeacherController {
     }
 
     @Get()
-    findAll(@Req() req) {
-        return this.teacherService.findAll(req.user.schoolId);
+    findAll(@Req() req, @Query() query: TeacherFilterDto) {
+        return this.teacherService.findAll(req.user.schoolId, query);
+    }
+
+    @Get('analytics')
+    getAnalytics(@Req() req) {
+        return this.teacherService.getAnalytics(req.user.schoolId);
     }
 
     @Get(':id')
@@ -122,5 +129,21 @@ export class TeacherController {
     @Delete(':id/preferred-subjects/:subjectId')
     removePreferredSubject(@Req() req, @Param('id', ParseIntPipe) id: number, @Param('subjectId', ParseIntPipe) subjectId: number) {
         return this.teacherService.removePreferredSubject(req.user.schoolId, id, subjectId);
+    }
+
+    // Payroll & Bank Account
+    @Get(':id/payroll')
+    getPayrollInfo(@Req() req, @Param('id', ParseIntPipe) id: number) {
+        return this.teacherService.getPayrollInfo(req.user.schoolId, id);
+    }
+
+    @Post(':id/payroll/config')
+    upsertSalaryConfig(@Req() req, @Param('id', ParseIntPipe) id: number, @Body() dto: UpsertSalaryConfigDto) {
+        return this.teacherService.upsertSalaryConfig(req.user.schoolId, id, dto);
+    }
+
+    @Post(':id/bank-account')
+    upsertBankAccount(@Req() req, @Param('id', ParseIntPipe) id: number, @Body() dto: UpsertBankAccountDto) {
+        return this.teacherService.upsertBankAccount(req.user.schoolId, id, dto);
     }
 }

@@ -5,12 +5,17 @@ export class CreateClassDiaryDto {
     @ApiProperty()
     @IsInt()
     @IsNotEmpty()
-    classId: number;
+    groupId: number;
 
-    @ApiProperty()
+    @ApiProperty({ required: false })
     @IsInt()
-    @IsNotEmpty()
-    sectionId: number;
+    @IsOptional()
+    classId?: number;
+
+    @ApiProperty({ required: false })
+    @IsInt()
+    @IsOptional()
+    sectionId?: number;
 
     @ApiProperty()
     @IsInt()

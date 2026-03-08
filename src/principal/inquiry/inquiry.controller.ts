@@ -4,7 +4,7 @@ import { CreateInquiryDto } from './dto/create-inquiry.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 
-@Controller('api/principal/inquiry')
+@Controller('principal/inquiry')
 export class InquiryController {
     constructor(private readonly inquiryService: InquiryService) { }
 

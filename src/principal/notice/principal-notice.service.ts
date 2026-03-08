@@ -24,6 +24,7 @@ export class PrincipalNoticeService {
                 schoolId,
                 isActive: true,
                 joinDate: new Date(),
+                empCode: `SYSTEM-USER-${userId}`,
                 // Minimal required fields
             }
         });

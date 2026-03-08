@@ -1,0 +1,63 @@
+model SalaryConfig {
+  id        Int @id @default(autoincrement())
+  teacherId Int
+  schoolId  Int
+
+  basicSalary Float
+  allowance   Float @default(0)
+  deduction   Float @default(0)
+
+  effectiveFrom DateTime @default(now())
+  isActive      Boolean  @default(true)
+
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  school  School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([teacherId])
+}
+
+model Payroll {
+  id        Int @id @default(autoincrement())
+  teacherId Int
+  schoolId  Int
+
+  month Int
+  year  Int
+
+  basicSalary Float
+  allowance   Float
+  deduction   Float
+
+  netSalary Float
+
+  status String @default("DRAFT")
+  // DRAFT | PROCESSED | PAID
+
+  paymentMethod String?
+  // CASH | BANK_TRANSFER | CHEQUE | UPI
+
+  paymentReference String?
+  paidByUserId     Int?
+
+  generatedAt DateTime  @default(now())
+  processedAt DateTime?
+  paidAt      DateTime?
+
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id])
+  school  School         @relation(fields: [schoolId], references: [id])
+
+  @@unique([teacherId, month, year])
+  @@index([schoolId])
+}
+
+model TeacherBankAccount {
+  id        Int @id @default(autoincrement())
+  teacherId Int
+
+  accountHolderName String
+  bankName          String
+  accountNumber     String
+  ifscCode          String
+
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+}

@@ -1,7 +1,8 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsDate } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsNumber, IsDate, IsBoolean, IsArray, IsISO8601 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PrismaService } from '../prisma/prisma.service';
+import { ExamStatus } from '@prisma/client';
 
 // ============================================================
 // DTOs
@@ -208,6 +209,7 @@ export class ExamScheduleService {
             where: { id: dto.examId, schoolId, academicYearId },
         });
         if (!exam) throw new NotFoundException('Exam not found');
+        if (exam.status === ExamStatus.LOCKED) throw new BadRequestException('Cannot modify schedule for a LOCKED exam');
 
         // Validate that class belongs to this school
         const classRecord = await this.prisma.class.findFirst({
@@ -257,6 +259,7 @@ export class ExamScheduleService {
             where: { id: examId, schoolId, academicYearId },
         });
         if (!exam) throw new NotFoundException('Exam not found');
+        if (exam.status === ExamStatus.LOCKED) throw new BadRequestException('Cannot modify schedule for a LOCKED exam');
 
         const results: any[] = [];
         for (const dto of mappings) {
@@ -314,6 +317,8 @@ export class ExamScheduleService {
         });
         if (!schedule) throw new NotFoundException('Subject mapping not found');
 
+        await this.ensureExamNotLocked(schedule.examId);
+
         this.validateMarks(
             dto.maxMarks ?? schedule.maxMarks,
             dto.theoryMarks ?? (schedule.theoryMarks !== null ? schedule.theoryMarks : undefined),
@@ -368,6 +373,8 @@ export class ExamScheduleService {
         });
         if (!schedule) throw new NotFoundException('Subject mapping not found');
 
+        await this.ensureExamNotLocked(schedule.examId);
+
         // Room conflict check: same room, same date, overlapping or same time
         if (dto.roomId) {
             const conflict = await this.prisma.examSchedule.findFirst({
@@ -410,6 +417,7 @@ export class ExamScheduleService {
             where: { id: examId, schoolId, academicYearId },
         });
         if (!exam) throw new NotFoundException('Exam not found');
+        if (exam.status === ExamStatus.LOCKED) throw new BadRequestException('Cannot modify schedule for a LOCKED exam');
 
         const results: any[] = [];
         const errors: string[] = [];
@@ -492,6 +500,10 @@ export class ExamScheduleService {
             throw new BadRequestException('Cannot clear timetable: exam has existing results');
         }
 
+        const exam = await this.prisma.exam.findFirst({ where: { id: examId, schoolId, academicYearId } });
+        if (!exam) throw new NotFoundException('Exam not found');
+        if (exam.status === ExamStatus.LOCKED) throw new BadRequestException('Cannot modify schedule for a LOCKED exam');
+
         const updateResult = await this.prisma.examSchedule.updateMany({
             where: {
                 schoolId,
@@ -521,6 +533,7 @@ export class ExamScheduleService {
             where: { id: dto.examId, schoolId, academicYearId },
         });
         if (!exam) throw new NotFoundException('Exam not found');
+        if (exam.status === ExamStatus.LOCKED) throw new BadRequestException('Cannot modify schedule for a LOCKED exam');
 
         const existing = await this.prisma.examSchedule.findFirst({
             where: {
@@ -615,6 +628,8 @@ export class ExamScheduleService {
         });
         if (!schedule) throw new NotFoundException('Schedule not found');
 
+        await this.ensureExamNotLocked(schedule.examId);
+
         return this.prisma.examSchedule.update({
             where: { id },
             data: dto,
@@ -627,6 +642,8 @@ export class ExamScheduleService {
         });
         if (!schedule) throw new NotFoundException('Schedule not found');
 
+        await this.ensureExamNotLocked(schedule.examId);
+
         const resultsCount = await this.prisma.examResult.count({
             where: { scheduleId: id },
         });
@@ -637,19 +654,78 @@ export class ExamScheduleService {
     }
 
     async createBulk(schoolId: number, academicYearId: number, schedules: CreateExamScheduleDto[]) {
-        const created = await this.prisma.$transaction(
-            schedules.map(dto =>
-                this.prisma.examSchedule.create({
-                    data: {
-                        schoolId,
-                        academicYearId,
-                        ...dto,
-                        examDate: dto.examDate ? new Date(dto.examDate) : undefined,
-                    },
-                })
-            )
+        if (schedules.length === 0) return { count: 0, schedules: [] };
+
+        const examId = schedules[0].examId;
+        await this.ensureExamNotLocked(examId);
+
+        // 1. Identify what to keep vs delete
+        const incomingSignatures = new Set(
+            schedules.map(s => `${s.classId}_${s.sectionId || 'null'}_${s.subjectId}`)
         );
-        return { count: created.length, schedules: created };
+
+        const existingSchedules = await this.prisma.examSchedule.findMany({
+            where: { examId, schoolId, academicYearId }
+        });
+
+        // Delete any schedules that are no longer in the payload (subject removed from exam)
+        for (const es of existingSchedules) {
+            const sig = `${es.classId}_${es.sectionId || 'null'}_${es.subjectId}`;
+            if (!incomingSignatures.has(sig)) {
+                const resultsCount = await this.prisma.examResult.count({
+                    where: { scheduleId: es.id }
+                });
+                if (resultsCount === 0) {
+                    await this.prisma.examSchedule.delete({ where: { id: es.id } });
+                } else {
+                    // Safe clear if we cannot delete due to results
+                    await this.prisma.examSchedule.update({
+                        where: { id: es.id },
+                        data: { examDate: null, startTime: null, endTime: null, duration: null, roomId: null }
+                    });
+                }
+            }
+        }
+
+        const results: any[] = [];
+        for (const dto of schedules) {
+            const { examId, classId, sectionId, subjectId, ...rest } = dto;
+            const data = {
+                ...rest,
+                examDate: dto.examDate ? new Date(dto.examDate) : undefined,
+                schoolId,
+                academicYearId,
+            };
+
+            const existing = await this.prisma.examSchedule.findFirst({
+                where: {
+                    examId: examId,
+                    classId: classId,
+                    sectionId: sectionId || null,
+                    subjectId: subjectId,
+                }
+            });
+
+            if (existing) {
+                const updated = await this.prisma.examSchedule.update({
+                    where: { id: existing.id },
+                    data,
+                });
+                results.push(updated);
+            } else {
+                const created = await this.prisma.examSchedule.create({
+                    data: {
+                        examId: examId,
+                        classId: classId,
+                        sectionId: sectionId || null,
+                        subjectId: subjectId,
+                        ...data,
+                    },
+                });
+                results.push(created);
+            }
+        }
+        return { count: results.length, schedules: results };
     }
 
     // ============================================================
@@ -664,6 +740,17 @@ export class ExamScheduleService {
         }
         if (passingMarks !== undefined && maxMarks !== undefined && passingMarks > maxMarks) {
             throw new BadRequestException(`Passing marks (${passingMarks}) cannot exceed Max marks (${maxMarks})`);
+        }
+    }
+
+    private async ensureExamNotLocked(examId: number) {
+        const exam = await this.prisma.exam.findUnique({
+            where: { id: examId },
+            select: { status: true }
+        });
+        if (!exam) throw new NotFoundException('Exam not found');
+        if (exam.status === ExamStatus.LOCKED) {
+            throw new BadRequestException('Cannot modify schedule for a LOCKED exam');
         }
     }
 }

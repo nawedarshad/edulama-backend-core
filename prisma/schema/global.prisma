@@ -119,19 +119,28 @@ model TimeSlot {
   id             Int       @id @default(autoincrement())
   schoolId       Int
   academicYearId Int
+  scheduleId     Int?
   day            DayOfWeek
-  periodId       Int
+  periodId       Int?
+
+  startTime String // "09:00"
+  endTime   String // "09:45"
 
   // description String? <- REMOVED
   isBreak Boolean @default(false)
 
-  period           TimePeriod       @relation(fields: [periodId], references: [id], onDelete: Cascade)
-  timetableEntries TimetableEntry[]
-  school           School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  academicYear     AcademicYear     @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  schedule           Schedule?           @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  period             TimePeriod?         @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  timetableEntries   TimetableEntry[]
+  attendanceSessions AttendanceSession[]
+  school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
 
-  @@unique([schoolId, academicYearId, day, periodId])
-  @@index([schoolId, day])
+  // In multi-institution, slots may not have formal schedules. We only enforce unique if schedule exists.
+  // Actually, a slot is unique per school, day, start, and end time. Schedule is just an organizational folder.
+  @@unique([schoolId, day, startTime, endTime])
+  @@unique([id, schoolId])
+  @@index([schoolId, day, scheduleId])
 }
 
 model WebPage {

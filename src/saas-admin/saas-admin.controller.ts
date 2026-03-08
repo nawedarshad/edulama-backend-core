@@ -7,7 +7,8 @@ import {
     Param,
     Query,
     ParseIntPipe,
-    UseGuards
+    UseGuards,
+    Delete
 } from '@nestjs/common';
 import { SaaSAdminService } from './saas-admin.service';
 import { Prisma } from '@prisma/client';
@@ -95,5 +96,10 @@ export class SaaSAdminController {
         }
     ) {
         return this.saasAdminService.updateSchool(id, updateSchoolDto);
+    }
+
+    @Delete(':id')
+    remove(@Param('id', ParseIntPipe) id: number) {
+        return this.saasAdminService.deleteSchool(id);
     }
 }

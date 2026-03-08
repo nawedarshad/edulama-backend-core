@@ -5,19 +5,17 @@ import { DayOfWeek } from '@prisma/client';
 export class CreateTimetableEntryDto {
     @ApiProperty()
     @IsInt()
-    classId: number;
+    groupId: number;
 
-    @ApiProperty()
+    @ApiPropertyOptional()
     @IsInt()
-    sectionId: number;
+    @IsOptional()
+    subjectId?: number;
 
-    @ApiProperty()
+    @ApiPropertyOptional()
     @IsInt()
-    subjectId: number;
-
-    @ApiProperty()
-    @IsInt()
-    teacherId: number;
+    @IsOptional()
+    teacherId?: number;
 
     @ApiProperty({ enum: DayOfWeek })
     @IsEnum(DayOfWeek)
@@ -25,7 +23,7 @@ export class CreateTimetableEntryDto {
 
     @ApiProperty()
     @IsInt()
-    periodId: number;
+    timeSlotId: number;
 
     @ApiPropertyOptional()
     @IsInt()

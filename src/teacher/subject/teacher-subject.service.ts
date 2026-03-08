@@ -36,13 +36,7 @@ export class TeacherSubjectService {
                         color: true
                     }
                 },
-                class: {
-                    select: {
-                        id: true,
-                        name: true
-                    }
-                },
-                section: {
+                group: {
                     select: {
                         id: true,
                         name: true
@@ -59,8 +53,10 @@ export class TeacherSubjectService {
             const studentCount = await this.prisma.studentProfile.count({
                 where: {
                     schoolId,
-                    classId: a.classId,
-                    sectionId: a.sectionId!, // Assuming section is always present for assignments
+                    OR: [
+                        ...(a.groupId != null ? [{ academicGroups: { some: { id: a.groupId } } }] : []),
+                        ...(a.sectionId != null ? [{ sectionId: a.sectionId }] : [])
+                    ],
                     isActive: true
                 }
             });
@@ -72,7 +68,7 @@ export class TeacherSubjectService {
             const totalTopics = await this.prisma.syllabus.count({
                 where: {
                     schoolId,
-                    classId: a.classId,
+                    groupId: a.groupId,
                     subjectId: a.subjectId,
                     academicYearId: a.academicYearId,
                     type: 'TOPIC'
@@ -82,19 +78,18 @@ export class TeacherSubjectService {
             const completedTopics = await this.prisma.syllabus.count({
                 where: {
                     schoolId,
-                    classId: a.classId,
+                    groupId: a.groupId,
                     subjectId: a.subjectId,
                     academicYearId: a.academicYearId,
                     type: 'TOPIC',
-                    isCompleted: true
+                    status: 'COMPLETED'
                 }
             });
 
             return {
                 assignmentId: a.id,
                 subject: a.subject,
-                class: a.class,
-                section: a.section,
+                group: a.group,
                 periodsPerWeek: a.periodsPerWeek,
                 studentCount,
                 syllabusProgress: {
@@ -122,8 +117,7 @@ export class TeacherSubjectService {
             where: { id: assignmentId },
             include: {
                 subject: true,
-                class: true,
-                section: true,
+                group: true,
                 academicYear: true
             }
         });
@@ -140,7 +134,7 @@ export class TeacherSubjectService {
         const syllabi = await this.prisma.syllabus.findMany({
             where: {
                 schoolId,
-                classId: assignment.classId,
+                groupId: assignment.groupId,
                 subjectId: assignment.subjectId,
                 academicYearId: assignment.academicYearId
             },
@@ -151,8 +145,7 @@ export class TeacherSubjectService {
         const diaries = await this.prisma.classDiary.findMany({
             where: {
                 schoolId,
-                classId: assignment.classId,
-                sectionId: assignment.sectionId!, // Section is mandatory for diary usually, but handle null if needed
+                groupId: assignment.groupId ?? undefined,
                 subjectId: assignment.subjectId
             },
             orderBy: { lessonDate: 'desc' },
@@ -163,8 +156,10 @@ export class TeacherSubjectService {
         const studentCount = await this.prisma.studentProfile.count({
             where: {
                 schoolId,
-                classId: assignment.classId,
-                sectionId: assignment.sectionId!,
+                OR: [
+                    ...(assignment.groupId != null ? [{ academicGroups: { some: { id: assignment.groupId } } }] : []),
+                    ...(assignment.sectionId != null ? [{ sectionId: assignment.sectionId }] : [])
+                ],
                 isActive: true
             }
         });
@@ -173,8 +168,7 @@ export class TeacherSubjectService {
             assignment: {
                 assignmentId: assignment.id,
                 subject: assignment.subject,
-                class: assignment.class,
-                section: assignment.section,
+                group: assignment.group,
                 periodsPerWeek: assignment.periodsPerWeek
             },
             syllabi,
@@ -211,7 +205,7 @@ export class TeacherSubjectService {
             data: {
                 schoolId,
                 academicYearId: assignment.academicYearId,
-                classId: assignment.classId,
+                groupId: assignment.groupId,
                 subjectId: assignment.subjectId,
                 title: dto.title,
                 description: dto.description,

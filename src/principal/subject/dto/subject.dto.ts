@@ -13,11 +13,6 @@ export class CreateSubjectDto {
     @IsNotEmpty()
     code: string;
 
-    @ApiPropertyOptional({ description: 'ID of the department this subject belongs to', example: 1 })
-    @IsInt()
-    @IsOptional()
-    departmentId?: number;
-
     // Visuals
     @ApiPropertyOptional({ description: 'Hex color code for UI representation', example: '#FF5733' })
     @IsHexColor()
@@ -43,10 +38,6 @@ export class UpdateSubjectDto {
     @IsString()
     @IsOptional()
     code?: string;
-
-    @IsInt()
-    @IsOptional()
-    departmentId?: number;
 
     @IsHexColor()
     @IsOptional()
@@ -174,15 +165,45 @@ export class UpdateClassSubjectDto {
 }
 
 export class CreateCategoryDto {
+    @ApiProperty({ description: 'Name of the category', example: 'Academic' })
     @IsString()
     @IsNotEmpty()
     name: string;
+
+    @ApiPropertyOptional({ description: 'Detailed description', example: 'Standard academic subjects' })
+    @IsString()
+    @IsOptional()
+    description?: string;
 }
 
 export class UpdateCategoryDto {
+    @ApiPropertyOptional({ description: 'Name of the category' })
     @IsString()
-    @IsNotEmpty()
-    name: string;
+    @IsOptional()
+    name?: string;
+
+    @ApiPropertyOptional({ description: 'Detailed description' })
+    @IsString()
+    @IsOptional()
+    description?: string;
+}
+
+export class GetSubjectsQueryDto {
+    @IsInt()
+    @IsOptional()
+    page?: number = 1;
+
+    @IsInt()
+    @IsOptional()
+    limit?: number = 10;
+
+    @IsString()
+    @IsOptional()
+    search?: string;
+
+    @IsInt()
+    @IsOptional()
+    categoryId?: number;
 }
 
 export class AssignTeacherSubjectDto {

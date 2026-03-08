@@ -110,6 +110,8 @@ export class RoomService {
                 status: room.status,
                 type: room.roomType,
                 capacity: room.capacity,
+                benches: room.benches,
+                studentsPerBench: room.studentsPerBench,
                 facilities: room.facilities,
                 assignedTo: activeAssignment && activeAssignment.section
                     ? {
@@ -217,6 +219,8 @@ export class RoomService {
             status: room.status,
             type: room.roomType,
             capacity: room.capacity,
+            benches: room.benches,
+            studentsPerBench: room.studentsPerBench,
             facilities: room.facilities,
             assignedTo: activeAssignment
                 ? {
@@ -409,6 +413,8 @@ export class RoomService {
                 roomType: "LAB",
                 status: "ACTIVE",
                 capacity: 30,
+                benches: 15,
+                studentsPerBench: 2,
                 facilities: ["Computers", "Projector"]
             },
             {
@@ -419,6 +425,8 @@ export class RoomService {
                 roomType: "CLASSROOM",
                 status: "ACTIVE",
                 capacity: 40,
+                benches: 20,
+                studentsPerBench: 2,
                 facilities: ["Blackboard"]
             }
         ];

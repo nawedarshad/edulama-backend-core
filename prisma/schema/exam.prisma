@@ -32,7 +32,8 @@ enum ExamCategory {
 
 enum ExamStatus {
   DRAFT
-  SCHEDULED
+  PUBLISHED
+  LOCKED
   ONGOING
   COMPLETED
   CANCELLED
@@ -49,6 +50,8 @@ enum QuestionType {
 
 enum ResultStatus {
   PENDING
+  DRAFT
+  LOCKED
   PUBLISHED
   WITHHELD
 }
@@ -58,6 +61,25 @@ enum GradeStatus {
   FAIL
   ABSENT
   EXEMPTED
+  MEDICAL
+  RETEST_PENDING
+}
+
+enum GradingType {
+  MARKS
+  GRADES
+  BOTH
+}
+
+enum ExamScope {
+  CLASS_WIDE
+  SPECIFIC_STUDENTS
+}
+
+enum ExamScheduleStatus {
+  SCHEDULED
+  CONDUCTED
+  RESULTS_ENTERED
 }
 
 // ============================================================
@@ -83,13 +105,18 @@ model Exam {
   // Configuration
   totalMarks    Float?
   passingMarks  Float?
+  gradingType   GradingType  @default(MARKS)
   gradeSystemId Int? // Link to grading system if exists
   category      ExamCategory @default(INTERNAL)
+  examScope     ExamScope    @default(CLASS_WIDE)
 
   // Result Settings
   resultDate      DateTime? // When results will be published
   isResultPublic  Boolean   @default(false)
   classesContinue Boolean   @default(false)
+  theoryMarks     Float?
+  practicalMarks  Float?
+  autoAssignRooms Boolean   @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -104,10 +131,41 @@ model Exam {
   questionPapers         QuestionPaper[]
   results                ExamResult[]
   classes                Class[]
+  sections               Section[]
+  examRoomTemplates      ExamRoomTemplate[]
 
-  @@unique([schoolId, academicYearId, code])
-  @@index([schoolId, academicYearId])
   @@index([status])
+}
+
+// ============================================================
+// EXAM ROOM TEMPLATE
+// ============================================================
+// Stores a fixed room assignment for a class for a specific exam.
+// This ensures students stay in the same room throughout the datesheet.
+
+model ExamRoomTemplate {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  examId         Int
+
+  classId   Int
+  sectionId Int?
+  roomId    Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  exam         Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section?     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, classId, sectionId])
+  @@index([schoolId, academicYearId])
 }
 
 // ============================================================
@@ -141,8 +199,10 @@ model ExamSchedule {
   // Room Assignment (Step 3+)
   roomId Int?
 
-  // Instructions
+  // instructions
   instructions String?
+
+  status ExamScheduleStatus @default(SCHEDULED)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -182,8 +242,10 @@ model SeatingArrangement {
   roomId    Int
 
   // Seat Details
-  seatNumber String? // e.g., "A-12", "Row 3 Seat 5"
-  rollNumber String? // Roll number for exam
+  seatNumber   String? // e.g., "A-12", "Row 3 Seat 5"
+  rollNumber   String? // Roll number for exam
+  benchNumber  Int?
+  seatPosition Int? // 1 for Left, 2 for Right (or 1..N based on studentsPerBench)
 
   // Special Needs
   requiresScribe    Boolean @default(false)
@@ -262,7 +324,13 @@ model QuestionPaper {
   paperUrl    String? // PDF/Document URL
   solutionUrl String? // Answer key URL
 
-  // Metadata
+  // Step 4: Metadata
+  code         String?
+  paperSet     String?
+  examinerType ExamCategory @default(INTERNAL)
+  syllabus     String? // Text or standard string
+
+  // Question/Marks Summary
   totalQuestions Int?
   totalMarks     Float?
 

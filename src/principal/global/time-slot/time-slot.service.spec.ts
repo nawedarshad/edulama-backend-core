@@ -64,7 +64,7 @@ describe('TimeSlotService', () => {
                 }
             ]);
 
-            const dto = { day: DayOfWeek.MONDAY, periodId: 2, description: 'Test' };
+            const dto: any = { day: DayOfWeek.MONDAY, periodId: 2, description: 'Test' };
 
             await expect(service.create(1, dto)).rejects.toThrow(BadRequestException);
             await expect(service.create(1, dto)).rejects.toThrow(/overlaps/);
@@ -83,7 +83,7 @@ describe('TimeSlotService', () => {
 
             mockPrismaService.timeSlot.create.mockResolvedValue({ id: 1 });
 
-            const dto = { day: DayOfWeek.MONDAY, periodId: 2, description: 'Test' };
+            const dto: any = { day: DayOfWeek.MONDAY, periodId: 2, description: 'Test' };
             await service.create(1, dto);
             expect(mockPrismaService.timeSlot.create).toHaveBeenCalled();
         });

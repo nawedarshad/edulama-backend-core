@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Request, UseG
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { GrievanceService } from './grievance.service';
 import { CreateGrievanceDto } from './dto/create-grievance.dto';
+import { CreateBulkGrievanceDto } from './dto/create-bulk-grievance.dto';
 import { UpdateGrievanceDto } from './dto/update-grievance.dto';
 import { GrievanceFilterDto } from './dto/grievance-filter.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
@@ -15,7 +16,6 @@ import { ModuleGuard } from '../../common/guards/module.guard';
 @ApiBearerAuth()
 @Controller('principal/grievances')
 @RequiredModule('GRIEVANCES')
-@UseGuards(ModuleGuard) // Applied globally to class, auth controlled per method/mixed
 // Removed class-level @UseGuards(PrincipalAuthGuard) to allow mixed access
 export class GrievanceController {
     constructor(
@@ -24,28 +24,36 @@ export class GrievanceController {
     ) { }
 
     private async getActiveAcademicYear(schoolId: number, headerYearId?: string): Promise<number> {
-        if (headerYearId) return parseInt(headerYearId);
+        if (headerYearId) {
+            const id = parseInt(headerYearId);
+            if (!isNaN(id)) {
+                const year = await this.prisma.academicYear.findFirst({
+                    where: { id, schoolId }
+                });
+                if (year) return id;
+            }
+        }
         const year = await this.prisma.academicYear.findFirst({ where: { schoolId, status: 'ACTIVE' } });
         if (!year) throw new Error('No active academic year found');
         return year.id;
     }
 
     @Post('config')
-    @UseGuards(PrincipalAuthGuard) // Only Principal/Admin can configure
+    @UseGuards(PrincipalAuthGuard, ModuleGuard) // Only Principal/Admin can configure
     @ApiOperation({ summary: 'Configure roles allowed to raise grievances' })
     async configureRoles(@Req() req, @Body() body: { roles: string[] }) {
         return this.grievanceService.configureRoles(req.user.schoolId, body.roles);
     }
 
     @Get('config')
-    @UseGuards(UserAuthGuard) // Allow all users to check if they are enabled
+    @UseGuards(UserAuthGuard, ModuleGuard) // Allow all users to check if they are enabled
     @ApiOperation({ summary: 'Get grievance configurations' })
     async getConfigs(@Req() req) {
         return this.grievanceService.getConfigs(req.user.schoolId);
     }
 
     @Post()
-    @UseGuards(UserAuthGuard) // Any authenticated user (Role check in Service)
+    @UseGuards(UserAuthGuard, ModuleGuard) // Any authenticated user (Role check in Service)
     @ApiOperation({ summary: 'Create a new grievance' })
     async create(
         @Request() req,
@@ -57,8 +65,21 @@ export class GrievanceController {
         return this.grievanceService.create(req.user.schoolId, yearId, req.user.id, req.user.role, dto);
     }
 
+    @Post('bulk')
+    @UseGuards(UserAuthGuard, ModuleGuard)
+    @ApiOperation({ summary: 'Create a single grievance against multiple users' })
+    async createBulk(
+        @Request() req,
+        @Body() dto: CreateBulkGrievanceDto,
+        @Headers('x-academic-year-id') yearIdHeader?: string,
+    ) {
+        console.log('Grievance Bulk Create Request User:', req.user);
+        const yearId = await this.getActiveAcademicYear(req.user.schoolId, yearIdHeader);
+        return this.grievanceService.createBulk(req.user.schoolId, yearId, req.user.id, req.user.role, dto);
+    }
+
     @Get()
-    @UseGuards(UserAuthGuard) // Allow users to view (Service should filter own/all)
+    @UseGuards(UserAuthGuard, ModuleGuard) // Allow users to view (Service should filter own/all)
     @ApiOperation({ summary: 'Get all grievances' })
     async findAll(
         @Request() req,
@@ -79,7 +100,7 @@ export class GrievanceController {
     }
 
     @Patch(':id')
-    @UseGuards(PrincipalAuthGuard) // Only Principal/Admin can resolve? Or maybe creator can cancel?
+    @UseGuards(PrincipalAuthGuard, ModuleGuard) // Only Principal/Admin can resolve? Or maybe creator can cancel?
     // For now, mostly Principal resolving.
     @ApiOperation({ summary: 'Update grievance status' })
     update(
@@ -91,7 +112,7 @@ export class GrievanceController {
     }
 
     @Delete(':id')
-    @UseGuards(UserAuthGuard) // Changed from PrincipalAuthGuard to allow Parents
+    @UseGuards(UserAuthGuard, ModuleGuard) // Changed from PrincipalAuthGuard to allow Parents
     @ApiOperation({ summary: 'Delete a grievance' })
     remove(@Request() req, @Param('id', ParseIntPipe) id: number) {
         // Pass user ID and Role to service for ownership check

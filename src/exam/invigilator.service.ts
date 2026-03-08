@@ -34,6 +34,20 @@ export class AssignInvigilatorsDto {
     assignments: CreateInvigilatorDto[];
 }
 
+export class GenerateSessionInvigilatorsDto {
+    @IsString()
+    @IsNotEmpty()
+    date: string;
+
+    @IsString()
+    @IsNotEmpty()
+    startTime: string;
+
+    @IsNumber()
+    @IsNotEmpty()
+    teachersPerRoom: number;
+}
+
 @Injectable()
 export class InvigilatorService {
     constructor(private readonly prisma: PrismaService) { }
@@ -209,6 +223,183 @@ export class InvigilatorService {
         };
     }
 
+    async generateSessionInvigilators(schoolId: number, academicYearId: number, examId: number, dto: GenerateSessionInvigilatorsDto) {
+        const { date, startTime, teachersPerRoom } = dto;
+        const examDate = new Date(date);
+
+        // 1. Find all rooms with seating in this session
+        const seatingArrangements = await this.prisma.seatingArrangement.findMany({
+            where: {
+                schoolId,
+                academicYearId,
+                examId,
+                schedule: {
+                    examDate: {
+                        gte: new Date(examDate.setHours(0, 0, 0, 0)),
+                        lt: new Date(examDate.setHours(23, 59, 59, 999))
+                    },
+                    startTime
+                }
+            },
+            select: { roomId: true },
+            distinct: ['roomId']
+        });
+
+        const roomIds = seatingArrangements.map(s => s.roomId);
+
+        if (roomIds.length === 0) {
+            throw new BadRequestException('No seating arrangements found for this session. Generate seating first.');
+        }
+
+        // 2. Get available teachers
+        const teachers = await this.prisma.teacherProfile.findMany({
+            where: { schoolId, isActive: true },
+            select: { id: true }
+        });
+
+        if (teachers.length < roomIds.length) {
+            throw new BadRequestException(`Not enough teachers. Have ${teachers.length}, need at least ${roomIds.length}.`);
+        }
+
+        // 3. Shuffle teachers for random allocation
+        const shuffledTeachers = this.shuffleArray(teachers);
+
+        // 4. Distribution logic
+        const assignments: any[] = [];
+        let teacherIndex = 0;
+
+        // Get all schedule IDs in this session to link the assignments
+        // Since assignments are traditionally linked to a schedule, but now rooms are shared,
+        // we'll link them to the primary schedule of that room in that session.
+        const sessionSchedules = await this.prisma.examSchedule.findMany({
+            where: {
+                schoolId,
+                academicYearId,
+                examId,
+                examDate: {
+                    gte: new Date(examDate.setHours(0, 0, 0, 0)),
+                    lt: new Date(examDate.setHours(23, 59, 59, 999))
+                },
+                startTime
+            },
+            select: { id: true, roomId: true }
+        });
+
+        for (const roomId of roomIds) {
+            // Find one schedule associated with this room in this session to act as anchor
+            // In Prisma schema, InvigilatorAssignment belongs to a Schedule.
+            const anchorSchedule = sessionSchedules.find(s => s.roomId === roomId);
+            if (!anchorSchedule) continue;
+
+            const roomScheduleIds = sessionSchedules.filter(s => s.roomId === roomId).map(s => s.id);
+
+            // Clear existing for all schedules in this room/session
+            await this.prisma.invigilatorAssignment.deleteMany({
+                where: { scheduleId: { in: roomScheduleIds }, roomId }
+            });
+
+            for (let i = 0; i < teachersPerRoom; i++) {
+                if (teacherIndex >= shuffledTeachers.length) {
+                    // Start reusing teachers if we run out? No, the user might prefer an error or gap.
+                    // For now, we stop or loop. Let's loop but warn?
+                    // Re-shuffle and reset or just break.
+                    break;
+                }
+
+                assignments.push({
+                    schoolId,
+                    academicYearId,
+                    examId,
+                    scheduleId: anchorSchedule.id,
+                    teacherId: shuffledTeachers[teacherIndex].id,
+                    roomId,
+                    isChiefInvigilator: i === 0, // First teacher is chief
+                });
+
+                teacherIndex++;
+            }
+        }
+
+        const created = await this.prisma.invigilatorAssignment.createMany({
+            data: assignments
+        });
+
+        return {
+            count: created.count,
+            roomsAssigned: roomIds.length,
+            teachersUsed: teacherIndex
+        };
+    }
+
+    async findBySession(schoolId: number, academicYearId: number, examId: number, date: string, startTime: string) {
+        const examDate = new Date(date);
+        const dayStart = new Date(examDate.setHours(0, 0, 0, 0));
+        const dayEnd = new Date(examDate.setHours(23, 59, 59, 999));
+
+        const assignments = await this.prisma.invigilatorAssignment.findMany({
+            where: {
+                schoolId,
+                academicYearId,
+                examId,
+                schedule: {
+                    examDate: {
+                        gte: dayStart,
+                        lt: dayEnd
+                    },
+                    startTime
+                }
+            },
+            include: {
+                teacher: {
+                    include: {
+                        user: { select: { name: true } },
+                    },
+                },
+                room: { select: { id: true, name: true, code: true } },
+                schedule: {
+                    select: {
+                        subject: { select: { name: true } },
+                        class: { select: { name: true } }
+                    }
+                }
+            },
+            orderBy: [{ roomId: 'asc' }, { isChiefInvigilator: 'desc' }],
+        });
+
+        // For each room, fetch all classes that have exams there in this session
+        const uniqueRoomIds = [...new Set(assignments.map(a => a.roomId))];
+
+        const sessionSchedules = await this.prisma.examSchedule.findMany({
+            where: {
+                schoolId,
+                academicYearId,
+                examId,
+                examDate: {
+                    gte: dayStart,
+                    lt: dayEnd
+                },
+                startTime,
+                roomId: { in: uniqueRoomIds }
+            },
+            include: { class: { select: { name: true } } }
+        });
+
+        const roomClassesMap: Record<number, string[]> = {};
+        sessionSchedules.forEach(s => {
+            const rid = s.roomId;
+            if (rid === null) return;
+            if (!roomClassesMap[rid]) roomClassesMap[rid] = [];
+            if (!roomClassesMap[rid].includes(s.class.name)) {
+                roomClassesMap[rid].push(s.class.name);
+            }
+        });
+
+        return assignments.map(a => ({
+            ...a,
+            roomClasses: roomClassesMap[a.roomId] || []
+        }));
+    }
+
     // ============================================================
     // QUERY
     // ============================================================
@@ -264,5 +455,14 @@ export class InvigilatorService {
 
         await this.prisma.invigilatorAssignment.delete({ where: { id } });
         return { message: 'Assignment deleted successfully' };
+    }
+
+    private shuffleArray(array: any[]) {
+        const newArray = [...array];
+        for (let i = newArray.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+        }
+        return newArray;
     }
 }

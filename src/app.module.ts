@@ -1,9 +1,11 @@
 import { Module, MiddlewareConsumer, RequestMethod, NestModule } from '@nestjs/common';
+import { CacheModule } from '@nestjs/cache-manager';
 import { RouteLoggerMiddleware } from './common/middleware/route-logger.middleware';
 import { APP_GUARD } from '@nestjs/core';
 import { HttpModule } from '@nestjs/axios';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { BullModule } from '@nestjs/bullmq';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -24,14 +26,24 @@ import { SaasAdminCbseCircularModule } from './saas-admin/cbse-circular/saas-adm
 import { PrincipalCbseCircularModule } from './principal/cbse-circular/principal-cbse-circular.module';
 import { InquiryModule } from './principal/inquiry/inquiry.module';
 import { PublicInquiryController } from './principal/inquiry/public-inquiry.controller';
+import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health/health.controller';
-
 
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+    }),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        connection: {
+          host: configService.get('REDIS_HOST', 'localhost'),
+          port: configService.get('REDIS_PORT', 6379),
+        },
+      }),
+      inject: [ConfigService],
     }),
     PrismaModule,
     AdminModule,
@@ -50,6 +62,21 @@ import { HealthController } from './health/health.controller';
     HttpModule,
     WebPageModule,
     InquiryModule,
+    AuthModule,
+    CacheModule.registerAsync({
+      isGlobal: true,
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => {
+        const { redisStore } = await import('cache-manager-redis-yet');
+        return {
+          store: redisStore,
+          host: configService.get('REDIS_HOST', 'localhost'),
+          port: configService.get('REDIS_PORT', 6379),
+          ttl: 600, // Default TTL 10 minutes
+        };
+      },
+      inject: [ConfigService],
+    }),
   ],
   controllers: [AppController, SchoolConfigController, PublicInquiryController, HealthController],
   providers: [

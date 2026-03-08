@@ -23,7 +23,19 @@ export class CreateTimeSlotDto {
 
     @IsInt()
     @IsNotEmpty()
-    periodId: number;
+    scheduleId: number;
+
+    @IsInt()
+    @IsOptional()
+    periodId?: number;
+
+    @IsString()
+    @IsNotEmpty()
+    startTime: string;
+
+    @IsString()
+    @IsNotEmpty()
+    endTime: string;
 
     @IsBoolean()
     @IsOptional()

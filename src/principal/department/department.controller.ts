@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Req, UseGuards, Delete, Param, ParseIntPipe, Query, Patch } from '@nestjs/common';
 import { DepartmentService } from './department.service';
-import { CreateDepartmentDto, UpdateDepartmentDto, DepartmentQueryDto, AddDepartmentMemberDto, UpdateDepartmentMemberDto } from './dto/department.dto';
+import { CreateDepartmentDto, UpdateDepartmentDto, DepartmentQueryDto, AddDepartmentMemberDto, UpdateDepartmentMemberDto, AddDepartmentMembersBulkDto, AssignSubjectsBulkDto } from './dto/department.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { Audit } from '../../common/audit/audit.decorator';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
@@ -88,6 +88,17 @@ export class DepartmentController {
         return this.departmentService.getMembers(schoolId, id);
     }
 
+    @Get(':id/subjects')
+    @ApiOperation({ summary: 'Get subjects assigned to a department' })
+    @ApiResponse({ status: 200, description: 'Return list of subjects.' })
+    async getSubjects(
+        @Req() req,
+        @Param('id', ParseIntPipe) id: number,
+    ) {
+        const schoolId = req.user.schoolId;
+        return this.departmentService.getSubjects(schoolId, id);
+    }
+
     @Patch(':id/members/:userId')
     @ApiOperation({ summary: 'Update a department member' })
     @ApiResponse({ status: 200, description: 'Member updated successfully.' })
@@ -111,5 +122,29 @@ export class DepartmentController {
     ) {
         const schoolId = req.user.schoolId;
         return this.departmentService.removeMember(schoolId, id, userId);
+    }
+
+    @Post(':id/members/bulk')
+    @ApiOperation({ summary: 'Bulk add members to a department' })
+    @ApiResponse({ status: 201, description: 'Members added successfully.' })
+    async addMembersBulk(
+        @Req() req,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() dto: AddDepartmentMembersBulkDto
+    ) {
+        const schoolId = req.user.schoolId;
+        return this.departmentService.addMembersBulk(schoolId, id, dto);
+    }
+
+    @Post(':id/subjects/bulk')
+    @ApiOperation({ summary: 'Bulk assign subjects to a department' })
+    @ApiResponse({ status: 201, description: 'Subjects assigned successfully.' })
+    async assignSubjectsBulk(
+        @Req() req,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() dto: AssignSubjectsBulkDto
+    ) {
+        const schoolId = req.user.schoolId;
+        return this.departmentService.assignSubjectsBulk(schoolId, id, dto);
     }
 }

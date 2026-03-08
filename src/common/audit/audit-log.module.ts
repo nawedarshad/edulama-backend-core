@@ -5,11 +5,16 @@ import { AuditLogService } from './audit-log.service';
 import { AuditLogListener } from './audit-log.listener';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AuditInterceptor } from './audit.interceptor';
+import { PrincipalAuditLogController } from '../../principal/audit-log/audit-log.controller';
+import { HttpModule } from '@nestjs/axios';
+import { ConfigModule } from '@nestjs/config';
 
 @Global()
 @Module({
     imports: [
         PrismaModule,
+        HttpModule,
+        ConfigModule,
         EventEmitterModule.forRoot({
             wildcard: false,
             delimiter: '.',
@@ -20,6 +25,7 @@ import { AuditInterceptor } from './audit.interceptor';
             ignoreErrors: false,
         }),
     ],
+    controllers: [PrincipalAuditLogController],
     providers: [
         AuditLogService,
         AuditLogListener,

@@ -3,13 +3,16 @@ model TeacherProfile {
   userId   Int @unique
   schoolId Int
 
-  // Employment Identity
   empCode String?
 
-  // Dates
-  joinDate DateTime @default(now())
+  employmentType String  @default("FULL_TIME")
+  department     String?
 
-  // Status & Compliance
+  joinDate        DateTime  @default(now())
+  resignationDate DateTime?
+  terminationDate DateTime?
+  exitReason      String?
+
   isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
@@ -45,11 +48,17 @@ model TeacherProfile {
   houseMasterOf          House[]                 @relation("HouseMaster")
   classes                Class[]
   classDiaries           ClassDiary[]
+  homeworkAssigned       Homework[]
   notices                Notice[]
   lateAttendanceMonitors LateAttendanceMonitor[]
   lessonPlans            LessonPlan[]
   invigilatorAssignments InvigilatorAssignment[]
+  salaryConfigs          SalaryConfig[]
+  payrolls               Payroll[]
+  teacherBankAccounts    TeacherBankAccount[]
+  academicAssignments    AcademicAssignment[]
 
+  @@unique([id, schoolId])
   @@index([schoolId])
 }
 

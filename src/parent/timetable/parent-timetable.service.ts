@@ -37,11 +37,19 @@ export class ParentTimetableService {
             throw new ForbiddenException('You can only view timetables for your own children.');
         }
 
-        return studentProfile;
+        const group = await this.prisma.academicGroup.findFirst({
+            where: { schoolId, classId: studentProfile.classId, sectionId: studentProfile.sectionId }
+        });
+
+        if (!group) {
+            throw new NotFoundException('Academic group not found for student');
+        }
+
+        return { ...studentProfile, groupId: group.id };
     }
 
     async getWeeklyTimetable(schoolId: number, parentUserId: number, studentId: number, academicYearId: number) {
-        const { sectionId } = await this.validateAndGetStudentSection(schoolId, parentUserId, studentId);
+        const { groupId } = await this.validateAndGetStudentSection(schoolId, parentUserId, studentId);
 
         // Fetch Working Pattern to filter non-working days
         const patterns = await this.calendarService.getWorkingPattern(schoolId, academicYearId);
@@ -51,19 +59,18 @@ export class ParentTimetableService {
             where: {
                 schoolId,
                 academicYearId,
-                sectionId,
+                groupId,
             },
             include: {
-                class: { select: { id: true, name: true } },
-                section: { select: { id: true, name: true } },
+                group: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true, color: true } },
-                period: true,
+                timeSlot: true,
                 room: { select: { id: true, name: true } },
                 teacher: { select: { id: true, user: { select: { name: true } } } },
             },
             orderBy: [
                 { day: 'asc' },
-                { period: { startTime: 'asc' } }
+                { timeSlot: { startTime: 'asc' } }
             ]
         });
 
@@ -89,25 +96,24 @@ export class ParentTimetableService {
         }
 
         const dayOfWeek = this.getDayOfWeek(date);
-        const { sectionId } = await this.validateAndGetStudentSection(schoolId, parentUserId, studentId);
+        const { groupId } = await this.validateAndGetStudentSection(schoolId, parentUserId, studentId);
 
         // 2. Regular
         const regularEntries = await this.prisma.timetableEntry.findMany({
             where: {
                 schoolId,
                 academicYearId,
-                sectionId,
+                groupId,
                 day: dayOfWeek,
             },
             include: {
-                class: { select: { id: true, name: true } },
-                section: { select: { id: true, name: true } },
+                group: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true, color: true } },
-                period: true,
+                timeSlot: true,
                 room: { select: { id: true, name: true } },
                 teacher: { select: { id: true, user: { select: { name: true } } } },
             },
-            orderBy: { period: { startTime: 'asc' } }
+            orderBy: { timeSlot: { startTime: 'asc' } }
         });
 
         // 3. Overrides
@@ -116,7 +122,7 @@ export class ParentTimetableService {
                 schoolId,
                 academicYearId,
                 date: dateObj,
-                entry: { sectionId },
+                entry: { groupId },
             },
             include: {
                 substituteTeacher: { select: { id: true, user: { select: { name: true } } } }

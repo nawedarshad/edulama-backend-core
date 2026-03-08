@@ -24,8 +24,10 @@ model Room {
 
   status RoomStatus @default(ACTIVE)
 
-  capacity   Int?     @default(30)
-  facilities String[] @default([])
+  capacity         Int?     @default(30)
+  benches          Int      @default(15)
+  studentsPerBench Int      @default(2)
+  facilities       String[] @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -37,8 +39,10 @@ model Room {
   examSchedules          ExamSchedule[]
   seatingArrangements    SeatingArrangement[]
   invigilatorAssignments InvigilatorAssignment[]
+  examRoomTemplates      ExamRoomTemplate[]
 
   @@unique([schoolId, code])
+  @@unique([id, schoolId])
   @@index([schoolId])
 }
 

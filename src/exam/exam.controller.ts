@@ -9,10 +9,11 @@ import {
     Query,
     UseGuards,
     Request,
+    ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { PrincipalAuthGuard } from '../common/guards/principal.guard';
-import { ExamService, CreateExamDto, UpdateExamDto } from './exam.service';
+import { ExamService, CreateExamDto, UpdateExamDto, AutoScheduleDto } from './exam.service';
 import {
     ExamScheduleService,
     CreateExamScheduleDto,
@@ -27,11 +28,13 @@ import {
     SeatingService,
     CreateSeatingArrangementDto,
     GenerateSeatingDto,
+    GenerateSessionSeatingDto,
 } from './seating.service';
 import {
     InvigilatorService,
     CreateInvigilatorDto,
     AssignInvigilatorsDto,
+    GenerateSessionInvigilatorsDto,
 } from './invigilator.service';
 import {
     QuestionPaperService,
@@ -50,7 +53,7 @@ import {
 @ApiTags('Principal - Exam Management')
 @ApiBearerAuth()
 @UseGuards(PrincipalAuthGuard)
-@Controller('api/principal/exam')
+@Controller('principal/exam')
 export class ExamController {
     constructor(
         private readonly examService: ExamService,
@@ -62,13 +65,73 @@ export class ExamController {
     ) { }
 
     // ============================================================
+    // DEBUG & SESSION-BASED ROUTES (Moved to top to avoid shadowing)
+    // ============================================================
+
+    @Post('test-ping')
+    testPing() {
+        return { message: 'pong' };
+    }
+
+    @Get(':examId/seating/session')
+    @ApiOperation({ summary: 'Get seating for a whole session (date/time/exam)' })
+    getSeatingBySession(
+        @Request() req,
+        @Param('examId', ParseIntPipe) examId: number,
+        @Query('date') date: string,
+        @Query('startTime') startTime: string,
+    ) {
+        const { schoolId, academicYearId } = req.user;
+        return this.seatingService.findBySession(schoolId, academicYearId, examId, date, startTime);
+    }
+
+    @Post(':examId/seating/session/generate')
+    @ApiOperation({ summary: 'Generate seating for a whole room session' })
+    generateSessionSeating(
+        @Param('examId', ParseIntPipe) examId: number,
+        @Body() dto: GenerateSessionSeatingDto,
+        @Request() req: any,
+    ) {
+        return this.seatingService.generateSessionSeating(req.user.schoolId, req.user.academicYearId, examId, dto);
+    }
+
+    @Get(':examId/seating/invigilators/session')
+    @ApiOperation({ summary: 'Get invigilators for a whole session' })
+    getInvigilatorsBySession(
+        @Param('examId', ParseIntPipe) examId: number,
+        @Query('date') date: string,
+        @Query('startTime') startTime: string,
+        @Request() req: any,
+    ) {
+        return this.invigilatorService.findBySession(req.user.schoolId, req.user.academicYearId, examId, date, startTime);
+    }
+
+    @Post(':examId/seating/invigilators/session/generate')
+    @ApiOperation({ summary: 'Generate invigilators for a whole session' })
+    generateSessionInvigilators(
+        @Param('examId', ParseIntPipe) examId: number,
+        @Body() dto: GenerateSessionInvigilatorsDto,
+        @Request() req: any,
+    ) {
+        return this.invigilatorService.generateSessionInvigilators(req.user.schoolId, req.user.academicYearId, examId, dto);
+    }
+
+    // ============================================================
     // EXAM CRUD
     // ============================================================
 
     @Post('auto-schedule')
     @ApiOperation({ summary: 'Generate auto-schedule based on parameters' })
-    async autoSchedule(@Request() req, @Body() dto: any) {
-        return this.examService.autoSchedule(req.user.schoolId, dto);
+    async autoSchedule(@Request() req, @Body() dto: AutoScheduleDto) {
+        const { schoolId, academicYearId } = req.user;
+        return this.examService.autoSchedule(schoolId, academicYearId, dto);
+    }
+
+    @Delete(':id/room-templates')
+    @ApiOperation({ summary: 'Clear room templates for an exam (allows regeneration on next auto-schedule)' })
+    async clearRoomTemplates(@Request() req, @Param('id') id: string) {
+        const { schoolId, academicYearId } = req.user;
+        return this.examService.clearRoomTemplates(schoolId, academicYearId, +id);
     }
 
     @Post()

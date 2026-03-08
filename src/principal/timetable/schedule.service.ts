@@ -51,7 +51,7 @@ export class ScheduleService {
                 _count: {
                     select: {
                         timePeriods: true,
-                        classes: true,
+                        academicGroups: true,
                     },
                 },
             },
@@ -69,7 +69,7 @@ export class ScheduleService {
                 timePeriods: {
                     orderBy: { startTime: 'asc' },
                 },
-                classes: {
+                academicGroups: {
                     select: {
                         id: true,
                         name: true,
@@ -113,13 +113,13 @@ export class ScheduleService {
     async deleteSchedule(schoolId: number, id: number) {
         const schedule = await this.findOne(schoolId, id);
 
-        // Check if any classes are using this schedule
-        const classCount = await this.prisma.class.count({
+        // Check if any academic groups are using this schedule
+        const groupCount = await this.prisma.academicGroup.count({
             where: { scheduleId: id },
         });
 
-        if (classCount > 0) {
-            throw new BadRequestException(`Cannot delete schedule. ${classCount} class(es) are currently using this schedule.`);
+        if (groupCount > 0) {
+            throw new BadRequestException(`Cannot delete schedule. ${groupCount} academic group(s) are currently using this schedule.`);
         }
 
         return this.prisma.schedule.delete({

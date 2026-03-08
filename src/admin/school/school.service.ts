@@ -65,26 +65,47 @@ export class SchoolService {
                 }
             });
 
-            // C. Create Principal User (Role ID 1)
-            const principal = await tx.user.create({
+            // C. Create or Find Principal User
+            const existingPrincipalIdentity = await tx.authIdentity.findFirst({
+                where: { type: 'EMAIL', value: principalEmail }
+            });
+
+            let principal = existingPrincipalIdentity ? await tx.user.findUnique({ where: { id: existingPrincipalIdentity.userId } }) : null;
+
+            if (!principal) {
+                principal = await tx.user.create({
+                    data: {
+                        name: principalName,
+                        isActive: true,
+                    }
+                });
+
+                const hashedPassword = await argon2.hash(principalPassword);
+                await tx.authIdentity.create({
+                    data: {
+                        userId: principal.id,
+                        type: 'EMAIL',
+                        value: principalEmail,
+                        secret: hashedPassword,
+                        verified: true
+                    }
+                });
+            }
+
+            // D. Link Principal to School
+            const userSchool = await tx.userSchool.create({
                 data: {
-                    name: principalName,
+                    userId: principal.id,
                     schoolId: school.id,
-                    roleId: 2, // PRINCIPAL
+                    primaryRoleId: 2, // PRINCIPAL
                     isActive: true,
                 }
             });
 
-            // D. Create Auth Identity
-            const hashedPassword = await argon2.hash(principalPassword);
-            await tx.authIdentity.create({
+            await tx.userSchoolRole.create({
                 data: {
-                    userId: principal.id,
-                    schoolId: school.id,
-                    type: 'EMAIL',
-                    value: principalEmail,
-                    secret: hashedPassword,
-                    verified: true
+                    userSchoolId: userSchool.id,
+                    roleId: 2, // PRINCIPAL
                 }
             });
 
@@ -137,7 +158,7 @@ export class SchoolService {
             include: {
                 _count: {
                     select: {
-                        users: { where: { roleId: 2 } },
+                        userSchools: { where: { primaryRoleId: 2 } },
                         academicYears: true,
                     },
                 },
@@ -147,7 +168,7 @@ export class SchoolService {
 
         return schools.map((school) => ({
             ...school,
-            principalCount: school._count.users,
+            principalCount: school._count.userSchools,
             academicYearsCount: school._count.academicYears,
         }));
     }
@@ -162,17 +183,26 @@ export class SchoolService {
                         module: true,
                     },
                 },
-                users: {
-                    where: { roleId: 2 },
-                    take: 1,
-                    select: {
-                        id: true,
-                        name: true,
-                        authIdentities: {
-                            where: { type: 'EMAIL' },
-                            select: { value: true },
-                        },
+                userSchools: {
+                    where: {
+                        OR: [
+                            { primaryRoleId: 2 },
+                            { roles: { some: { roleId: 2 } } }
+                        ]
                     },
+                    take: 1,
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                authIdentities: {
+                                    where: { type: 'EMAIL' },
+                                    select: { value: true },
+                                },
+                            }
+                        }
+                    }
                 },
                 _count: {
                     select: {
@@ -187,7 +217,8 @@ export class SchoolService {
             throw new NotFoundException(`School with ID ${id} not found`);
         }
 
-        const principal = school.users[0];
+        const principalMembership = school.userSchools[0];
+        const principal = principalMembership?.user;
         const principalEmail = principal?.authIdentities[0]?.value;
 
         return {

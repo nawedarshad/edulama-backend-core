@@ -12,6 +12,7 @@ import { ResultService } from './result.service';
 import { AdmitCardService } from './admit-card.service';
 import { ReportCardService } from './report-card.service';
 import { ExamAttendanceService } from './exam-attendance.service';
+import { SchedulingEngine } from './scheduling-engine';
 
 import { ExamStudentController } from './exam-student.controller';
 import { ExamTeacherController } from './exam-teacher.controller';
@@ -31,6 +32,7 @@ import { CalendarModule } from '../principal/calendar/calendar.module';
         AdmitCardService,
         ReportCardService,
         ExamAttendanceService,
+        SchedulingEngine,
     ],
     exports: [
         ExamService,
@@ -42,6 +44,7 @@ import { CalendarModule } from '../principal/calendar/calendar.module';
         AdmitCardService,
         ReportCardService,
         ExamAttendanceService,
+        SchedulingEngine,
     ],
 })
 export class ExamModule { }

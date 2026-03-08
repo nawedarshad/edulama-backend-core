@@ -2,15 +2,22 @@ import { IsDateString, IsInt, IsOptional, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAttendanceSessionDto {
-    @ApiProperty({ description: 'Class ID' })
+    @ApiProperty({ description: 'Academic Group ID' })
     @IsInt()
     @Min(1)
-    classId: number;
+    groupId: number;
 
-    @ApiProperty({ description: 'Section ID' })
+    @ApiPropertyOptional({ description: 'Class ID' })
+    @IsOptional()
     @IsInt()
     @Min(1)
-    sectionId: number;
+    classId?: number;
+
+    @ApiPropertyOptional({ description: 'Section ID' })
+    @IsOptional()
+    @IsInt()
+    @Min(1)
+    sectionId?: number;
 
     @ApiPropertyOptional({ description: 'Subject ID. Required if Attendance Mode is PERIOD_WISE.' })
     @IsOptional()
@@ -18,7 +25,13 @@ export class CreateAttendanceSessionDto {
     @Min(1)
     subjectId?: number;
 
-    @ApiPropertyOptional({ description: 'Period ID (TimeSlot or Period). Required if Attendance Mode is PERIOD_WISE.' })
+    @ApiPropertyOptional({ description: 'Time Slot ID. Required if Attendance Mode is PERIOD_WISE.' })
+    @IsOptional()
+    @IsInt()
+    @Min(1)
+    timeSlotId?: number;
+
+    @ApiPropertyOptional({ description: 'Legacy Period ID' })
     @IsOptional()
     @IsInt()
     @Min(1)

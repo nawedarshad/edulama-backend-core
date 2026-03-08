@@ -1,6 +1,10 @@
 enum TimetableOverrideType {
   SUBSTITUTE
   CANCELLED
+  ROOM_CHANGE
+  TEACHER_SWAP
+  EXTRA_CLASS
+  HOLIDAY
 }
 
 enum PeriodType {
@@ -13,6 +17,24 @@ enum TimetableStatus {
   DRAFT
   PUBLISHED
   LOCKED
+}
+
+model TimetableSettings {
+  id Int @id @default(autoincrement())
+
+  schoolId Int @unique
+
+  allowSubstitution Boolean @default(true)
+  allowCancellation Boolean @default(true)
+  allowTeacherSwap  Boolean @default(false)
+
+  requireTeacher Boolean @default(true)
+  requireRoom    Boolean @default(false)
+
+  allowFlexiblePeriods  Boolean @default(false)
+  allowMultipleTeachers Boolean @default(false)
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 }
 
 model Schedule {
@@ -28,8 +50,10 @@ model Schedule {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  timePeriods TimePeriod[]
-  classes     Class[]
+  timePeriods    TimePeriod[]
+  classes        Class[]
+  academicGroups AcademicGroup[]
+  timeSlots      TimeSlot[]
 
   school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
@@ -57,11 +81,11 @@ model TimePeriod {
   school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   schedule           Schedule?           @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  entries            TimetableEntry[]
   timeSlots          TimeSlot[]
   attendanceSessions AttendanceSession[]
 
   @@unique([schoolId, academicYearId, scheduleId, name])
+  @@unique([id, schoolId])
   @@index([schoolId])
 }
 
@@ -73,14 +97,13 @@ model TimetableEntry {
   academicYearId Int
 
   // Academic mapping
-  classId   Int
-  sectionId Int
-  subjectId Int
-  teacherId Int
+  groupId   Int
+  subjectId Int?
+  teacherId Int?
 
   // Time
-  day      DayOfWeek
-  periodId Int
+  day        DayOfWeek
+  timeSlotId Int
 
   // Optional room
   roomId Int?
@@ -99,21 +122,19 @@ model TimetableEntry {
   // Relations
   school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  class              Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
-  section            Section             @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  subject            Subject             @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  teacher            TeacherProfile      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  period             TimePeriod          @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  group              AcademicGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  subject            Subject?            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher            TeacherProfile?     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   room               Room?               @relation(fields: [roomId], references: [id], onDelete: SetNull)
-  timeSlot           TimeSlot?           @relation(fields: [timeSlotId], references: [id])
-  timeSlotId         Int?
+  timeSlot           TimeSlot            @relation(fields: [timeSlotId], references: [id], onDelete: Cascade)
   publisher          User?               @relation("TimetablePublisher", fields: [publishedBy], references: [id], onDelete: SetNull)
   timetableOverrides TimetableOverride[]
 
   // Prevent double booking
-  @@unique([schoolId, academicYearId, sectionId, day, periodId]) // Section cannot be in two places
-  @@unique([schoolId, academicYearId, teacherId, day, periodId]) // Teacher cannot be in two places
-  @@unique([schoolId, academicYearId, roomId, day, periodId]) // Room cannot be double booked
+  @@unique([schoolId, academicYearId, groupId, day, timeSlotId]) // Group cannot be in two places
+  @@unique([schoolId, academicYearId, teacherId, day, timeSlotId]) // Teacher cannot be in two places
+  @@unique([schoolId, academicYearId, roomId, day, timeSlotId]) // Room cannot be double booked
+  @@unique([id, schoolId])
   @@index([teacherId])
   @@index([roomId])
 }

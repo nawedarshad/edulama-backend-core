@@ -1,0 +1,61 @@
+warn The configuration property `package.json#prisma` is deprecated and will be removed in Prisma 7. Please migrate to a Prisma config file (e.g., `prisma.config.ts`).
+For more information, see: https://pris.ly/prisma-config
+
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema
+
+Error: Prisma schema validation - (validate wasm)
+Error code: P1012
+error: Error validating field `school` in model `AcademicAssignment`: The relation field `school` on model `AcademicAssignment` is missing an opposite relation field on the model `School`. Either run `prisma format` or add it manually.
+  -->  prisma\schema\academic.prisma:26
+   | 
+25 | 
+26 |     school       School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+27 |     academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+   | 
+error: Error validating field `academicYear` in model `AcademicAssignment`: The relation field `academicYear` on model `AcademicAssignment` is missing an opposite relation field on the model `AcademicYear`. Either run `prisma format` or add it manually.
+  -->  prisma\schema\academic.prisma:27
+   | 
+26 |     school       School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+27 |     academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+28 |     class        Class?         @relation(fields: [classId], references: [id], onDelete: Cascade)
+   | 
+error: Error validating field `class` in model `AcademicAssignment`: The relation field `class` on model `AcademicAssignment` is missing an opposite relation field on the model `Class`. Either run `prisma format` or add it manually.
+  -->  prisma\schema\academic.prisma:28
+   | 
+27 |     academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+28 |     class        Class?         @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+29 |     section      Section?       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+   | 
+error: Error validating field `section` in model `AcademicAssignment`: The relation field `section` on model `AcademicAssignment` is missing an opposite relation field on the model `Section`. Either run `prisma format` or add it manually.
+  -->  prisma\schema\academic.prisma:29
+   | 
+28 |     class        Class?         @relation(fields: [classId], references: [id], onDelete: Cascade)
+29 |     section      Section?       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+30 |     teacher      TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+   | 
+error: Error validating field `teacher` in model `AcademicAssignment`: The relation field `teacher` on model `AcademicAssignment` is missing an opposite relation field on the model `TeacherProfile`. Either run `prisma format` or add it manually.
+  -->  prisma\schema\academic.prisma:30
+   | 
+29 |     section      Section?       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+30 |     teacher      TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+31 | 
+   | 
+error: Error validating field `user` in model `AcademicAssignment`: The relation field `user` on model `AcademicAssignment` is missing an opposite relation field on the model `User`. Either run `prisma format` or add it manually.
+  -->  prisma\schema\academic.prisma:34
+   | 
+33 |     userId Int?
+34 |     user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+35 | 
+   | 
+
+Validation Error Count: 6
+[Context: validate]
+
+Prisma CLI Version : 6.19.1

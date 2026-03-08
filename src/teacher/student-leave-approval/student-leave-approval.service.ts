@@ -30,21 +30,32 @@ export class StudentLeaveApprovalService {
                 throw new NotFoundException('Teacher profile not found');
             }
 
-            // Find sections where this teacher is the section teacher (class teacher)
-            const sectionTeachers = await this.prisma.sectionTeacher.findMany({
+            // Find academic assignments for this teacher
+            const assignments = await this.prisma.academicAssignment.findMany({
                 where: {
                     teacherId: teacherProfile.id,
                     schoolId: teacherUser.schoolId,
-                    academicYearId: teacherUser.academicYearId
+                    role: { in: ['CLASS_TEACHER', 'HEAD_TEACHER', 'COORDINATOR', 'MENTOR'] }
                 },
-                select: { sectionId: true }
+                include: {
+                    class: { include: { sections: { select: { id: true } } } }
+                }
             });
 
-            if (sectionTeachers.length === 0) {
+            if (assignments.length === 0) {
                 return { data: [], meta: { total: 0, page, limit, totalPages: 0 } };
             }
 
-            const sectionIds = sectionTeachers.map(st => st.sectionId);
+            const sectionIdsSet = new Set<number>();
+            for (const assignment of assignments) {
+                if (assignment.sectionId) {
+                    sectionIdsSet.add(assignment.sectionId);
+                } else if (assignment.class) {
+                    assignment.class.sections.forEach(s => sectionIdsSet.add(s.id));
+                }
+            }
+
+            const sectionIds = Array.from(sectionIdsSet);
 
             // Get students in these sections
             const students = await this.prisma.studentProfile.findMany({
@@ -55,7 +66,7 @@ export class StudentLeaveApprovalService {
                 select: { userId: true }
             });
 
-            const studentUserIds = students.map(s => s.userId);
+            const studentUserIds = students.map(s => s.userId).filter((id): id is number => id !== null);
 
             if (studentUserIds.length === 0) {
                 return { data: [], meta: { total: 0, page, limit, totalPages: 0 } };
@@ -188,14 +199,13 @@ export class StudentLeaveApprovalService {
                             studentProfile: {
                                 select: {
                                     rollNo: true,
+                                    classId: true,
+                                    sectionId: true,
                                     class: { select: { name: true } },
                                     section: {
                                         select: {
                                             name: true,
-                                            id: true,
-                                            classTeacher: {
-                                                select: { teacherId: true }
-                                            }
+                                            id: true
                                         }
                                     }
                                 }
@@ -218,17 +228,27 @@ export class StudentLeaveApprovalService {
                 throw new ForbiddenException('Teacher profile not found');
             }
 
-            // Access safely with optional chaining, though strict checks are better
-            // Prisma return type for relations needs care.
-            // Using 'any' cast temporarily if type inference is tricky before migration, 
-            // but logic is: request.applicant.studentProfile.section.classTeacher.teacherId
+            const studentSectionId = request.applicant?.studentProfile?.sectionId;
+            const studentClassId = request.applicant?.studentProfile?.classId;
 
-            const studentSection = request.applicant?.studentProfile?.section;
-            // The classTeacher relation on Section is nullable (SectionTeacher?)
-            const assignedTeacherId = studentSection?.classTeacher?.teacherId;
+            if (!studentSectionId || !studentClassId) {
+                throw new BadRequestException('Student profile is incomplete');
+            }
 
-            if (assignedTeacherId !== teacherProfile.id) {
-                throw new ForbiddenException('You can only approve leaves for your own section students');
+            const assignment = await this.prisma.academicAssignment.findFirst({
+                where: {
+                    teacherId: teacherProfile.id,
+                    schoolId: teacherUser.schoolId,
+                    role: { in: ['CLASS_TEACHER', 'HEAD_TEACHER', 'COORDINATOR', 'MENTOR'] },
+                    OR: [
+                        { sectionId: studentSectionId },
+                        { classId: studentClassId, sectionId: null }
+                    ]
+                }
+            });
+
+            if (!assignment) {
+                throw new ForbiddenException('You are not authorized to approve leave for this student');
             }
 
             return request;
@@ -315,17 +335,28 @@ export class StudentLeaveApprovalService {
                 throw new NotFoundException('Teacher profile not found');
             }
 
-            // Find sections
-            const sectionTeachers = await this.prisma.sectionTeacher.findMany({
+            // Find academic assignments
+            const assignments = await this.prisma.academicAssignment.findMany({
                 where: {
                     teacherId: teacherProfile.id,
                     schoolId: teacherUser.schoolId,
-                    academicYearId: teacherUser.academicYearId
+                    role: { in: ['CLASS_TEACHER', 'HEAD_TEACHER', 'COORDINATOR', 'MENTOR'] }
                 },
-                select: { sectionId: true }
+                include: {
+                    class: { include: { sections: { select: { id: true } } } }
+                }
             });
 
-            const sectionIds = sectionTeachers.map(st => st.sectionId);
+            const sectionIdsSet = new Set<number>();
+            for (const assignment of assignments) {
+                if (assignment.sectionId) {
+                    sectionIdsSet.add(assignment.sectionId);
+                } else if (assignment.class) {
+                    assignment.class.sections.forEach(s => sectionIdsSet.add(s.id));
+                }
+            }
+
+            const sectionIds = Array.from(sectionIdsSet);
 
             // Get students
             const students = await this.prisma.studentProfile.findMany({
@@ -336,7 +367,7 @@ export class StudentLeaveApprovalService {
                 select: { userId: true }
             });
 
-            const studentUserIds = students.map(s => s.userId);
+            const studentUserIds = students.map(s => s.userId).filter((id): id is number => id !== null);
 
             if (studentUserIds.length === 0) {
                 return {

@@ -30,7 +30,23 @@ const modules = [
     { key: "ACTIVITIES", name: "Activities" },
     { key: "NOTIFICATIONS", name: "Notifications" },
     { key: "WEBSITE", name: "Website Builder" },
-    { key: "INQUIRY", name: "Inquiry Management" }
+    { key: "INQUIRY", name: "Inquiry Management" },
+    { key: "ANALYTICS", name: "Analytics & Insights" },
+    { key: "ACTIVITY", name: "Activity Feed" },
+    { key: "RESULTS", name: "Exam Results" },
+    { key: "REPORT_CARDS", name: "Report Cards" },
+    { key: "PAYROLL", name: "Payroll Management" },
+    { key: "FEES", name: "Fee Management" },
+    { key: "PAYMENTS", name: "Payment Tracking" },
+    { key: "INVOICES", name: "Invoice Management" },
+    { key: "EXPENSES", name: "Expense Tracking" },
+    { key: "FINANCE_REPORTS", name: "Finance Reports" },
+    { key: "REPORTS", name: "General Reports" },
+    { key: "ACCESS_CONTROL", name: "Access Control" },
+    { key: "INTEGRATIONS", name: "Third-party Integrations" },
+    { key: "CBSE_CIRCULAR", name: "CBSE Circulars" },
+    { key: "TASKS", name: "Task Management" },
+    { key: "APPROVALS", name: "Approvals Center" }
 ];
 
 async function main() {

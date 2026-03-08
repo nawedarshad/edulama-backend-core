@@ -3,6 +3,7 @@
 // ==========================
 
 enum AuthType {
+  GOOGLE
   EMAIL
   PHONE
   USERNAME
@@ -12,6 +13,12 @@ enum UiFeatureType {
   MENU
   PAGE
   ACTION
+}
+
+enum InstitutionMode {
+  SCHOOL
+  COLLEGE
+  COACHING
 }
 
 enum AcademicYearStatus {
@@ -32,12 +39,15 @@ enum SchoolType {
 }
 
 model School {
-  id        Int        @id @default(autoincrement())
+  id        Int             @id @default(autoincrement())
   name      String
-  code      String     @unique // mobile login
-  subdomain String     @unique // web login
-  type      SchoolType @default(SCHOOL)
-  isActive  Boolean    @default(true)
+  code      String          @unique // mobile login
+  subdomain String          @unique // web login
+  type      SchoolType      @default(SCHOOL)
+  mode      InstitutionMode @default(SCHOOL)
+  isActive  Boolean         @default(true)
+
+  permissionVersion Int @default(1) // Increment to invalidate all JWTs on module change
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
@@ -70,6 +80,7 @@ model School {
 
   timeSlots          TimeSlot[]
   classDiaries       ClassDiary[]
+  homework           Homework[]
   syllabi            Syllabus[]
   houses             House[]
   auditLogs          AuditLog[]
@@ -100,6 +111,14 @@ model School {
   examResults            ExamResult[]
   webPages               WebPage[]
   inquiries              Inquiry[]
+  examRoomTemplates      ExamRoomTemplate[]
+  userSchools            UserSchool[]
+  salaryConfigs          SalaryConfig[]
+  payrolls               Payroll[]
+  academicAssignments    AcademicAssignment[]
+
+  timetableSettings TimetableSettings?
+  academicGroups    AcademicGroup[]
 
   @@index([code])
   @@index([subdomain])
@@ -132,6 +151,7 @@ model AcademicYear {
   sectionTeachers     SectionTeacher[]
   incidentReports     IncidentReport[]
   classDiaries        ClassDiary[]
+  homework            Homework[]
   syllabi             Syllabus[]
   roomAssignments     RoomAssignment[]
   grievances          Grievance[]
@@ -156,6 +176,8 @@ model AcademicYear {
   invigilatorAssignments InvigilatorAssignment[]
   questionPapers         QuestionPaper[]
   examResults            ExamResult[]
+  examRoomTemplates      ExamRoomTemplate[]
+  academicAssignments    AcademicAssignment[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -166,21 +188,21 @@ model AcademicYear {
 // ==========================
 
 model User {
-  id          Int       @id @default(autoincrement())
-  schoolId    Int
-  name        String
-  photo       String?
-  isActive    Boolean   @default(true)
-  lastSeen    DateTime?
-  deviceToken String?
+  id           Int       @id @default(autoincrement())
+  name         String
+  photo        String?
+  isActive     Boolean   @default(true)
+  lastSeen     DateTime?
+  deviceToken  String?
+  tokenVersion Int       @default(1)
+
+  twoFactorEnabled    Boolean   @default(false)
+  passwordLastChanged DateTime? @default(now())
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
-  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-
-  roleId Int
-  role   Role @relation(fields: [roleId], references: [id])
+  userSchools UserSchool[]
 
   grievancesRaised             Grievance[]
   grievancesResolved           Grievance[]           @relation("GrievanceResolvedBy")
@@ -226,9 +248,28 @@ model User {
   departmentHeadOf      Department[]       @relation("HeadOfDepartment")
   departmentMemberships DepartmentMember[]
 
-  schoolAdminScopes SchoolAdminScope[]
+  schoolAdminScopes   SchoolAdminScope[]
+  school              School?              @relation(fields: [schoolId], references: [id])
+  schoolId            Int?
+  role                Role?                @relation(fields: [roleId], references: [id])
+  roleId              Int?
+  academicAssignments AcademicAssignment[]
+  memo                PrincipalMemo?
+}
 
-  @@index([schoolId])
+// ==========================
+// PRINCIPAL MEMO (PRIVATE NOTES)
+// ==========================
+
+model PrincipalMemo {
+  id      Int    @id @default(autoincrement())
+  userId  Int    @unique
+  content String @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ==========================
@@ -238,7 +279,6 @@ model User {
 model AuthIdentity {
   id       Int      @id @default(autoincrement())
   userId   Int
-  schoolId Int
   type     AuthType
   value    String
   secret   String?
@@ -246,10 +286,79 @@ model AuthIdentity {
 
   createdAt DateTime @default(now())
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school   School? @relation(fields: [schoolId], references: [id])
+  schoolId Int?
 
-  @@unique([schoolId, type, value])
+  @@unique([type, value])
+  @@index([type, value])
+}
+
+// ==========================
+// USER SCHOOL (TENANT MEMBERSHIP)
+// ==========================
+
+model UserSchool {
+  id       Int @id @default(autoincrement())
+  userId   Int
+  schoolId Int
+
+  // Primary role used for JWT generation and dashboard selection.
+  // Full role list is in UserSchoolRole.
+  primaryRoleId Int?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school      School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  primaryRole Role?  @relation("PrimaryRole", fields: [primaryRoleId], references: [id])
+
+  roles        UserSchoolRole[]
+  staffProfile StaffProfile?
+
+  @@unique([userId, schoolId])
+  @@index([userId])
+  @@index([schoolId])
+}
+
+// ==========================
+// USER SCHOOL ROLE (MULTI-ROLE JUNCTION)
+// ==========================
+
+model UserSchoolRole {
+  id           Int @id @default(autoincrement())
+  userSchoolId Int
+  roleId       Int
+
+  assignedAt DateTime @default(now())
+
+  userSchool UserSchool @relation(fields: [userSchoolId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userSchoolId, roleId])
+  @@index([userSchoolId])
+}
+
+// ==========================
+// OTP VERIFICATION (TEMPORARY STATE)
+// ==========================
+
+model OtpVerification {
+  id        Int      @id @default(autoincrement())
+  type      AuthType // EMAIL or PHONE
+  value     String // The email or phone number
+  otpHash   String // Hashed OTP value
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([type, value])
   @@index([type, value])
 }
 
@@ -278,11 +387,18 @@ model PasswordReset {
 model AuthToken {
   id        Int      @id @default(autoincrement())
   userId    Int
-  token     String   @unique
+  schoolId  Int?
+  roleId    Int?
+  ip        String?
+  userAgent String?
+  tokenHash String   @unique
+  expiresAt DateTime
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ==========================
@@ -299,6 +415,8 @@ model Role {
   announcementAudiences AnnouncementAudience[]
   uiFeatureRoles        UiFeatureRole[]
   grievanceConfigs      GrievanceConfig[]
+  primarySchools        UserSchool[]           @relation("PrimaryRole")
+  userSchoolRoles       UserSchoolRole[]
 }
 
 model UserRole {
@@ -393,4 +511,31 @@ model UiFeatureRole {
   uiFeature UiFeature @relation(fields: [uiFeatureId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, uiFeatureId])
+}
+
+// ==========================
+// STAFF PROFILE (EMPLOYMENT)
+// ==========================
+
+model StaffProfile {
+  id           Int        @id @default(autoincrement())
+  userSchoolId Int        @unique
+  userSchool   UserSchool @relation(fields: [userSchoolId], references: [id], onDelete: Cascade)
+
+  designation    String?   @default("Principal")
+  department     String?
+  empCode        String?
+  joiningDate    DateTime?
+  employmentType String?   @default("FULL_TIME")
+
+  qualifications String[]
+  certifications String[]
+
+  // Contact Info
+  phone   String?
+  email   String?
+  address String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

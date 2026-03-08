@@ -15,10 +15,9 @@ model AttendanceSession {
   academicYearId Int
 
   // Context
-  classId   Int
-  sectionId Int
-  subjectId Int? // Null for Daily Attendance
-  periodId  Int? // Null for Daily Attendance, Required for Subject Attendance if subject is repeated
+  groupId    Int
+  subjectId  Int? // Null for Daily Attendance
+  timeSlotId Int? // Null for Daily Attendance, Required for Subject Attendance if subject is repeated
 
   date    DateTime @db.Date // The date of attendance
   takenAt DateTime @default(now()) // Timestamp when it was taken
@@ -28,19 +27,24 @@ model AttendanceSession {
   remarks    String?
 
   // Relations
-  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
-  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  subject      Subject?     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  period       TimePeriod?  @relation(fields: [periodId], references: [id])
-  markedBy     User         @relation(fields: [markedById], references: [id])
+  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  group        AcademicGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  subject      Subject?      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  timeSlot     TimeSlot?     @relation(fields: [timeSlotId], references: [id])
+  markedBy     User          @relation(fields: [markedById], references: [id])
 
-  attendances Attendance[]
+  attendances  Attendance[]
+  timePeriod   TimePeriod?  @relation(fields: [timePeriodId], references: [id])
+  timePeriodId Int?
+  class        Class?       @relation(fields: [classId], references: [id])
+  classId      Int?
+  section      Section?     @relation(fields: [sectionId], references: [id])
+  sectionId    Int?
 
-  // Constraint: One session per class/section/subject/period per day.
-  // If Subject/Period are null (Daily Attendance), simple date constraint applies.
-  @@unique([schoolId, academicYearId, classId, sectionId, subjectId, periodId, date])
+  // Constraint: One session per group/subject/timeSlot per day.
+  // If Subject/TimeSlot are null (Daily Attendance), simple date constraint applies.
+  @@unique([schoolId, academicYearId, groupId, subjectId, timeSlotId, date])
   @@index([schoolId, date])
 }
 
@@ -115,8 +119,7 @@ model AttendanceSummary {
   academicYearId Int
 
   studentId Int
-  classId   Int
-  sectionId Int
+  groupId   Int
   subjectId Int? // Null for Daily Attendance Summary
 
   month Int
@@ -132,10 +135,11 @@ model AttendanceSummary {
   computedAt DateTime @default(now())
   version    Int      @default(1)
 
-  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  group        AcademicGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
-  @@unique([schoolId, academicYearId, studentId, classId, sectionId, subjectId, month, year])
+  @@unique([schoolId, academicYearId, studentId, groupId, subjectId, month, year])
   @@index([schoolId, month, year])
 }
 

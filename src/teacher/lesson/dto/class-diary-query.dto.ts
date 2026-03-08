@@ -22,6 +22,12 @@ export class ClassDiaryQueryDto {
     @IsOptional()
     @Type(() => Number)
     @IsInt()
+    groupId?: number;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
     classId?: number;
 
     @ApiPropertyOptional()

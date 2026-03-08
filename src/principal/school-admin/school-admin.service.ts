@@ -11,10 +11,9 @@ export class SchoolAdminService {
     constructor(private readonly prisma: PrismaService) { }
 
     async create(schoolId: number, dto: CreateSchoolAdminDto) {
-        // 1. Check for duplicate email
+        // 1. Check for global identity
         const existingIdentity = await this.prisma.authIdentity.findFirst({
             where: {
-                schoolId,
                 type: 'EMAIL',
                 value: dto.email,
             },
@@ -65,26 +64,62 @@ export class SchoolAdminService {
         // 4. Transaction
         try {
             return await this.prisma.$transaction(async (tx) => {
-                // A. Create User
-                const user = await tx.user.create({
-                    data: {
+                // A. Find or Create User
+                let user = (existingIdentity as any) ? await tx.user.findUnique({ where: { id: (existingIdentity as any).userId } }) : null;
+
+                if (!user) {
+                    user = await tx.user.create({
+                        data: {
+                            name: dto.name,
+                            isActive: true,
+                        },
+                    });
+
+                    // B. Create AuthIdentity
+                    await tx.authIdentity.create({
+                        data: {
+                            userId: user.id,
+                            type: 'EMAIL',
+                            value: dto.email,
+                            secret: hashedPassword,
+                            verified: true,
+                        },
+                    });
+                }
+
+                // C. Link to School
+                const userSchool = await tx.userSchool.upsert({
+                    where: {
+                        userId_schoolId: {
+                            userId: user.id,
+                            schoolId,
+                        }
+                    },
+                    create: {
+                        userId: user.id,
                         schoolId,
-                        name: dto.name,
-                        roleId: adminRole.id,
+                        primaryRoleId: adminRole.id,
                         isActive: true,
                     },
+                    update: {
+                        primaryRoleId: adminRole.id,
+                        isActive: true,
+                    }
                 });
 
-                // B. Create AuthIdentity
-                await tx.authIdentity.create({
-                    data: {
-                        schoolId,
-                        userId: user.id,
-                        type: 'EMAIL',
-                        value: dto.email,
-                        secret: hashedPassword,
-                        verified: true,
+                // D. Assign Role in multi-role junction
+                await tx.userSchoolRole.upsert({
+                    where: {
+                        userSchoolId_roleId: {
+                            userSchoolId: userSchool.id,
+                            roleId: adminRole.id,
+                        }
                     },
+                    create: {
+                        userSchoolId: userSchool.id,
+                        roleId: adminRole.id,
+                    },
+                    update: {}
                 });
 
                 // C. Assign Permissions
@@ -133,33 +168,40 @@ export class SchoolAdminService {
     }
 
     async findAll(schoolId: number) {
-        // Find users with SCHOOL_ADMINISTRATOR role in this school
-        const admins = await this.prisma.user.findMany({
+        // Find users with SCHOOL_ADMINISTRATOR role in this school via UserSchool
+        const memberships = await this.prisma.userSchool.findMany({
             where: {
                 schoolId,
-                role: {
-                    name: 'SCHOOL_ADMINISTRATOR'
-                },
+                OR: [
+                    { primaryRole: { name: 'SCHOOL_ADMINISTRATOR' } },
+                    { roles: { some: { role: { name: 'SCHOOL_ADMINISTRATOR' } } } }
+                ],
                 isActive: true
             },
-            select: {
-                id: true,
-                name: true,
-                authIdentities: {
-                    where: { type: 'EMAIL' },
-                    select: { value: true }
-                },
-                userPermissions: {
-                    include: {
-                        permission: true
-                    }
-                },
-                createdAt: true
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        authIdentities: {
+                            where: { type: 'EMAIL' },
+                            select: { value: true }
+                        },
+                        userPermissions: {
+                            include: {
+                                permission: true
+                            }
+                        },
+                        createdAt: true
+                    },
+                }
             },
             orderBy: {
                 createdAt: 'desc'
             }
         });
+
+        const admins = memberships.map(m => m.user);
 
         // Flatten email, permissions, and scopes
         return admins.map(admin => ({
@@ -172,20 +214,28 @@ export class SchoolAdminService {
     }
 
     async findOne(schoolId: number, id: number) {
-        const admin = await this.prisma.user.findFirst({
+        const membership = await this.prisma.userSchool.findFirst({
             where: {
-                id,
+                userId: id,
                 schoolId,
-                role: { name: 'SCHOOL_ADMINISTRATOR' }
+                OR: [
+                    { primaryRole: { name: 'SCHOOL_ADMINISTRATOR' } },
+                    { roles: { some: { role: { name: 'SCHOOL_ADMINISTRATOR' } } } }
+                ]
             },
             include: {
-                authIdentities: { where: { type: 'EMAIL' } },
-                userPermissions: { include: { permission: true } },
-                schoolAdminScopes: true
+                user: {
+                    include: {
+                        authIdentities: { where: { type: 'EMAIL' } },
+                        userPermissions: { include: { permission: true } },
+                        schoolAdminScopes: true
+                    }
+                }
             }
         });
 
-        if (!admin) throw new NotFoundException('School Administrator not found');
+        if (!membership) throw new NotFoundException('School Administrator not found');
+        const admin = membership.user;
 
         return {
             ...admin,
@@ -208,8 +258,8 @@ export class SchoolAdminService {
 
         return this.prisma.$transaction(async (tx) => {
             if (dto.name) {
-                await tx.user.updateMany({
-                    where: { id, schoolId },
+                await tx.user.update({
+                    where: { id },
                     data: { name: dto.name }
                 });
             }
@@ -285,8 +335,10 @@ export class SchoolAdminService {
 
         // Delete user (Cascade will handle relations)
         // Using deleteMany to enforce schoolId at db level as well
-        const result = await this.prisma.user.deleteMany({
-            where: { id, schoolId }
+        // Delete UserSchool membership (soft delete or hard delete?)
+        // The previous code did hard delete of the User. Let's do hard delete of membership for now.
+        const result = await this.prisma.userSchool.deleteMany({
+            where: { userId: id, schoolId }
         });
 
         return result;

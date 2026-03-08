@@ -20,13 +20,6 @@ export class UserAuthGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest();
-        const authHeader = request.headers.authorization;
-
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            throw new UnauthorizedException('Missing or invalid token');
-        }
-
-        const token = authHeader.split(' ')[1];
         const authServiceUrl = this.configService.get<string>('AUTH_MS_URL');
 
         if (!authServiceUrl) {
@@ -34,25 +27,40 @@ export class UserAuthGuard implements CanActivate {
             throw new UnauthorizedException('System configuration error');
         }
 
+        const authHeader = request.headers.authorization;
+        const cookieHeader = request.headers.cookie;
+
+        if (!authHeader && !cookieHeader) {
+            throw new UnauthorizedException('Missing or invalid authentication credentials');
+        }
+
+        const authMsHeaders: Record<string, string> = {};
+        if (authHeader?.startsWith('Bearer ')) {
+            authMsHeaders['Authorization'] = authHeader;
+        } else if (cookieHeader) {
+            authMsHeaders['Cookie'] = cookieHeader;
+        } else {
+            throw new UnauthorizedException('Missing or invalid token');
+        }
+
         try {
             const baseUrl = authServiceUrl.replace(/\/$/, '');
             const response = await lastValueFrom(
-                this.httpService.post(
-                    `${baseUrl}/verify`,
-                    {},
-                    {
-                        headers: { Authorization: `Bearer ${token}` },
-                    },
-                ),
+                this.httpService.get(`${baseUrl}/me`, { headers: authMsHeaders }),
             );
 
-            const user = response.data;
+            const user = response.data.user;
 
             if (!user) {
                 throw new UnauthorizedException('Invalid token');
             }
 
-            // No role check - any authenticated user is allowed
+            // Ensure compatibility: map 'sub' to 'id' if 'id' is missing
+            if (user.sub && !user.id) {
+                user.id = user.sub;
+            }
+
+            // No role check — any authenticated user is allowed
             request.user = user;
             return true;
         } catch (error) {

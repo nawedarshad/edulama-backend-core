@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ParentNoticeService } from './parent-notice.service';
 import { GetUser } from '../../common/decorators/get-user.decorator';
-import type { User } from '@prisma/client';
+import type { AuthUserPayload } from '../../common/decorators/get-user.decorator';
 import { ParentAuthGuard } from '../../common/guards/parent.guard';
 import { ParentNoticeQueryDto } from './dto/parent-notice-query.dto';
 
@@ -20,13 +20,13 @@ export class ParentNoticeController {
     constructor(private readonly noticeService: ParentNoticeService) { }
 
     @Get()
-    findAll(@GetUser() user: User, @Query() query: ParentNoticeQueryDto) {
+    findAll(@GetUser() user: AuthUserPayload, @Query() query: ParentNoticeQueryDto) {
         return this.noticeService.findAll(user.schoolId, user.id, query);
     }
 
     @Get(':id')
     findOne(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Param('id', ParseIntPipe) id: number,
         @Query('studentId', ParseIntPipe) studentId: number
     ) {
@@ -35,7 +35,7 @@ export class ParentNoticeController {
 
     @Post(':id/acknowledge')
     acknowledge(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Param('id', ParseIntPipe) id: number,
         @Body('studentId', ParseIntPipe) studentId: number
     ) {

@@ -19,7 +19,7 @@ export class TimeSlotService {
             },
             orderBy: [
                 { day: 'asc' },
-                { period: { startTime: 'asc' } },
+                { startTime: 'asc' },
             ],
         });
     }
@@ -75,8 +75,11 @@ export class TimeSlotService {
             data: {
                 schoolId,
                 academicYearId: activeYear.id,
+                scheduleId: dto.scheduleId,
                 day: dto.day,
                 periodId: period.id,
+                startTime: dto.startTime,
+                endTime: dto.endTime,
                 isBreak: dto.isBreak || false,
             },
         });
@@ -90,13 +93,15 @@ export class TimeSlotService {
             const dayToCheck = dto.day || existingDefault.day;
             const periodIdToCheck = dto.periodId || existingDefault.periodId;
 
-            // Get Period Details
-            const period = await this.prisma.timePeriod.findFirst({
-                where: { id: periodIdToCheck, schoolId },
-            });
-            if (!period) throw new NotFoundException('Time period not found');
+            if (periodIdToCheck) {
+                // Get Period Details
+                const period = await this.prisma.timePeriod.findFirst({
+                    where: { id: periodIdToCheck, schoolId },
+                });
+                if (!period) throw new NotFoundException('Time period not found');
 
-            await this.validateOverlap(schoolId, dayToCheck, period.startTime, period.endTime, id);
+                await this.validateOverlap(schoolId, dayToCheck, period.startTime, period.endTime, id);
+            }
         }
 
         return this.prisma.timeSlot.update({
@@ -104,6 +109,8 @@ export class TimeSlotService {
             data: {
                 day: dto.day,
                 periodId: dto.periodId,
+                startTime: dto.startTime,
+                endTime: dto.endTime,
                 isBreak: dto.isBreak,
             },
         });
@@ -130,15 +137,20 @@ export class TimeSlotService {
         const newEnd = new Date(endTime).getTime();
 
         for (const slot of existingSlots) {
-            const existingStart = new Date(slot.period.startTime).getTime();
-            const existingEnd = new Date(slot.period.endTime).getTime();
+            // Time is stored as string "HH:mm". We can compare them directly as strings or convert to numbers.
+            const existingStart = slot.startTime;
+            const existingEnd = slot.endTime;
+
+            const newStartStr = typeof startTime === 'string' ? startTime : new Date(startTime).toISOString().split('T')[1].substring(0, 5);
+            const newEndStr = typeof endTime === 'string' ? endTime : new Date(endTime).toISOString().split('T')[1].substring(0, 5);
 
             // Check for overlap: (StartA < EndB) and (EndA > StartB)
-            if (newStart < existingEnd && newEnd > existingStart) {
-                const sTime = new Date(slot.period.startTime).toISOString().split('T')[1].substring(0, 5);
-                const eTime = new Date(slot.period.endTime).toISOString().split('T')[1].substring(0, 5);
+            if (newStartStr < existingEnd && newEndStr > existingStart) {
+                const sTime = existingStart;
+                const eTime = existingEnd;
+                const periodName = slot.period?.name || 'Unnamed Period';
                 throw new BadRequestException(
-                    `Time slot overlaps with existing slot: ${slot.period.name} (${sTime} - ${eTime})`
+                    `Time slot overlaps with existing slot: ${periodName} (${sTime} - ${eTime})`
                 );
             }
         }

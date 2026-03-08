@@ -98,7 +98,7 @@ export class ExamAttendanceService {
             const result = results.find(r => r.studentId === student.id);
             return {
                 studentId: student.id,
-                name: student.user.name,
+                name: student.user?.name || student.fullName,
                 rollNumber: student.rollNo,
                 isPresent: result ? result.isPresent : true, // Default to true if not marked yet? Or null? Let's say null/true.
                 status: result ? (result.isPresent ? 'PRESENT' : 'ABSENT') : 'NOT_MARKED',

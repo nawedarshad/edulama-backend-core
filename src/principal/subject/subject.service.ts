@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateSubjectDto, UpdateSubjectDto, CreateClassSubjectDto, UpdateClassSubjectDto } from './dto/subject.dto';
+import { CreateSubjectDto, UpdateSubjectDto, CreateClassSubjectDto, UpdateClassSubjectDto, GetSubjectsQueryDto, CreateCategoryDto, UpdateCategoryDto } from './dto/subject.dto';
 import { AcademicYearStatus } from '@prisma/client';
 
 @Injectable()
@@ -14,7 +14,7 @@ export class SubjectService {
             where: { schoolId, status: AcademicYearStatus.ACTIVE }
         });
         if (!academicYear) {
-            this.logger.error(`No active academic year found for school ${schoolId}`);
+            this.logger.error(`[School ${schoolId}] No active academic year found`);
             throw new BadRequestException('No active academic year found');
         }
         return academicYear;
@@ -56,31 +56,28 @@ export class SubjectService {
         }
     }
 
-    async findAll(schoolId: number, query: any) {
-        this.logger.log(`Fetching subjects for school ${schoolId} with query: ${JSON.stringify(query)}`);
-        const { page = 1, limit = 10, search, departmentId } = query;
+    async findAll(schoolId: number, query: GetSubjectsQueryDto) {
+        this.logger.log(`[School ${schoolId}] Fetching subjects: ${JSON.stringify(query)}`);
+        const page = Number(query.page) || 1;
+        const limit = Number(query.limit) || 10;
         const skip = (page - 1) * limit;
 
         const where: any = { schoolId };
 
-        if (search) {
+        if (query.search) {
             where.OR = [
-                { name: { contains: search, mode: 'insensitive' } },
-                { code: { contains: search, mode: 'insensitive' } },
+                { name: { contains: query.search, mode: 'insensitive' } },
+                { code: { contains: query.search, mode: 'insensitive' } },
             ];
-        }
-
-        if (departmentId) {
-            where.departmentId = Number(departmentId);
         }
 
         const [data, total] = await Promise.all([
             this.prisma.subject.findMany({
                 where,
-                include: { department: true },
+                include: { department: true }, // Subject has department, not category
                 orderBy: { name: 'asc' },
-                skip: Number(skip),
-                take: Number(limit),
+                skip,
+                take: limit,
             }),
             this.prisma.subject.count({ where }),
         ]);
@@ -89,8 +86,8 @@ export class SubjectService {
             data,
             meta: {
                 total,
-                page: Number(page),
-                limit: Number(limit),
+                page,
+                limit,
                 pages: Math.ceil(total / limit),
             }
         };
@@ -98,8 +95,7 @@ export class SubjectService {
 
     async findOne(schoolId: number, id: number) {
         const subject = await this.prisma.subject.findFirst({
-            where: { id, schoolId },
-            include: { department: true }
+            where: { id, schoolId }
         });
         if (!subject) {
             this.logger.warn(`Subject not found: ${id} in school ${schoolId}`);
@@ -125,15 +121,24 @@ export class SubjectService {
     }
 
     async remove(schoolId: number, id: number) {
-        this.logger.log(`Removing subject ${id} in school ${schoolId}`);
+        this.logger.log(`[School ${schoolId}] Attempting to remove subject ${id}`);
         await this.findOne(schoolId, id);
+
+        const inUseCount = await this.prisma.classSubject.count({
+            where: { subjectId: id, schoolId }
+        });
+
+        if (inUseCount > 0) {
+            throw new BadRequestException('Cannot delete subject: It is already assigned to classes/sections');
+        }
+
         try {
             const deleted = await this.prisma.subject.delete({ where: { id } });
-            this.logger.log(`Subject deleted: ${id}`);
+            this.logger.log(`[School ${schoolId}] Subject deleted: ${id}`);
             return deleted;
         } catch (e) {
-            this.logger.error(`Failed to delete subject ${id}`, e.stack);
-            throw new BadRequestException('Cannot delete subject that is in use');
+            this.logger.error(`[School ${schoolId}] Failed to delete subject ${id}`, e.stack);
+            throw new BadRequestException('Failed to delete subject');
         }
     }
 
@@ -142,7 +147,7 @@ export class SubjectService {
     // ==================================================================
 
     async assignToClass(schoolId: number, dto: CreateClassSubjectDto) {
-        this.logger.log(`Assigning subject ${dto.subjectId} to class ${dto.classId} in school ${schoolId}`);
+        this.logger.log(`[School ${schoolId}] Assigning subject ${dto.subjectId} to class ${dto.classId}`);
         const academicYear = await this.getActiveAcademicYear(schoolId);
 
         const subject = await this.prisma.subject.findFirst({
@@ -165,38 +170,34 @@ export class SubjectService {
             if (sectionsToAssign.length === 0) throw new BadRequestException('No sections found for this class');
         }
 
-        const stats = { success: 0, failed: 0 };
+        // Optimization: bulk create assignment records using createMany
+        try {
+            const count = await this.prisma.classSubject.createMany({
+                data: sectionsToAssign.map(section => ({
+                    schoolId,
+                    academicYearId: academicYear.id,
+                    classId: dto.classId,
+                    sectionId: section.id,
+                    subjectId: dto.subjectId,
+                    classSubjectCode: dto.classSubjectCode || `${subject.code}-${section.id}`,
+                    type: dto.type,
+                    credits: dto.credits,
+                    weeklyClasses: dto.weeklyClasses,
+                    maxMarks: dto.maxMarks,
+                    passMarks: dto.passMarks,
+                    isOptional: dto.isOptional,
+                    hasLab: dto.hasLab,
+                    excludeFromGPA: dto.excludeFromGPA
+                })),
+                skipDuplicates: true
+            });
 
-        await Promise.all(sectionsToAssign.map(async (section) => {
-            try {
-                const classSubjectCode = dto.classSubjectCode || `${subject.code}-${section.id}`;
-                await this.prisma.classSubject.create({
-                    data: {
-                        schoolId,
-                        academicYearId: academicYear.id,
-                        classId: dto.classId,
-                        sectionId: section.id,
-                        subjectId: dto.subjectId,
-                        classSubjectCode,
-                        type: dto.type,
-                        credits: dto.credits,
-                        weeklyClasses: dto.weeklyClasses,
-                        maxMarks: dto.maxMarks,
-                        passMarks: dto.passMarks,
-                        isOptional: dto.isOptional,
-                        hasLab: dto.hasLab,
-                        excludeFromGPA: dto.excludeFromGPA,
-                    }
-                });
-                stats.success++;
-            } catch (error) {
-                this.logger.warn(`Failed to assign to section ${section.id}: ${error.message}`);
-                stats.failed++;
-            }
-        }));
-
-        this.logger.log(`Assignment complete. Success: ${stats.success}, Failed: ${stats.failed}`);
-        return { message: `Assigned to ${stats.success} sections. Failed/Skipped: ${stats.failed}` };
+            this.logger.log(`[School ${schoolId}] Assignment complete. Sections assigned: ${count.count}`);
+            return { message: `Assigned to ${count.count} sections.` };
+        } catch (error) {
+            this.logger.error(`[School ${schoolId}] Bulk assignment failed`, error.stack);
+            throw new BadRequestException('Failed to assign subjects to sections');
+        }
     }
 
     async getClassSubjects(schoolId: number, classId?: number, sectionId?: number) {
@@ -249,18 +250,20 @@ export class SubjectService {
     async getStats(schoolId: number) {
         const academicYear = await this.getActiveAcademicYear(schoolId);
 
-        const totalSubjects = await this.prisma.subject.count({
-            where: { schoolId }
-        });
-
-        const assignedSubjects = await this.prisma.classSubject.count({
-            where: { schoolId, academicYearId: academicYear.id }
-        });
+        const [totalSubjects, assignedSubjects, categoryCounts] = await Promise.all([
+            this.prisma.subject.count({ where: { schoolId } }),
+            this.prisma.classSubject.count({ where: { schoolId, academicYearId: academicYear.id } }),
+            this.prisma.classSubject.groupBy({
+                by: ['categoryId'],
+                where: { schoolId, academicYearId: academicYear.id },
+                _count: true
+            })
+        ]);
 
         return {
             totalSubjects,
             assignedSubjects,
-            categoryStats: []
+            categoryStats: categoryCounts
         };
     }
 
@@ -268,7 +271,7 @@ export class SubjectService {
     // 4. CATEGORIES
     // ==================================================================
 
-    async createCategory(schoolId: number, dto: any) {
+    async createCategory(schoolId: number, dto: CreateCategoryDto) {
         this.logger.log(`Creating category ${dto.name}`);
         const existing = await this.prisma.subjectCategory.findUnique({
             where: {
@@ -291,7 +294,7 @@ export class SubjectService {
         });
     }
 
-    async updateCategory(schoolId: number, id: number, dto: any) {
+    async updateCategory(schoolId: number, id: number, dto: UpdateCategoryDto) {
         const cat = await this.prisma.subjectCategory.findFirst({ where: { id, schoolId } });
         if (!cat) throw new NotFoundException('Category not found');
 
@@ -314,26 +317,31 @@ export class SubjectService {
     // ==================================================================
 
     async exportSubjects(schoolId: number) {
-        this.logger.log(`Exporting subjects for school ${schoolId}`);
+        this.logger.log(`[School ${schoolId}] Exporting subjects catalog`);
         const subjects = await this.prisma.subject.findMany({
-            where: { schoolId },
-            include: { department: true }
+            where: { schoolId }
         });
 
-        const header = "ID,Name,Code,Department\n";
-        const rows = subjects.map(s => `${s.id},${s.name},${s.code},${s.department?.name || ''}`).join("\n");
-        return header + rows;
+        const header = "ID,Name,Code\n";
+        const rows = subjects.map(s => `${s.id},${s.name},${s.code}`).join("\n");
+        return {
+            filename: `subjects-catalog-${new Date().toISOString().split('T')[0]}.csv`,
+            content: header + rows
+        };
     }
 
     async exportClassSubjects(schoolId: number) {
-        this.logger.log(`Exporting class subjects for school ${schoolId}`);
+        this.logger.log(`[School ${schoolId}] Exporting class subject assignments`);
         const academicYear = await this.getActiveAcademicYear(schoolId);
         const cs = await this.prisma.classSubject.findMany({
             where: { schoolId, academicYearId: academicYear.id },
             include: { class: true, section: true, subject: true }
         });
         const header = "Class,Section,Subject,Code,Credits\n";
-        const rows = cs.map(c => `${c.class.name},${c.section.name},${c.subject.name},${c.classSubjectCode},${c.credits || 0}`).join("\n");
-        return header + rows;
+        const rows = cs.map(c => `"${c.class.name}","${c.section.name}","${c.subject.name}","${c.classSubjectCode}",${c.credits || 0}`).join("\n");
+        return {
+            filename: `class-subjects-${new Date().toISOString().split('T')[0]}.csv`,
+            content: header + rows
+        };
     }
 }

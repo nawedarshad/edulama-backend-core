@@ -15,7 +15,7 @@ import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 
 import { AnnouncementQueryDto } from './dto/announcement-query.dto';
 import { GetUser } from '../../common/decorators/get-user.decorator';
-import type { User } from '@prisma/client';
+import type { AuthUserPayload } from '../../common/decorators/get-user.decorator';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 // import { JwtAuthGuard } from '../../auth/guard/jwt-auth.guard'; // Not found
 // import { RolesGuard } from '../../auth/guard/roles.guard'; // Not found
@@ -33,7 +33,7 @@ export class PrincipalAnnouncementController {
 
     @Post()
     create(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Body() createAnnouncementDto: CreateAnnouncementDto,
     ) {
         return this.announcementService.create(
@@ -45,7 +45,7 @@ export class PrincipalAnnouncementController {
 
     @Get()
     findAll(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Query() query: AnnouncementQueryDto,
     ) {
         return this.announcementService.findAll(user.schoolId, query);
@@ -53,7 +53,7 @@ export class PrincipalAnnouncementController {
 
     @Get('stats')
     getStats(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Query('academicYearId', new ParseIntPipe({ optional: true })) academicYearId?: number,
     ) {
         return this.announcementService.getStats(user.schoolId, academicYearId);
@@ -61,7 +61,7 @@ export class PrincipalAnnouncementController {
 
     @Get(':id')
     findOne(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Param('id', ParseIntPipe) id: number,
     ) {
         return this.announcementService.findOne(user.schoolId, id);
@@ -71,7 +71,7 @@ export class PrincipalAnnouncementController {
 
     @Delete(':id')
     remove(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Param('id', ParseIntPipe) id: number,
     ) {
         return this.announcementService.remove(user.schoolId, id);

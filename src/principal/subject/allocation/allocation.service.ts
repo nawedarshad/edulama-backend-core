@@ -133,10 +133,9 @@ export class AllocationService {
     async getSmartSuggestions(schoolId: number, classId: number, subjectId: number, sectionId?: number) {
         const academicYearId = await this.getActiveAcademicYear(schoolId);
 
-        // 1. Get Subject Details (Need department)
+        // 1. Get Subject Details
         const subject = await this.prisma.subject.findUnique({
             where: { id: subjectId },
-            include: { department: true },
         });
 
         if (!subject) throw new NotFoundException('Subject not found');
@@ -166,15 +165,8 @@ export class AllocationService {
                 reasons.push('Preferred Subject');
             }
 
-            // B. Department Match (+30)
-            // Check if teacher has any assignment in this department OR loosely match if teacher has no department field (Assuming teacher doesn't have direct dept link in schema shown, but let's check subject assignments for same department)
-            // Actually schema showed `departmentId` on Subject, but not directly on TeacherProfile?
-            // `DepartmentMember` links User -> Department. Let's fetch that.
-            // Optimisation: We didn't fetch DepartmentMember above. Let's assume for now we look at other assignments or just skip this if not easily available.
-            // Wait, `TeacherProfile` -> `userId` -> `DepartmentMember`. I can include it.
-
-            // Let's refine the query in step 2 to include department membership if possible, but for now let's rely on qualification text match or just skipping.
-            // Simplification: Point for every other assignment in the SAME subject (+10) - shows experience.
+            // B. Experience Match (+10 per other assignment)
+            // Point for every other assignment in the SAME subject (+10) - shows experience.
             const experienceCount = teacher.subjectAssignments.filter(sa => sa.subjectId === subjectId).length;
             if (experienceCount > 0) {
                 score += (experienceCount * 10);

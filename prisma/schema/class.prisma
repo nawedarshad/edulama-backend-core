@@ -6,6 +6,46 @@ enum SubjectType {
   VOCATIONAL
 }
 
+enum AcademicGroupType {
+  CLASS_SECTION
+  COLLEGE_CLASS
+  COACHING_BATCH
+}
+
+model AcademicGroup {
+  id Int @id @default(autoincrement())
+
+  schoolId Int
+
+  name String // "Class 10A" or "JEE Batch Evening"
+  type AcademicGroupType
+
+  classId   Int?
+  sectionId Int?
+  batchId   Int?
+
+  class   Class?   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  school  School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  schedule   Schedule? @relation(fields: [scheduleId], references: [id])
+  scheduleId Int?
+
+  timetableEntries    TimetableEntry[]
+  attendanceSessions  AttendanceSession[]
+  attendanceSummaries AttendanceSummary[]
+  subjectAssignments  SubjectAssignment[]
+  classDiaries        ClassDiary[]
+  homework            Homework[]
+  syllabi             Syllabus[]
+  lessonPlans         LessonPlan[]
+  academicAssignments AcademicAssignment[]
+  students            StudentProfile[]
+
+  @@unique([id, schoolId])
+  @@index([schoolId])
+}
+
 model ClassSubject {
   id             Int @id @default(autoincrement())
   schoolId       Int
@@ -86,10 +126,11 @@ model Class {
   calendarExceptions   CalendarException[]
   StudentProfile       StudentProfile[]
   SubjectAssignment    SubjectAssignment[]
-  TimetableEntry       TimetableEntry[]
+  academicGroups       AcademicGroup[]
   AnnouncementAudience AnnouncementAudience[]
   AttendanceSession    AttendanceSession[]
   classDiaries         ClassDiary[]
+  homework             Homework[]
   syllabi              Syllabus[]
   academicYear         AcademicYear?          @relation(fields: [academicYearId], references: [id])
   academicYearId       Int?
@@ -97,10 +138,12 @@ model Class {
   teacherProfileId     Int?
   notices              Notice[]
 
-  schoolAdminScopes SchoolAdminScope[]
-  lessonPlans       LessonPlan[]
-  examSchedules     ExamSchedule[]
-  exams             Exam[]
+  schoolAdminScopes   SchoolAdminScope[]
+  lessonPlans         LessonPlan[]
+  examSchedules       ExamSchedule[]
+  exams               Exam[]
+  examRoomTemplates   ExamRoomTemplate[]
+  academicAssignments AcademicAssignment[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -132,17 +175,21 @@ model Section {
 
   // existing relations
   SubjectAssignment    SubjectAssignment[]
-  TimetableEntry       TimetableEntry[]
+  academicGroups       AcademicGroup[]
   AnnouncementAudience AnnouncementAudience[]
   AttendanceSession    AttendanceSession[]
   roomAssignments      RoomAssignment[]
   classDiaries         ClassDiary[]
+  homework             Homework[]
   academicYear         AcademicYear?          @relation(fields: [academicYearId], references: [id])
   academicYearId       Int?
   notices              Notice[]
   schoolAdminScopes    SchoolAdminScope[]
   lessonPlans          LessonPlan[]
   examSchedules        ExamSchedule[]
+  exams                Exam[]
+  examRoomTemplates    ExamRoomTemplate[]
+  academicAssignments  AcademicAssignment[]
 
   @@unique([schoolId, classId, name])
   @@index([schoolId])

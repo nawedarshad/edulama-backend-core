@@ -5,8 +5,12 @@ import { UpdateRoomAssignmentDto } from './dto/update-room-assignment.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { Audit } from '../../common/audit/audit.decorator';
 
+import { RequiredModule } from '../../common/decorators/required-module.decorator';
+import { ModuleGuard } from '../../common/guards/module.guard';
+
 @Controller('principal/room-assignments')
-@UseGuards(PrincipalAuthGuard)
+@UseGuards(PrincipalAuthGuard, ModuleGuard)
+@RequiredModule('FACILITY_MANAGEMENT')
 @Audit('RoomAssignment')
 export class RoomAssignmentController {
     constructor(private readonly roomAssignmentService: RoomAssignmentService) { }

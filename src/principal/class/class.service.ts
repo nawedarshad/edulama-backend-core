@@ -6,6 +6,7 @@ import { AssignHeadTeacherDto } from './dto/assign-head-teacher.dto';
 import { AcademicYearStatus } from '@prisma/client';
 
 import { BulkCreateClassDto } from './dto/bulk-create-class.dto';
+import { CreateClassWithSectionsDto } from './dto/create-class-with-sections.dto';
 
 @Injectable()
 export class ClassService {
@@ -13,13 +14,18 @@ export class ClassService {
 
     constructor(private readonly prisma: PrismaService) { }
 
-    async findAll(schoolId: number, page: number = 1, limit: number = 10) {
-        this.logger.log(`Fetching classes for school ${schoolId} (Page: ${page}, Limit: ${limit})`);
+    async findAll(schoolId: number, page: number = 1, limit: number = 10, academicYearId?: number) {
+        this.logger.log(`Fetching classes for school ${schoolId} (Page: ${page}, Limit: ${limit}, Year: ${academicYearId})`);
         const skip = (page - 1) * limit;
+
+        const where: any = { schoolId };
+        if (academicYearId) {
+            where.academicYearId = academicYearId;
+        }
 
         const [classes, total] = await Promise.all([
             this.prisma.class.findMany({
-                where: { schoolId },
+                where,
                 include: {
                     schedule: { select: { id: true, name: true } },
                     headTeacher: {
@@ -60,7 +66,39 @@ export class ClassService {
                                 include: {
                                     subject: true
                                 }
-                            }
+                            },
+                            academicAssignments: {
+                                include: {
+                                    teacher: {
+                                        include: {
+                                            user: {
+                                                include: {
+                                                    authIdentities: {
+                                                        where: { type: 'EMAIL' },
+                                                        select: { value: true },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    academicAssignments: {
+                        include: {
+                            teacher: {
+                                include: {
+                                    user: {
+                                        include: {
+                                            authIdentities: {
+                                                where: { type: 'EMAIL' },
+                                                select: { value: true },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
                         },
                     },
                 },
@@ -93,6 +131,15 @@ export class ClassService {
                     },
                 }
                 : undefined,
+            teacherAssignments: cls.academicAssignments?.map(assignment => ({
+                id: assignment.id,
+                role: assignment.role,
+                teacher: {
+                    id: assignment.teacher.id,
+                    name: assignment.teacher.user.name,
+                    email: assignment.teacher.user.authIdentities[0]?.value || '',
+                }
+            })) || [],
             sections: cls.sections.map((section) => ({
                 id: section.id,
                 name: section.name,
@@ -111,6 +158,15 @@ export class ClassService {
                         },
                     }
                     : undefined,
+                teacherAssignments: section.academicAssignments?.map(assignment => ({
+                    id: assignment.id,
+                    role: assignment.role,
+                    teacher: {
+                        id: assignment.teacher.id,
+                        name: assignment.teacher.user.name,
+                        email: assignment.teacher.user.authIdentities[0]?.value || '',
+                    }
+                })) || [],
                 subjects: section.ClassSubject?.map(cs => ({
                     id: cs.subject.id,
                     name: cs.subject.name,
@@ -141,10 +197,58 @@ export class ClassService {
                             include: {
                                 subject: true
                             }
-                        }
+                        },
+                        classTeacher: {
+                            include: {
+                                teacher: {
+                                    include: {
+                                        user: {
+                                            include: {
+                                                authIdentities: {
+                                                    where: { type: 'EMAIL' },
+                                                    select: { value: true },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        academicAssignments: {
+                            include: {
+                                teacher: {
+                                    include: {
+                                        user: {
+                                            include: {
+                                                authIdentities: {
+                                                    where: { type: 'EMAIL' },
+                                                    select: { value: true },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
                     }
                 },
                 headTeacher: {
+                    include: {
+                        teacher: {
+                            include: {
+                                user: {
+                                    include: {
+                                        authIdentities: {
+                                            where: { type: 'EMAIL' },
+                                            select: { value: true },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                academicAssignments: {
                     include: {
                         teacher: {
                             include: {
@@ -183,6 +287,15 @@ export class ClassService {
                     },
                 }
                 : undefined,
+            teacherAssignments: c.academicAssignments?.map(assignment => ({
+                id: assignment.id,
+                role: assignment.role,
+                teacher: {
+                    id: assignment.teacher.id,
+                    name: assignment.teacher.user.name,
+                    email: assignment.teacher.user.authIdentities[0]?.value || '',
+                }
+            })) || [],
         };
     }
 
@@ -211,6 +324,85 @@ export class ClassService {
             }
             this.logger.error('Error creating class', error.stack);
             throw new InternalServerErrorException('Failed to create class');
+        }
+    }
+
+    async createWithSections(schoolId: number, dto: CreateClassWithSectionsDto) {
+        this.logger.log(`Creating class '${dto.name}' with ${dto.sections.length} sections for school ${schoolId}`);
+
+        // 1. Fetch school type for validation
+        const school = await this.prisma.school.findUnique({
+            where: { id: schoolId },
+            select: { type: true }
+        });
+
+        if (!school) {
+            throw new NotFoundException(`School with ID ${schoolId} not found`);
+        }
+
+        // 2. Validate sections based on school type
+        if (school.type === 'SCHOOL' && dto.sections.length === 0) {
+            throw new BadRequestException('A class must have at least one section in a school institution.');
+        }
+
+        // 3. Case-insensitive duplicate section name check
+        const sectionNames = dto.sections.map(s => s.name.toLowerCase().trim());
+        const hasDuplicates = sectionNames.some((name, index) => sectionNames.indexOf(name) !== index);
+        if (hasDuplicates) {
+            throw new BadRequestException('Duplicate section names are not allowed.');
+        }
+
+        // 4. Validate schedule ownership if provided
+        if (dto.scheduleId) {
+            const schedule = await this.prisma.schedule.findFirst({
+                where: { id: dto.scheduleId, schoolId }
+            });
+            if (!schedule) {
+                throw new BadRequestException('Selected schedule does not belong to your school.');
+            }
+        }
+
+        try {
+            return await this.prisma.$transaction(async (tx) => {
+                // Create the class
+                const newClass = await tx.class.create({
+                    data: {
+                        name: dto.name,
+                        stage: dto.stage || 'PRIMARY',
+                        capacity: dto.capacity,
+                        description: dto.description,
+                        order: dto.order,
+                        scheduleId: dto.scheduleId,
+                        schoolId,
+                    },
+                });
+
+                // Create sections
+                if (dto.sections.length > 0) {
+                    this.logger.debug(`Creating ${dto.sections.length} sections for class ${newClass.id}`);
+                    const sectionData = dto.sections.map((s, index) => ({
+                        name: s.name.trim(),
+                        capacity: s.capacity,
+                        description: s.description,
+                        classId: newClass.id,
+                        schoolId,
+                        order: index + 1
+                    }));
+                    this.logger.debug(`Section data: ${JSON.stringify(sectionData)}`);
+                    const result = await tx.section.createMany({
+                        data: sectionData
+                    });
+                    this.logger.log(`Created ${result.count} sections for class ${newClass.id}`);
+                }
+
+                return newClass;
+            });
+        } catch (error) {
+            this.logger.error('Failed to create class with sections', error.stack);
+            if (error.code === 'P2002') {
+                throw new BadRequestException(`Class with name '${dto.name}' already exists or a section name is duplicate.`);
+            }
+            throw new InternalServerErrorException('Failed to create class with sections. Transaction rolled back.');
         }
     }
 
@@ -306,20 +498,21 @@ export class ClassService {
 
     async assignClassTeacher(schoolId: number, dto: AssignClassTeacherDto) {
         this.logger.log(`Assigning teacher ${dto.teacherId} to section ${dto.sectionId}`);
-        // 1. Validate Section exists and belongs to school
+        // 1. Fetch Section and Class to validate school type
         const section = await this.prisma.section.findUnique({
             where: { id: dto.sectionId },
-            include: { academicYear: true } // Need year for Assignment? Or removed?
-            // Wait, Assignments ARE Year based? Schema says so.
-            // But Section itself NO LONGER HAS academicYear relation?
-            // "Section" model had `academicYearId` removed.
-            // "SectionTeacher" model HAS `academicYearId` and `sectionId`.
-            // So we need to determine which academic year this assignment is for.
-            // Usually, assignments are for the Active Year.
+            include: {
+                class: {
+                    include: { school: true }
+                }
+            }
         });
 
-        if (!section) {
-            throw new NotFoundException('Section not found');
+        if (!section || !section.class) throw new NotFoundException('Section not found');
+        const school = section.class.school;
+
+        if (school.type === 'COACHING') {
+            throw new BadRequestException('Class teacher assignment is not supported for COACHING institutes. Please assign Subject Teachers to Batches instead.');
         }
 
         if (section.schoolId !== schoolId) {
@@ -350,23 +543,50 @@ export class ClassService {
             throw new BadRequestException('Teacher does not belong to this school');
         }
 
-        // 3. Upsert SectionTeacher
-        return await this.prisma.sectionTeacher.upsert({
+        // 3. Upsert SectionTeacher (Legacy)
+        const legacy = await this.prisma.sectionTeacher.upsert({
             where: {
                 sectionId: dto.sectionId,
             },
             create: {
                 schoolId,
-                academicYearId: activeYear.id, // Use Active Year
+                academicYearId: activeYear.id,
                 sectionId: dto.sectionId,
-                teacherId: teacher.id, // Use found TeacherProfile ID
+                teacherId: teacher.id,
             },
             update: {
-                teacherId: teacher.id, // Use found TeacherProfile ID
-                academicYearId: activeYear.id, // Update to active year
+                teacherId: teacher.id,
+                academicYearId: activeYear.id,
                 assignedAt: new Date(),
             },
         });
+
+        // 4. Upsert AcademicAssignment (New)
+        await this.prisma.academicAssignment.upsert({
+            where: {
+                // We need a unique constraint or logical check. 
+                // For Section Teacher, usually 1 per section per year in School mode.
+                id: (await this.prisma.academicAssignment.findFirst({
+                    where: { sectionId: dto.sectionId, role: 'CLASS_TEACHER', academicYearId: activeYear.id }
+                }))?.id || -1
+            },
+            create: {
+                schoolId,
+                academicYearId: activeYear.id,
+                sectionId: dto.sectionId,
+                classId: section.classId,
+                teacherId: teacher.id,
+                role: 'CLASS_TEACHER',
+                userId: teacher.userId
+            },
+            update: {
+                teacherId: teacher.id,
+                userId: teacher.userId,
+                updatedAt: new Date()
+            }
+        });
+
+        return legacy;
     }
 
     async assignHeadTeacher(schoolId: number, classId: number, dto: AssignHeadTeacherDto) {
@@ -374,7 +594,7 @@ export class ClassService {
         // 1. Validate Class exists and belongs to school
         const cls = await this.prisma.class.findUnique({
             where: { id: classId },
-            // include: { academicYear: true } // Removed
+            include: { school: true }
         });
 
         if (!cls) {
@@ -383,6 +603,10 @@ export class ClassService {
 
         if (cls.schoolId !== schoolId) {
             throw new BadRequestException('Class does not belong to this school');
+        }
+
+        if (cls.school.type === 'COACHING') {
+            throw new BadRequestException('Head teacher assignment is not supported for COACHING institutes.');
         }
 
         const activeYear = await this.prisma.academicYear.findFirst({
@@ -398,18 +622,15 @@ export class ClassService {
         });
 
         if (!teacher) {
-            throw new NotFoundException(
-                `Teacher with ID ${dto.teacherId} not found. ` +
-                `Note: teacherId must be the TeacherProfile ID, not the User ID.`
-            );
+            throw new NotFoundException('Teacher not found');
         }
 
         if (teacher.schoolId !== schoolId) {
             throw new BadRequestException('Teacher does not belong to this school');
         }
 
-        // 3. Upsert ClassHeadTeacher
-        return await this.prisma.classHeadTeacher.upsert({
+        // 3. Upsert ClassHeadTeacher (Legacy)
+        const legacy = await this.prisma.classHeadTeacher.upsert({
             where: {
                 classId: classId,
             },
@@ -421,25 +642,59 @@ export class ClassService {
             },
             update: {
                 teacherId: teacher.id,
-                academicYearId: activeYear.id, // Update to active year
+                academicYearId: activeYear.id,
                 assignedAt: new Date(),
             },
         });
+
+        // 4. Upsert AcademicAssignment (New)
+        await this.prisma.academicAssignment.upsert({
+            where: {
+                id: (await this.prisma.academicAssignment.findFirst({
+                    where: { classId: classId, sectionId: null, role: 'HEAD_TEACHER', academicYearId: activeYear.id }
+                }))?.id || -1
+            },
+            create: {
+                schoolId,
+                academicYearId: activeYear.id,
+                classId: classId,
+                teacherId: teacher.id,
+                role: 'HEAD_TEACHER',
+                userId: teacher.userId
+            },
+            update: {
+                teacherId: teacher.id,
+                userId: teacher.userId,
+                updatedAt: new Date()
+            }
+        });
+
+        return legacy;
     }
 
     async removeHeadTeacher(schoolId: number, classId: number) {
         const cls = await this.prisma.class.findUnique({
-            where: { id: classId }
+            where: { id: classId },
+            include: { school: true },
         });
 
         if (!cls || cls.schoolId !== schoolId) {
             throw new NotFoundException('Class not found or does not belong to school');
         }
 
+        if (cls.school.type === 'COACHING') {
+            throw new BadRequestException('Head teacher assignment is not supported for COACHING institutes.');
+        }
+
         try {
-            await this.prisma.classHeadTeacher.delete({
-                where: { classId }
-            });
+            await this.prisma.$transaction([
+                this.prisma.classHeadTeacher.delete({
+                    where: { classId }
+                }),
+                this.prisma.academicAssignment.deleteMany({
+                    where: { classId, sectionId: null, role: 'HEAD_TEACHER' }
+                })
+            ]);
             return { message: 'Head teacher removed successfully' };
         } catch (error) {
             if (error.code === 'P2025') {
@@ -451,17 +706,27 @@ export class ClassService {
 
     async removeSectionTeacher(schoolId: number, sectionId: number) {
         const section = await this.prisma.section.findUnique({
-            where: { id: sectionId }
+            where: { id: sectionId },
+            include: { class: { include: { school: true } } },
         });
 
         if (!section || section.schoolId !== schoolId) {
             throw new NotFoundException('Section not found or does not belong to school');
         }
 
+        if (section.class?.school?.type === 'COACHING') {
+            throw new BadRequestException('Class teacher assignment is not supported for COACHING institutes. Please assign Subject Teachers to Batches instead.');
+        }
+
         try {
-            await this.prisma.sectionTeacher.delete({
-                where: { sectionId }
-            });
+            await this.prisma.$transaction([
+                this.prisma.sectionTeacher.delete({
+                    where: { sectionId }
+                }),
+                this.prisma.academicAssignment.deleteMany({
+                    where: { sectionId, role: 'CLASS_TEACHER' }
+                })
+            ]);
             return { message: 'Section teacher removed successfully' };
         } catch (error) {
             if (error.code === 'P2025') {

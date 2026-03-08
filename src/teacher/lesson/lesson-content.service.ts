@@ -20,6 +20,7 @@ export class LessonContentService {
             where: { schoolId, academicYearId },
             include: {
                 subject: true,
+                group: true,
                 class: true,
                 section: true
             },
@@ -33,6 +34,7 @@ export class LessonContentService {
                 syllabus: {
                     include: {
                         subject: true,
+                        group: true,
                         class: true
                     }
                 }
@@ -49,6 +51,8 @@ export class LessonContentService {
             description: p.description,
             lessonDate: p.planDate,
             status: p.status,
+            groupId: p.groupId,
+            group: p.group,
             class: p.class,
             section: p.section,
             subject: p.subject,
@@ -66,6 +70,8 @@ export class LessonContentService {
             description: l.description,
             lessonDate: l.createdAt, // Lessons fallback to creation date if no specific date
             status: 'DRAFT', // Default for now
+            groupId: l.syllabus.groupId,
+            group: l.syllabus.group,
             class: l.syllabus.class,
             section: null, // Advanced lessons often linked to Class, not Section specific until assigned
             subject: l.syllabus.subject,
@@ -102,6 +108,7 @@ export class LessonContentService {
         const plan = await this.prisma.lessonPlan.findFirst({
             where: { id, schoolId, academicYearId },
             include: {
+                group: true,
                 class: true,
                 section: true,
                 subject: true,
@@ -122,10 +129,12 @@ export class LessonContentService {
                     topic: plan.topicTitle
                 },
                 // Flatten relations
-                className: plan.class?.name,
+                className: plan.class?.name || plan.group?.name,
                 sectionName: plan.section?.name,
                 subjectName: plan.subject?.name,
                 // Original objects
+                groupId: plan.groupId,
+                group: plan.group,
                 class: plan.class,
                 section: plan.section,
                 subject: plan.subject,
@@ -176,8 +185,9 @@ export class LessonContentService {
 
         try {
             await this.classDiaryService.create(schoolId, userId, academicYearId, {
-                classId: plan.classId,
-                sectionId: plan.sectionId,
+                groupId: plan.groupId,
+                classId: plan.classId ?? undefined,
+                sectionId: plan.sectionId ?? undefined,
                 subjectId: plan.subjectId,
                 lessonDate: new Date().toISOString(), // Completed NOW, or Plan Date? User likely wants TODAY.
                 topic: plan.topicTitle,

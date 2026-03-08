@@ -10,6 +10,8 @@ import {
     IsOptional,
     IsString,
     ValidateNested,
+    Matches,
+    Length,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -113,20 +115,20 @@ export class CreateStudentPersonalInfoDto {
     @IsOptional()
     permanentAddress?: string;
 
-    @ApiPropertyOptional()
+    @ApiProperty()
     @IsString()
-    @IsOptional()
-    city?: string;
+    @IsNotEmpty()
+    city: string;
 
-    @ApiPropertyOptional()
+    @ApiProperty()
     @IsString()
-    @IsOptional()
-    state?: string;
+    @IsNotEmpty()
+    state: string;
 
-    @ApiPropertyOptional()
+    @ApiProperty()
     @IsString()
-    @IsOptional()
-    pincode?: string;
+    @IsNotEmpty()
+    pincode: string;
 
     @ApiPropertyOptional()
     @IsBoolean()
@@ -226,79 +228,41 @@ export class CreateStudentHealthRecordDto {
 }
 
 // --------------------------------------------------------
-// 2. PARENT DTO
+// 2. GUARDIAN DTO (new normalized model)
 // --------------------------------------------------------
 
-export class CreateParentDto {
-    @ApiProperty()
+export enum GuardianRelation {
+    FATHER = 'FATHER',
+    MOTHER = 'MOTHER',
+    GUARDIAN = 'GUARDIAN',
+}
+
+export class CreateGuardianDto {
+    @ApiProperty({ description: 'Display name of the parent/guardian' })
     @IsString()
     @IsNotEmpty()
-    fatherName: string;
+    name: string;
 
-    @ApiProperty()
-    @IsEmail()
+    @ApiPropertyOptional({ description: 'Contact phone number' })
+    @IsString()
+    @IsOptional()
+    @Matches(/^[6-9]\d{9}$/, { message: 'Please enter a valid 10-digit mobile number' })
+    phone?: string;
+
+    @ApiProperty({ enum: GuardianRelation })
+    @IsEnum(GuardianRelation)
     @IsNotEmpty()
-    fatherEmail: string;
-
-    @ApiProperty()
-    @IsString()
-    @IsNotEmpty()
-    fatherContact: string;
+    relation: GuardianRelation;
 
     @ApiPropertyOptional()
     @IsString()
     @IsOptional()
-    fatherOccupation?: string;
+    occupation?: string;
 
-    @ApiPropertyOptional()
-    @IsString()
+    @ApiPropertyOptional({ description: 'If true, the admin confirmed that the existing User (matched by email) is the correct person. Required when user already exists.' })
+    @IsBoolean()
     @IsOptional()
-    motherName?: string;
-
-    @ApiPropertyOptional()
-    @IsEmail()
-    @IsOptional()
-    motherEmail?: string;
-
-    @ApiPropertyOptional()
-    @IsString()
-    @IsOptional()
-    motherContact?: string;
-
-    @ApiPropertyOptional()
-    @IsString()
-    @IsOptional()
-    motherOccupation?: string;
-
-    @ApiPropertyOptional()
-    @IsString()
-    @IsOptional()
-    guardianName?: string;
-
-    @ApiPropertyOptional()
-    @IsString()
-    @IsOptional()
-    guardianContact?: string;
-
-    @ApiPropertyOptional()
-    @IsString()
-    @IsOptional()
-    guardianRelation?: string;
-
-    @ApiPropertyOptional()
-    @IsString()
-    @IsOptional()
-    emergencyContact?: string;
-
-    @ApiPropertyOptional()
-    @IsNumber()
-    @IsOptional()
-    annualIncome?: number;
-
-    @ApiPropertyOptional()
-    @IsString()
-    @IsOptional()
-    permanentAddress?: string;
+    confirmedExisting?: boolean;
 }
 
 // --------------------------------------------------------
@@ -309,6 +273,8 @@ export class CreateStudentDto {
     @ApiProperty()
     @IsString()
     @IsNotEmpty()
+    @Length(2, 120)
+    @Matches(/^[A-Za-z\s]+$/, { message: 'Full name can only contain letters and spaces' })
     fullName: string;
 
     @ApiProperty()
@@ -379,11 +345,28 @@ export class CreateStudentDto {
     @IsOptional()
     healthRecord?: CreateStudentHealthRecordDto;
 
-    // --- PARENT RELATION ---
+    // --- GUARDIAN / PARENT RELATIONS ---
 
-    @ApiProperty({ type: CreateParentDto })
-    @ValidateNested()
-    @Type(() => CreateParentDto)
-    @IsNotEmpty()
-    parent: CreateParentDto;
+    @ApiPropertyOptional({
+        type: [CreateGuardianDto],
+        description:
+            'Array of parent/guardian profiles to link to this student. ' +
+            'If a guardian email already exists in the system and confirmedExisting=true, the existing User is linked. ' +
+            'If the email is new, a new User + ParentProfile is created.',
+    })
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => CreateGuardianDto)
+    @IsOptional()
+    guardians?: CreateGuardianDto[];
+
+    @ApiPropertyOptional({ description: 'Primary family login email. Used to find or create the central User account.' })
+    @IsEmail()
+    @IsOptional()
+    primaryEmail?: string;
+
+    @ApiPropertyOptional({ description: 'Indicates the primary email matches an existing user who was confirmed.' })
+    @IsBoolean()
+    @IsOptional()
+    primaryEmailConfirmed?: boolean;
 }

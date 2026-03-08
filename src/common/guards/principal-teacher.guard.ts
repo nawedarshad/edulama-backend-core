@@ -38,16 +38,15 @@ export class PrincipalOrTeacherGuard implements CanActivate {
         try {
             const baseUrl = authServiceUrl.replace(/\/$/, '');
             const response = await lastValueFrom(
-                this.httpService.post(
-                    `${baseUrl}/verify`,
-                    {},
+                this.httpService.get(
+                    `${baseUrl}/me`,
                     {
                         headers: { Authorization: `Bearer ${token}` },
                     },
                 ),
             );
 
-            const user = response.data;
+            const user = response.data.user;
 
             // Check if user has PRINCIPAL or TEACHER role
             if (!user || (user.role !== 'PRINCIPAL' && user.role !== 'TEACHER')) {
@@ -56,6 +55,17 @@ export class PrincipalOrTeacherGuard implements CanActivate {
 
             // Attach user to request for further use if needed
             request.user = user;
+
+            // Inject context from headers — header always wins (user's active session context)
+            const headerAcademicYearId = request.headers['x-academic-year-id'];
+            const headerSchoolId = request.headers['x-school-id'];
+            if (headerAcademicYearId) {
+                request.user.academicYearId = parseInt(headerAcademicYearId as string);
+            }
+            if (headerSchoolId) {
+                request.user.schoolId = parseInt(headerSchoolId as string);
+            }
+
             return true;
         } catch (error) {
             // this.logger.error(`Token verification failed against ${authServiceUrl}`, error);

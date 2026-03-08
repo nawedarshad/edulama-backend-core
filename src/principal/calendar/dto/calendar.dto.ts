@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString, IsDateString, IsArray, ValidateNested, IsInt } from 'class-validator';
+import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString, IsDateString, IsArray, ValidateNested, IsInt, ArrayMinSize, ArrayMaxSize } from 'class-validator';
 import { Type } from 'class-transformer';
 import { DayOfWeek, DayType } from '@prisma/client';
 
@@ -16,6 +16,8 @@ export class SetWorkingPatternDto {
     academicYearId: number;
 
     @IsArray()
+    @ArrayMinSize(7, { message: 'All 7 days must be configured.' })
+    @ArrayMaxSize(7, { message: 'All 7 days must be configured.' })
     @ValidateNested({ each: true })
     @Type(() => DayConfigDto)
     days: DayConfigDto[];
@@ -95,4 +97,23 @@ export interface CalendarDay {
 export interface CalendarResponse {
     days: CalendarDay[];
     meta: any;
+}
+
+
+export class CloneCalendarDto {
+    @IsInt()
+    @IsNotEmpty()
+    sourceYearId: number;
+
+    @IsInt()
+    @IsNotEmpty()
+    targetYearId: number;
+
+    @IsBoolean()
+    @IsOptional()
+    copyExceptions?: boolean;
+
+    @IsBoolean()
+    @IsOptional()
+    copyPatterns?: boolean;
 }

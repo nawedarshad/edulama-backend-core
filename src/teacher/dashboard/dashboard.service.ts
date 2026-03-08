@@ -61,7 +61,7 @@ export class DashboardService {
                 academicYearId,
                 teacherId: teacher.id,
                 day: currentDayEnum,
-                period: { type: 'TEACHING' }
+                timeSlot: { period: { type: 'TEACHING' } }
             }
         });
 
@@ -72,18 +72,17 @@ export class DashboardService {
                 academicYearId,
                 teacherId: teacher.id,
                 day: currentDayEnum,
-                period: {
+                timeSlot: {
                     endTime: {
                         gt: this.getCurrentTimeHash() // Helper to compare "HH:MM"
                     }
                 }
             },
-            orderBy: { period: { startTime: 'asc' } },
+            orderBy: { timeSlot: { startTime: 'asc' } },
             include: {
-                class: { select: { name: true } },
-                section: { select: { name: true } },
+                group: { select: { name: true } },
                 subject: { select: { name: true, code: true } },
-                period: { select: { startTime: true, endTime: true } }
+                timeSlot: { select: { startTime: true, endTime: true, period: { select: { name: true } } } }
             }
         });
 
@@ -95,12 +94,18 @@ export class DashboardService {
                 teacherId: teacher.id,
                 day: currentDayEnum
             },
-            orderBy: { period: { startTime: 'asc' } },
+            orderBy: { timeSlot: { startTime: 'asc' } },
             include: {
-                class: { select: { name: true } },
-                section: { select: { name: true } },
+                group: { select: { name: true } },
                 subject: { select: { name: true, code: true } },
-                period: { select: { id: true, name: true, startTime: true, endTime: true, type: true } },
+                timeSlot: {
+                    select: {
+                        id: true,
+                        startTime: true,
+                        endTime: true,
+                        period: { select: { id: true, name: true, type: true } }
+                    }
+                },
                 room: { select: { name: true } }
             }
         });
@@ -122,46 +127,44 @@ export class DashboardService {
             include: {
                 entry: {
                     include: {
-                        class: { select: { name: true } },
-                        section: { select: { name: true } },
+                        group: { select: { name: true } },
                         subject: { select: { name: true } },
-                        period: { select: { name: true, startTime: true, endTime: true } }
+                        timeSlot: { include: { period: { select: { name: true, startTime: true, endTime: true } } } }
                     }
                 }
             }
         });
 
         // G. Get My Assignments for linking (Optimization: Fetch once)
-        const myAssignments = await this.prisma.classSubject.findMany({
+        const myAssignments = await this.prisma.subjectAssignment.findMany({
             where: {
                 schoolId,
                 academicYearId,
-                teacherProfileId: teacher.id
+                teacherId: teacher.id
             },
-            select: { id: true, classId: true, sectionId: true, subjectId: true }
+            select: { id: true, groupId: true, subjectId: true }
         });
 
         const assignmentMap = new Map<string, number>();
         myAssignments.forEach(a => {
-            assignmentMap.set(`${a.classId}-${a.sectionId}-${a.subjectId}`, a.id);
+            assignmentMap.set(`${a.groupId}-${a.subjectId}`, a.id);
         });
 
         // Helper to find assignment ID
-        const getAssignmentId = (cId: number, sId: number, subId: number) =>
-            assignmentMap.get(`${cId}-${sId}-${subId}`) || null;
+        const getAssignmentId = (gId: number, subId: number) =>
+            assignmentMap.get(`${gId}-${subId}`) || null;
 
         // H. Critical Alert: Unmarked Attendance
         let unmarkedAttendanceCount = 0;
         const currentHash = this.getCurrentTimeHash();
 
         for (const entry of timelineEntries) {
-            if (entry.period.startTime <= currentHash && entry.period.type === 'TEACHING') {
+            if (entry.timeSlot.startTime <= currentHash && entry.timeSlot.period?.type === 'TEACHING') {
                 const sessionExists = await this.prisma.attendanceSession.count({
                     where: {
                         schoolId,
                         academicYearId,
-                        classId: entry.classId,
-                        sectionId: entry.sectionId,
+                        groupId: entry.groupId,
                         subjectId: entry.subjectId,
                         date: { gte: startOfDay, lte: endOfDay }
                     }
@@ -294,8 +297,8 @@ export class DashboardService {
         // Calculate sort order based on timeline
         const todayOrder = new Map<string, number>();
         timelineEntries.forEach((entry, index) => {
-            if (entry.classId && entry.subjectId) {
-                const key = `${entry.classId}-${entry.subjectId}`;
+            if (entry.groupId && entry.subjectId) {
+                const key = `${entry.groupId}-${entry.subjectId}`;
                 if (!todayOrder.has(key)) {
                     todayOrder.set(key, index);
                 }
@@ -324,29 +327,29 @@ export class DashboardService {
             students: studentsCount,
             todayLectures,
             nextClass: nextClass ? {
-                className: `${nextClass.class.name}-${nextClass.section.name}`,
-                subject: nextClass.subject.name,
-                time: `${nextClass.period.startTime} - ${nextClass.period.endTime}`
+                className: nextClass.group.name,
+                subject: nextClass.subject?.name || 'N/A',
+                time: `${nextClass.timeSlot.startTime} - ${nextClass.timeSlot.endTime}`
             } : null,
             timeline: timelineEntries.map(entry => ({
                 id: entry.id,
-                periodName: entry.period.name,
-                startTime: entry.period.startTime,
-                endTime: entry.period.endTime,
-                className: entry.class?.name ? `${entry.class.name}-${entry.section.name}` : 'N/A',
+                periodName: entry.timeSlot.period?.name || 'Unnamed',
+                startTime: entry.timeSlot.startTime,
+                endTime: entry.timeSlot.endTime,
+                className: entry.group.name,
                 subject: entry.subject?.name || 'Free / Activity',
                 room: entry.room?.name || 'N/A',
-                type: entry.period.type,
-                assignmentId: entry.classId && entry.sectionId && entry.subjectId
-                    ? getAssignmentId(entry.classId, entry.sectionId, entry.subjectId)
+                type: entry.timeSlot.period?.type,
+                assignmentId: entry.groupId && entry.subjectId
+                    ? getAssignmentId(entry.groupId, entry.subjectId)
                     : null
             })),
             substitutions: substitutions.map(sub => ({
                 id: sub.id,
-                className: `${sub.entry.class.name}-${sub.entry.section.name}`,
-                subject: sub.entry.subject.name,
-                period: sub.entry.period.name,
-                time: `${sub.entry.period.startTime} - ${sub.entry.period.endTime}`,
+                className: sub.entry.group.name,
+                subject: sub.entry.subject?.name || 'N/A',
+                period: sub.entry.timeSlot.period?.name || 'Unnamed',
+                time: `${sub.entry.timeSlot.startTime} - ${sub.entry.timeSlot.endTime}`,
                 note: sub.note,
                 assignmentId: null
             })),
@@ -411,7 +414,7 @@ export class DashboardService {
                 schoolId,
                 academicYearId,
                 subjectId: null, // Daily Attendance
-                sectionId: { in: sectionIds }
+                groupId: { in: sectionIds }
             },
             _sum: {
                 present: true,

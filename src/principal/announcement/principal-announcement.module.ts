@@ -4,10 +4,19 @@ import { PrincipalAnnouncementController } from './principal-announcement.contro
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { NotificationModule } from '../global/notification/notification.module';
+import { BullModule } from '@nestjs/bullmq';
+import { AnnouncementProcessor } from './announcement.processor';
 
 @Module({
-    imports: [HttpModule, ConfigModule, NotificationModule],
+    imports: [
+        HttpModule,
+        ConfigModule,
+        NotificationModule,
+        BullModule.registerQueue({
+            name: 'announcements',
+        })
+    ],
     controllers: [PrincipalAnnouncementController],
-    providers: [PrincipalAnnouncementService],
+    providers: [PrincipalAnnouncementService, AnnouncementProcessor],
 })
 export class PrincipalAnnouncementModule { }

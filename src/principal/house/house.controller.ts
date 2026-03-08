@@ -6,6 +6,7 @@ import {
     Patch,
     Param,
     Delete,
+    Query,
     UseGuards,
     ParseIntPipe,
 } from '@nestjs/common';
@@ -14,7 +15,8 @@ import { CreateHouseDto } from './dto/create-house.dto';
 import { UpdateHouseDto } from './dto/update-house.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
 import { RequiredModule } from '../../common/decorators/required-module.decorator';
 import { ModuleGuard } from '../../common/guards/module.guard';
@@ -51,6 +53,17 @@ export class HouseController {
         @Param('id', ParseIntPipe) id: number,
     ) {
         return this.houseService.findOne(schoolId, id);
+    }
+
+    @Get(':id/students')
+    @ApiOperation({ summary: 'Get paginated list of students in a house' })
+    @ApiResponse({ status: 200, description: 'Returns paginated students.' })
+    getHouseStudents(
+        @GetUser('schoolId') schoolId: number,
+        @Param('id', ParseIntPipe) id: number,
+        @Query() queryDto: PaginationQueryDto // Make sure to add Query to imports
+    ) {
+        return this.houseService.getHouseStudents(schoolId, id, queryDto);
     }
 
     @Patch(':id')

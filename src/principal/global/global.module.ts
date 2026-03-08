@@ -6,11 +6,12 @@ import { SchoolSettingsController } from './school-settings/school-settings.cont
 import { TimeSlotService } from './time-slot/time-slot.service';
 import { TimeSlotController } from './time-slot/time-slot.controller';
 import { NotificationModule } from './notification/notification.module';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Module({
     imports: [HttpModule, ConfigModule, NotificationModule],
     controllers: [SchoolSettingsController, TimeSlotController],
-    providers: [SchoolSettingsService, TimeSlotService],
+    providers: [SchoolSettingsService, TimeSlotService, PrismaService],
     exports: [SchoolSettingsService, TimeSlotService, NotificationModule], // Export if needed elsewhere
 })
 export class GlobalModule { }

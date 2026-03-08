@@ -37,16 +37,15 @@ export class SaasAdminAuthGuard implements CanActivate {
         try {
             const baseUrl = authServiceUrl.replace(/\/$/, '');
             const response = await lastValueFrom(
-                this.httpService.post(
-                    `${baseUrl}/verify`,
-                    {},
+                this.httpService.get(
+                    `${baseUrl}/me`,
                     {
                         headers: { Authorization: `Bearer ${token}` },
                     },
                 ),
             );
 
-            const user = response.data;
+            const user = response.data.user;
 
             if (!user || user.role !== 'SAAS_ADMIN') {
                 throw new UnauthorizedException('Insufficient permissions - SAAS_ADMIN role required');

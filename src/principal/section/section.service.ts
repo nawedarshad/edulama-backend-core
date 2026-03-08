@@ -135,6 +135,11 @@ export class SectionService {
         const section = await this.prisma.section.findFirst({
             where: { id, schoolId },
             include: {
+                class: {
+                    select: {
+                        name: true
+                    }
+                },
                 classTeacher: {
                     include: {
                         teacher: {
@@ -161,24 +166,29 @@ export class SectionService {
                         }
                     }
                 },
-                TimetableEntry: {
+                academicGroups: {
+                    where: { type: 'CLASS_SECTION' },
                     include: {
-                        subject: {
-                            select: {
-                                name: true,
-                                code: true
-                            }
-                        },
-                        teacher: {
+                        timetableEntries: {
                             include: {
-                                user: {
+                                subject: {
                                     select: {
-                                        name: true
+                                        name: true,
+                                        code: true
                                     }
-                                }
+                                },
+                                teacher: {
+                                    include: {
+                                        user: {
+                                            select: {
+                                                name: true
+                                            }
+                                        }
+                                    }
+                                },
+                                timeSlot: true
                             }
-                        },
-                        period: true
+                        }
                     }
                 }
             }
@@ -187,6 +197,12 @@ export class SectionService {
         if (!section) {
             throw new NotFoundException(`Section with ID ${id} not found`);
         }
+
+        // Fetch active academic year
+        const activeYear = await this.prisma.academicYear.findFirst({
+            where: { schoolId, status: 'ACTIVE' },
+            select: { name: true }
+        });
 
         const sec = section;
 
@@ -198,6 +214,8 @@ export class SectionService {
             order: sec.order,
             description: sec.description,
             stream: sec.stream,
+            className: (sec as any).class?.name,
+            academicYearName: activeYear?.name || 'Academic Year',
             classTeacher: sec.classTeacher?.teacher?.user
                 ? {
                     id: sec.classTeacher.id,
@@ -210,18 +228,18 @@ export class SectionService {
                 : undefined,
             students: sec.StudentProfile?.map(s => ({
                 id: s.id,
-                name: s.user.name,
-                photo: s.user.photo,
+                name: s.user?.name || s.fullName,
+                photo: s.user?.photo,
             })) || [],
-            timetable: sec.TimetableEntry?.map(t => ({
+            timetable: section.academicGroups?.[0]?.timetableEntries?.map(t => ({
                 id: t.id,
                 day: t.day,
                 subject: {
-                    name: t.subject.name,
-                    code: t.subject.code
+                    name: t.subject?.name || 'N/A',
+                    code: t.subject?.code || 'N/A'
                 },
                 teacher: t.teacher?.user?.name,
-                period: t.period
+                timeSlot: t.timeSlot
             })) || []
         };
     }

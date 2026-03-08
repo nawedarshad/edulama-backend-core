@@ -38,6 +38,16 @@ export class CreateRoomDto {
     @IsOptional()
     capacity?: number;
 
+    @ApiPropertyOptional({ description: 'Number of benches in the room', example: 20 })
+    @IsInt()
+    @IsOptional()
+    benches?: number;
+
+    @ApiPropertyOptional({ description: 'Students per bench (default 2)', example: 2 })
+    @IsInt()
+    @IsOptional()
+    studentsPerBench?: number;
+
     @ApiPropertyOptional({ description: 'Available facilities', example: ['Projector', 'Whiteboard'], type: [String] })
     @IsArray()
     @IsString({ each: true })

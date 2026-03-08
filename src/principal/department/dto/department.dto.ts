@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, IsInt, IsBoolean } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsInt, IsBoolean, IsArray, ArrayNotEmpty } from 'class-validator';
 import { DepartmentType, DepartmentStatus, RoleInDepartment } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -119,4 +119,25 @@ export class UpdateDepartmentMemberDto {
     @IsOptional()
     @IsBoolean()
     isActive?: boolean;
+}
+
+export class AddDepartmentMembersBulkDto {
+    @ApiProperty({ example: [101, 102], description: 'Array of user IDs to add' })
+    @IsArray()
+    @ArrayNotEmpty()
+    @IsInt({ each: true })
+    userIds: number[];
+
+    @ApiPropertyOptional({ enum: RoleInDepartment, default: RoleInDepartment.TEACHER, description: 'Role of the members in the department' })
+    @IsOptional()
+    @IsEnum(RoleInDepartment)
+    role?: RoleInDepartment;
+}
+
+export class AssignSubjectsBulkDto {
+    @ApiProperty({ example: [1, 2, 3], description: 'Array of subject IDs to assign' })
+    @IsArray()
+    @ArrayNotEmpty()
+    @IsInt({ each: true })
+    subjectIds: number[];
 }

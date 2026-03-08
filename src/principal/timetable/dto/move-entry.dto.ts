@@ -11,7 +11,7 @@ export class MoveEntryDto {
     @IsEnum(DayOfWeek)
     targetDay: DayOfWeek;
 
-    @ApiProperty({ description: 'Target period ID' })
+    @ApiProperty({ description: 'Target time slot ID' })
     @IsInt()
-    targetPeriodId: number;
+    targetTimeSlotId: number;
 }

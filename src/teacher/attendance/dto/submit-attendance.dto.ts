@@ -25,25 +25,20 @@ class StudentAttendanceRecord {
 }
 
 export class SubmitAttendanceDto {
-    @ApiProperty({ description: 'Class ID' })
+    @ApiProperty({ description: 'Group ID' })
     @IsInt()
     @Min(1)
-    classId: number;
-
-    @ApiProperty({ description: 'Section ID' })
-    @IsInt()
-    @Min(1)
-    sectionId: number;
+    groupId: number;
 
     @ApiPropertyOptional({ description: 'Subject ID (Required if Period-wise)' })
     @IsOptional()
     @IsInt()
     subjectId?: number;
 
-    @ApiPropertyOptional({ description: 'Period ID (Required if Period-wise)' })
+    @ApiPropertyOptional({ description: 'Time Slot ID (Required if Period-wise)' })
     @IsOptional()
     @IsInt()
-    periodId?: number;
+    timeSlotId?: number;
 
     @ApiProperty({ description: 'Date of attendance' })
     @IsDateString()
@@ -55,3 +50,4 @@ export class SubmitAttendanceDto {
     @Type(() => StudentAttendanceRecord)
     records: StudentAttendanceRecord[];
 }
+

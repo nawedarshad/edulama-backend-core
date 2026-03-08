@@ -6,6 +6,7 @@ import { ResultService } from './result.service';
 import { AdmitCardService } from './admit-card.service';
 import { ReportCardService } from './report-card.service';
 import { ExamService } from './exam.service';
+import { ExamStatus } from '@prisma/client';
 
 @ApiTags('Student - Exam')
 @ApiBearerAuth()
@@ -30,7 +31,7 @@ export class ExamStudentController {
 
         // Actually, ExamService.findAll filters by type/status.
         // We should filter by "published" or "scheduled".
-        return this.examService.findAll(schoolId, academicYearId, { status: 'SCHEDULED' });
+        return this.examService.findAll(schoolId, academicYearId, { status: ExamStatus.PUBLISHED });
     }
 
     @Get(':examId/schedule')

@@ -39,7 +39,7 @@ export class FeaturesService {
         if (!moduleRef) throw new NotFoundException('Module not found');
 
         // Upsert SchoolModule
-        return this.prisma.schoolModule.upsert({
+        const result = await this.prisma.schoolModule.upsert({
             where: {
                 schoolId_moduleId: {
                     schoolId: dto.schoolId,
@@ -53,11 +53,19 @@ export class FeaturesService {
                 enabled: true,
             },
         });
+
+        // NOTE: Invalidation logic handled in auth token version or differently per latest schema.
+        await this.prisma.school.update({
+            where: { id: dto.schoolId },
+            data: { updatedAt: new Date() }, // Bump update to trigger hooks if any
+        });
+
+        return result;
     }
 
     async disableFeature(dto: ManageSchoolFeatureDto) {
         try {
-            return await this.prisma.schoolModule.update({
+            const result = await this.prisma.schoolModule.update({
                 where: {
                     schoolId_moduleId: {
                         schoolId: dto.schoolId,
@@ -66,6 +74,14 @@ export class FeaturesService {
                 },
                 data: { enabled: false },
             });
+
+            // NOTE: Invalidation logic handled in auth token version or differently per latest schema.
+            await this.prisma.school.update({
+                where: { id: dto.schoolId },
+                data: { updatedAt: new Date() }, // Bump update to trigger hooks if any
+            });
+
+            return result;
         } catch (error) {
             if (error.code === 'P2025') {
                 throw new NotFoundException('Feature was not assigned to this school');

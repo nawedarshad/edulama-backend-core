@@ -15,7 +15,15 @@ export class TeacherStudentController {
     ) { }
 
     private async getActiveAcademicYear(schoolId: number, headerYearId?: string): Promise<number> {
-        if (headerYearId) return parseInt(headerYearId);
+        if (headerYearId) {
+            const id = parseInt(headerYearId);
+            if (!isNaN(id)) {
+                const year = await this.prisma.academicYear.findFirst({
+                    where: { id, schoolId }
+                });
+                if (year) return id;
+            }
+        }
         const year = await this.prisma.academicYear.findFirst({
             where: { schoolId, status: 'ACTIVE' }
         });

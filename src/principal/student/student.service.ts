@@ -6,7 +6,7 @@ import {
     InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateStudentDto } from './dto/create-student.dto';
+import { CreateStudentDto, CreateGuardianDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { StudentFilterDto } from './dto/student-filter.dto';
 import { MarkStudentLeftDto } from './dto/mark-student-left.dto';
@@ -19,6 +19,57 @@ export class StudentService {
 
     constructor(private readonly prisma: PrismaService) { }
 
+    // ==========================
+    // PARENT LOOKUP
+    // ==========================
+
+    async lookupParentByContact(contact: string, schoolId: number) {
+        if (!contact) return { exists: false };
+
+        const normalizedContact = contact.toLowerCase().trim();
+        const type = contact.includes('@') ? 'EMAIL' : 'PHONE';
+
+        const identity = await this.prisma.authIdentity.findFirst({
+            where: { type, value: normalizedContact },
+            include: {
+                user: {
+                    include: {
+                        userSchools: {
+                            where: { schoolId },
+                            include: { primaryRole: true, roles: { include: { role: true } } },
+                        },
+                        parentProfile: true,
+                        authIdentities: true,
+                    },
+                },
+            },
+        }) as any;
+
+        if (!identity?.user) return { exists: false };
+
+        const user = identity.user;
+        const alreadyLinkedToSchool = user.userSchools.length > 0 && user.userSchools[0]?.isActive;
+
+        const phoneIdentity = user.authIdentities?.find((ai: any) => ai.type === 'PHONE');
+        const maskedPhone = phoneIdentity ? `******${phoneIdentity.value.slice(-4)}` : null;
+
+        return {
+            exists: true,
+            userId: user.id,
+            name: user.name,
+            contact: normalizedContact,
+            photo: user.photo ?? null,
+            alreadyLinkedToSchool,
+            roles: user.userSchools[0]?.primaryRole?.name || user.userSchools[0]?.roles?.[0]?.role?.name || null,
+            parentProfile: user.parentProfile,
+            maskedPhone,
+        };
+    }
+
+    // ==========================
+    // CREATE STUDENT
+    // ==========================
+
     async create(
         schoolId: number,
         academicYearId: number,
@@ -26,107 +77,99 @@ export class StudentService {
     ) {
         this.logger.log(`Creating student for school ${schoolId}, year ${academicYearId}: ${dto.fullName}`);
 
-        // 1. Check for duplicate Admission No in the same school & year
+        // 1. Check for duplicate Admission No
         const existingStudent = await this.prisma.studentProfile.findFirst({
-            where: {
-                schoolId,
-                academicYearId,
-                admissionNo: dto.admissionNo,
-            },
+            where: { schoolId, academicYearId, admissionNo: dto.admissionNo },
         });
-
         if (existingStudent) {
-            this.logger.warn(`Duplicate Admission No ${dto.admissionNo} in school ${schoolId}`);
-            throw new BadRequestException(
-                `Student with Admission No ${dto.admissionNo} already exists for this academic year.`,
-            );
+            throw new BadRequestException(`Student with Admission No ${dto.admissionNo} already exists for this academic year.`);
         }
 
-        // 2. Check for duplicate Parent Email (Strict check: New parent creation only)
-        // Verify if a parent with this email already exists in the system or school
-        // Assuming unique email per school for parents for simplicity or global uniqueness?
-        // Let's assume global uniqueness for AuthIdentity type EMAIL
-        const existingParentAuth = await this.prisma.authIdentity.findFirst({
-            where: {
-                schoolId,
-                type: 'EMAIL',
-                value: dto.parent.fatherEmail,
+        // 2. Valiation Checks
+        if (dto.dob) {
+            const dob = new Date(dto.dob);
+            const today = new Date();
+            let age = today.getFullYear() - dob.getFullYear();
+            const m = today.getMonth() - dob.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+                age--;
             }
-        });
+            if (age < 2 || age > 25) {
+                throw new BadRequestException('Student age must be between 2 and 25 years.');
+            }
+            if (dob > today) {
+                throw new BadRequestException('DOB cannot be in the future.');
+            }
+            if (dto.admissionDate) {
+                const admissionDate = new Date(dto.admissionDate);
+                if (admissionDate < dob) {
+                    throw new BadRequestException('Admission date cannot be before DOB.');
+                }
+                if (admissionDate > today) {
+                    throw new BadRequestException('Admission date cannot be in the future.');
+                }
+            }
+        }
 
-        if (existingParentAuth) {
-            this.logger.warn(`Duplicate Parent Email ${dto.parent.fatherEmail}`);
-            throw new BadRequestException(
-                `Parent with email ${dto.parent.fatherEmail} already exists.`,
-            );
+        const section = await this.prisma.section.findUnique({ where: { id: dto.sectionId } });
+        if (section && section.capacity) {
+            const currentStudents = await this.prisma.studentProfile.count({
+                where: { sectionId: dto.sectionId, isActive: true }
+            });
+            if (currentStudents >= section.capacity) {
+                throw new BadRequestException(`Section capacity (${section.capacity}) is full.`);
+            }
+        }
+
+        const fatherGuardian = dto.guardians?.find(g => g.relation === 'FATHER');
+        if (dto.dob && fatherGuardian?.phone) {
+            const duplicate = await this.prisma.studentProfile.findFirst({
+                where: {
+                    fullName: dto.fullName,
+                    dob: new Date(dto.dob),
+                    parents: {
+                        some: {
+                            parent: { fatherContact: fatherGuardian.phone }
+                        }
+                    }
+                }
+            });
+            if (duplicate) {
+                throw new BadRequestException('A student with the same name, DOB, and father contact already exists.');
+            }
         }
 
         // 3. Fetch Roles
-        const studentRole = await this.prisma.role.findUnique({ where: { name: 'STUDENT' } });
-        const parentRole = await this.prisma.role.findUnique({ where: { name: 'PARENT' } });
-
+        const [studentRole, parentRole] = await Promise.all([
+            this.prisma.role.findUnique({ where: { name: 'STUDENT' } }),
+            this.prisma.role.findUnique({ where: { name: 'PARENT' } }),
+        ]);
         if (!studentRole || !parentRole) {
-            this.logger.error('Roles STUDENT or PARENT not found in DB');
-            throw new BadRequestException(
-                "Roles 'STUDENT' and/or 'PARENT' not found. Please seed the database.",
-            );
+            throw new BadRequestException("Roles 'STUDENT' and/or 'PARENT' not found. Please seed the database.");
         }
 
-        // 4. Prepare Credentials
-        // Student:
-        // Username: FirstName + AdmissionNo (lowercase)
+        // 4. Prepare student credentials
         const firstName = dto.fullName.split(' ')[0].toLowerCase();
         const studentUsername = `${firstName}${dto.admissionNo}`;
-        // Password: DOB (DDMMYYYY)
         if (!dto.dob) throw new BadRequestException('Student DOB is required for password generation.');
 
         const dobDate = new Date(dto.dob);
-        const day = String(dobDate.getDate()).padStart(2, '0');
-        const month = String(dobDate.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-        const year = dobDate.getFullYear();
-
-        const studentPasswordRaw = `${day}${month}${year}`;
-
+        const studentPasswordRaw = [
+            String(dobDate.getDate()).padStart(2, '0'),
+            String(dobDate.getMonth() + 1).padStart(2, '0'),
+            dobDate.getFullYear(),
+        ].join('');
         const studentPasswordHash = await argon2.hash(studentPasswordRaw);
 
-        // Parent:
-        // Username: fatherEmail (handled by AuthIdentity type EMAIL)
-        const parentEmail = dto.parent.fatherEmail;
-        // Password: Student DOB
-        const parentPasswordHash = await argon2.hash(studentPasswordRaw); // Same password as student
-
-        // 5. Transactional Create
+        // 5. Transactional create
         try {
             const result = await this.prisma.$transaction(async (tx) => {
-                // =========================================
-                // A. CREATE STUDENT
-                // =========================================
 
-                // A1. Create Student User
-                const studentUser = await tx.user.create({
-                    data: {
-                        schoolId,
-                        roleId: studentRole.id,
-                        name: dto.fullName,
-                        photo: dto.photo,
-                        isActive: true,
-                        // Create Auth Identity for Username
-                        authIdentities: {
-                            create: {
-                                schoolId,
-                                type: 'USERNAME',
-                                value: studentUsername,
-                                secret: studentPasswordHash,
-                                verified: true, // Auto-verified for internal creation
-                            }
-                        }
-                    },
-                });
+                // ── A. STUDENT ──────────────────────────────────────────────
 
-                // A2. Create Student Profile
+                // A1. Create Student Profile (skipping login User creation)
                 const student = await tx.studentProfile.create({
                     data: {
-                        userId: studentUser.id,
                         schoolId,
                         academicYearId,
                         admissionNo: dto.admissionNo,
@@ -138,15 +181,14 @@ export class StudentService {
                         classId: dto.classId,
                         sectionId: dto.sectionId,
                         houseId: dto.houseId,
-
                         personalInfo: dto.personalInfo ? {
                             create: {
                                 ...dto.personalInfo,
-                                religion: dto.personalInfo.religion as any, // Cast to match Prisma Enum
+                                religion: dto.personalInfo.religion as any,
                                 bloodGroup: dto.personalInfo.bloodGroup as any,
                                 caste: dto.personalInfo.caste as any,
-                                category: dto.personalInfo.category as any
-                            }
+                                category: dto.personalInfo.category as any,
+                            },
                         } : undefined,
                         documents: dto.documents ? { create: dto.documents } : undefined,
                         previousEducation: dto.previousEducation ? { create: dto.previousEducation } : undefined,
@@ -154,75 +196,135 @@ export class StudentService {
                     },
                 });
 
-                // =========================================
-                // B. CREATE PARENT
-                // =========================================
+                // ── B. GUARDIANS (FAMILY) ─────────────────────────────────────────────
 
-                // B1. Create Parent User
-                // Use Father's name as primary name for the User account
-                const parentName = dto.parent.fatherName;
+                let familyUserId: number | null = null;
 
-                const parentUser = await tx.user.create({
-                    data: {
-                        schoolId,
-                        roleId: parentRole.id,
-                        name: parentName,
-                        isActive: true,
-                        // Create Auth Identity for Email
-                        authIdentities: {
-                            create: {
-                                schoolId,
-                                type: 'EMAIL',
-                                value: parentEmail,
-                                secret: parentPasswordHash,
-                                verified: true, // Assuming verifying email mostly for self-sign-up, let's mark verified
-                            }
-                        }
-                    },
-                });
+                // B1. Determine if any provided email/phone already belongs to a user
+                const normalizedPrimaryEmail = dto.primaryEmail?.toLowerCase().trim();
+                const queries: any[] = [];
+                if (normalizedPrimaryEmail) queries.push({ type: 'EMAIL', value: normalizedPrimaryEmail });
 
-                // B2. Create Parent Profile
-                const parentProfile = await tx.parentProfile.create({
-                    data: {
-                        userId: parentUser.id,
-                        // Map DTO fields
-                        fatherName: dto.parent.fatherName,
-                        fatherEmail: dto.parent.fatherEmail,
-                        fatherContact: dto.parent.fatherContact,
-                        fatherOccupation: dto.parent.fatherOccupation,
-                        motherName: dto.parent.motherName,
-                        motherEmail: dto.parent.motherEmail,
-                        motherContact: dto.parent.motherContact,
-                        motherOccupation: dto.parent.motherOccupation,
-                        guardianName: dto.parent.guardianName,
-                        guardianContact: dto.parent.guardianContact,
-                        guardianRelation: dto.parent.guardianRelation,
-                        emergencyContact: dto.parent.emergencyContact,
-                        annualIncome: dto.parent.annualIncome,
-                        permanentAddress: dto.parent.permanentAddress,
+                for (const guardian of dto.guardians ?? []) {
+                    if (guardian.phone) {
+                        queries.push({ type: 'PHONE', value: guardian.phone });
                     }
+                }
+
+                if (queries.length > 0) {
+                    const existingIdentity = await tx.authIdentity.findFirst({
+                        where: { OR: queries },
+                    });
+                    if (existingIdentity) {
+                        familyUserId = existingIdentity.userId;
+                    }
+                }
+
+                // B2. Create or Link User
+                let parentUser: any;
+                if (!familyUserId) {
+                    // new family user -> OTP first logic (no password, inactive until verification)
+                    parentUser = await tx.user.create({
+                        data: { name: dto.guardians?.[0]?.name || 'Parent', isActive: false },
+                    });
+                    familyUserId = parentUser.id;
+
+                    // Add primary email identity
+                    if (normalizedPrimaryEmail) {
+                        await tx.authIdentity.upsert({
+                            where: { type_value: { type: 'EMAIL', value: normalizedPrimaryEmail } },
+                            create: { userId: familyUserId!, type: 'EMAIL', value: normalizedPrimaryEmail, verified: true },
+                            update: {}
+                        });
+                    }
+
+                    // Add phone identities
+                    for (const guardian of dto.guardians ?? []) {
+                        if (guardian.phone) {
+                            await tx.authIdentity.upsert({
+                                where: { type_value: { type: 'PHONE', value: guardian.phone } },
+                                create: { userId: familyUserId!, type: 'PHONE', value: guardian.phone, verified: true },
+                                update: {}
+                            });
+                        }
+                    }
+                } else {
+                    parentUser = await tx.user.findUnique({ where: { id: familyUserId } });
+                }
+
+                // B3. Assign Role to School
+                const existingParentMembership = await tx.userSchool.findUnique({
+                    where: { userId_schoolId: { userId: familyUserId!, schoolId } },
+                });
+                if (!existingParentMembership) {
+                    const pm = await tx.userSchool.create({
+                        data: { userId: familyUserId!, schoolId, primaryRoleId: parentRole.id, isActive: true },
+                    });
+                    await tx.userSchoolRole.create({
+                        data: { userSchoolId: pm.id, roleId: parentRole.id },
+                    });
+                } else if (!existingParentMembership.isActive) {
+                    await tx.userSchool.update({
+                        where: { id: existingParentMembership.id },
+                        data: { isActive: true },
+                    });
+                }
+
+                // B4. Create or Update Family ParentProfile
+                const father = dto.guardians?.find(g => g.relation === 'FATHER');
+                const mother = dto.guardians?.find(g => g.relation === 'MOTHER');
+                const guardianOther = dto.guardians?.find(g => g.relation === 'GUARDIAN');
+
+                const profileData = {
+                    fatherName: father?.name,
+                    fatherContact: father?.phone,
+                    fatherOccupation: father?.occupation,
+                    motherName: mother?.name,
+                    motherContact: mother?.phone,
+                    motherOccupation: mother?.occupation,
+                    guardianName: guardianOther?.name,
+                    guardianContact: guardianOther?.phone,
+                    guardianRelation: guardianOther?.relation,
+                    primaryEmail: normalizedPrimaryEmail,
+                    emergencyContact: father?.phone || mother?.phone || guardianOther?.phone,
+                };
+
+                let parentProfile = await tx.parentProfile.findUnique({
+                    where: { userId: familyUserId! },
                 });
 
-                // =========================================
-                // C. LINK STUDENT AND PARENT
-                // =========================================
+                if (!parentProfile) {
+                    parentProfile = await tx.parentProfile.create({
+                        data: {
+                            userId: familyUserId!,
+                            ...profileData,
+                        },
+                    });
+                } else {
+                    parentProfile = await tx.parentProfile.update({
+                        where: { id: parentProfile.id },
+                        data: profileData,
+                    });
+                }
 
+                // B5. Link to Student
+                const primaryRelation = father ? 'FATHER' : (mother ? 'MOTHER' : 'GUARDIAN');
                 await tx.parentStudent.create({
                     data: {
                         parentId: parentProfile.id,
                         studentId: student.id,
-                        relation: 'FATHER', // Default/Primary relation
-                    }
+                        relation: primaryRelation,
+                    },
                 });
 
                 return {
                     studentId: student.id,
-                    parentId: parentProfile.id,
-                    username: studentUsername,
-                    message: 'Student and Parent profiles created successfully',
+                    parentProfileId: parentProfile.id,
+                    message: `Student and family linked successfully`,
                 };
             });
-            this.logger.log(`Student created successfully: ${result.studentId}`);
+
+            this.logger.log(`Student created: ${result.studentId}, familyId: ${result.parentProfileId}`);
             return result;
         } catch (error) {
             this.logger.error(`Failed to create student in school ${schoolId}`, error.stack);
@@ -247,6 +349,10 @@ export class StudentService {
             caste,
             category,
             religion,
+            houseId,
+            isActive,
+            isRTE,
+            isDisabled,
         } = filters;
 
         const skip = (page - 1) * limit;
@@ -254,19 +360,23 @@ export class StudentService {
         const where: Prisma.StudentProfileWhereInput = {
             schoolId,
             academicYearId,
-            // leftDate: null, // Removed to allow frontend to filter left students
             ...(classId && { classId }),
             ...(sectionId && { sectionId }),
+            ...(houseId && { houseId }),
+            ...(isActive === 'true' && { isActive: true }),
+            ...(isActive === 'false' && { isActive: false }),
             ...(admissionNo && { admissionNo: { contains: admissionNo } }), // Partial match
             ...(name && { fullName: { contains: name, mode: 'insensitive' } }), // Case insensitive match
             // Advanced Filters inside relations
-            ...(gender || caste || category || religion
+            ...(gender || caste || category || religion || isRTE !== undefined || isDisabled !== undefined
                 ? {
                     personalInfo: {
                         ...(gender ? { gender } : {}),
                         ...(caste ? { caste: caste as Caste } : {}),
                         ...(category ? { category: category as StudentCategory } : {}),
                         ...(religion ? { religion: religion as Religion } : {}),
+                        ...(isRTE === true ? { category: 'RTE' } : {}),
+                        ...(isDisabled !== undefined ? { isDisabled } : {}),
                     },
                 }
                 : {}),
@@ -412,13 +522,28 @@ export class StudentService {
         this.logger.log(`Deleting student ${id} in school ${schoolId}`);
         const student = await this.findOne(id, schoolId);
 
-        // We should delete the User to clean up identity?
+        // Soft delete: Set isActive false on Profile and UserSchool membership
         try {
-            const deleted = await this.prisma.user.delete({
-                where: { id: student.userId },
+            await this.prisma.$transaction(async (tx) => {
+                await tx.studentProfile.update({
+                    where: { id },
+                    data: { isActive: false },
+                });
+
+                if (student.userId) {
+                    await tx.userSchool.update({
+                        where: {
+                            userId_schoolId: {
+                                userId: student.userId,
+                                schoolId,
+                            }
+                        },
+                        data: { isActive: false },
+                    });
+                }
             });
-            this.logger.log(`Student deleted: ${id} (User: ${student.userId})`);
-            return deleted;
+            this.logger.log(`Student soft-deleted: ${id}`);
+            return { message: 'Student deleted successfully' };
         } catch (error) {
             this.logger.error(`Failed to delete student ${id}`, error.stack);
             throw new BadRequestException('Cannot delete student');
@@ -462,28 +587,32 @@ export class StudentService {
                     },
                 });
 
-                // 2. Deactivate Student User
-                await tx.user.update({
-                    where: { id: student.userId },
-                    data: { isActive: false },
-                });
+                // 2. Deactivate Student UserSchool Membership
+                if (student.userId) {
+                    await tx.userSchool.update({
+                        where: {
+                            userId_schoolId: {
+                                userId: student.userId,
+                                schoolId,
+                            }
+                        },
+                        data: { isActive: false },
+                    });
+                }
 
-                // 3. Deactivate Parents
-                // "When someone is marked left only they are marked inactive their parents should also be marked as inactive"
+                // 3. Deactivate Parents Membership
                 if (student.parents && student.parents.length > 0) {
                     for (const parentStudent of student.parents) {
                         const parentProfile = parentStudent.parent;
                         if (parentProfile && parentProfile.userId) {
-                            await tx.user.update({
-                                where: { id: parentProfile.userId },
+                            await tx.userSchool.update({
+                                where: {
+                                    userId_schoolId: {
+                                        userId: parentProfile.userId,
+                                        schoolId,
+                                    }
+                                },
                                 data: { isActive: false }
-                            });
-                            await tx.parentProfile.update({
-                                where: { id: parentProfile.id },
-                                // Logic for deactivating parent profile if such field existed, 
-                                // but typically User.isActive controls login access.
-                                // Assuming we only need to stop login.
-                                data: {}
                             });
                         }
                     }
@@ -504,7 +633,22 @@ export class StudentService {
         const baseWhere = { schoolId, academicYearId, leftDate: null };
 
         // 1. Total Count
-        const totalStudents = await this.prisma.studentProfile.count({ where: baseWhere });
+        const [totalStudents, totalInactive, totalDisabled] = await Promise.all([
+            this.prisma.studentProfile.count({ where: baseWhere }),
+            this.prisma.studentProfile.count({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    NOT: { leftDate: null }
+                }
+            }),
+            this.prisma.studentPersonalInfo.count({
+                where: {
+                    student: { schoolId, academicYearId },
+                    isDisabled: true
+                }
+            })
+        ]);
 
         // 2. Gender Distribution
         const genderDistribution = await this.prisma.studentPersonalInfo.groupBy({
@@ -574,6 +718,8 @@ export class StudentService {
 
         return {
             totalStudents,
+            totalInactive,
+            totalDisabled,
             genderDistribution,
             classStats,
             categoryDistribution,

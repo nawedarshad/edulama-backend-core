@@ -7,12 +7,15 @@ import {
     CreateCertificationDto,
     CreateTrainingDto,
     CreateResponsibilityDto,
-    CreateAppraisalDto
+    CreateAppraisalDto,
+    UpsertSalaryConfigDto,
+    UpsertBankAccountDto
 } from './dto/create-teacher.dto';
 import { BulkCreateTeacherDto } from './dto/bulk-create-teacher.dto';
 import { UpdateTeacherDto } from './dto/update-teacher.dto';
+import { TeacherFilterDto } from './dto/teacher-filter.dto';
 import * as argon2 from 'argon2';
-import { Prisma } from 'src/generated/prisma';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class TeacherService {
@@ -24,10 +27,10 @@ export class TeacherService {
         // 1. Check for duplicate email
         const existingIdentity = await this.prisma.authIdentity.findFirst({
             where: {
-                schoolId,
                 type: 'EMAIL',
                 value: dto.email,
             },
+            include: { user: true }
         });
 
         if (existingIdentity) {
@@ -67,28 +70,66 @@ export class TeacherService {
         // 3. Transaction
         try {
             return await this.prisma.$transaction(async (tx) => {
-                // A. Create User
-                const user = await tx.user.create({
-                    data: {
-                        schoolId,
-                        name: dto.name,
-                        roleId: teacherRole.id,
-                        isActive: true,
-                        photo: dto.photo || null, // Map photo if available
+                // A. Find or Create Global User
+                let user = null as any;
+
+                if (!user) {
+                    user = await tx.user.create({
+                        data: {
+                            name: dto.name,
+                            isActive: true,
+                            photo: dto.photo || null,
+                        },
+                    });
+                }
+
+                // B. Link to School via UserSchool
+                const userSchool = await tx.userSchool.upsert({
+                    where: {
+                        userId_schoolId: {
+                            userId: user.id,
+                            schoolId,
+                        }
                     },
+                    create: {
+                        userId: user.id,
+                        schoolId,
+                        primaryRoleId: teacherRole.id,
+                        isActive: true,
+                    },
+                    update: {
+                        primaryRoleId: teacherRole.id,
+                        isActive: true,
+                    }
                 });
 
-                // B. Create AuthIdentity
-                await tx.authIdentity.create({
-                    data: {
-                        schoolId,
-                        userId: user.id,
-                        type: 'EMAIL',
-                        value: dto.email,
-                        secret: hashedPassword,
-                        verified: true,
+                // C. Assign Role in multi-role junction
+                await tx.userSchoolRole.upsert({
+                    where: {
+                        userSchoolId_roleId: {
+                            userSchoolId: userSchool.id,
+                            roleId: teacherRole.id,
+                        }
                     },
+                    create: {
+                        userSchoolId: userSchool.id,
+                        roleId: teacherRole.id,
+                    },
+                    update: {}
                 });
+
+                // C. Create/Link AuthIdentity if missing
+                if (!existingIdentity) {
+                    await tx.authIdentity.create({
+                        data: {
+                            userId: user.id,
+                            type: 'EMAIL',
+                            value: dto.email,
+                            secret: hashedPassword,
+                            verified: true,
+                        },
+                    });
+                }
 
                 // C. Create TeacherProfile
                 const teacherProfile = await tx.teacherProfile.create({
@@ -96,7 +137,9 @@ export class TeacherService {
                         userId: user.id,
                         schoolId,
                         joinDate: dto.joinDate ? new Date(dto.joinDate) : new Date(),
-                        empCode: dto.empCode,
+                        empCode: (dto.empCode?.trim().toUpperCase())!,
+                        employmentType: dto.employmentType || 'FULL_TIME',
+                        department: dto.department,
                         preferredStages: dto.preferredStages,
                     },
                 });
@@ -108,7 +151,7 @@ export class TeacherService {
                         fullName: dto.name,
                         email: dto.email,
                         phone: dto.phone,
-                        gender: dto.gender,
+                        gender: dto.gender?.toUpperCase(),
                         dateOfBirth: new Date(dto.dateOfBirth),
                         addressLine1: dto.addressLine1,
                         addressLine2: dto.addressLine2,
@@ -263,43 +306,158 @@ export class TeacherService {
         };
     }
 
-    async findAll(schoolId: number) {
-        const teachers = await this.prisma.teacherProfile.findMany({
-            where: {
-                schoolId,
-                isActive: true,
-                user: {
-                    role: {
-                        name: 'TEACHER',
-                    },
-                },
-            },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        name: true,
-                        photo: true,
-                        authIdentities: {
-                            where: { type: 'EMAIL' },
-                            select: { value: true },
+    async findAll(schoolId: number, query: TeacherFilterDto) {
+        const { search, employmentType, gender, isActive, page = 1, limit = 10 } = query;
+        const skip = (page - 1) * limit;
+        const where: any = { schoolId };
+
+        if (isActive !== undefined && isActive !== 'all') {
+            where.isActive = isActive === 'true';
+        }
+
+        if (employmentType) {
+            where.employmentType = employmentType;
+        }
+
+        if (gender || search) {
+            where.personalInfo = {
+                ...(gender ? { gender } : {}),
+                ...(search ? {
+                    OR: [
+                        { fullName: { contains: search, mode: 'insensitive' } },
+                        { email: { contains: search, mode: 'insensitive' } },
+                        { phone: { contains: search, mode: 'insensitive' } },
+                    ]
+                } : {})
+            };
+        }
+
+        const [teachers, total] = await Promise.all([
+            this.prisma.teacherProfile.findMany({
+                where,
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            photo: true,
+                            authIdentities: {
+                                where: { type: 'EMAIL' },
+                                select: { value: true },
+                            },
                         },
                     },
+                    personalInfo: true,
+                    qualifications: true,
                 },
-                personalInfo: true,
-                qualifications: true,
-                // Optional: Include assignments if needed
-            },
-            orderBy: { createdAt: 'desc' },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit,
+            }),
+            this.prisma.teacherProfile.count({ where }),
+        ]);
+
+        return {
+            data: (teachers as any[]).map((teacher) => ({
+                ...teacher,
+                user: {
+                    ...teacher.user,
+                    email: teacher.user.authIdentities?.[0]?.value || '',
+                },
+            })),
+            total,
+            page,
+            limit,
+        };
+    }
+
+    async getAnalytics(schoolId: number) {
+        const now = new Date();
+        const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+        const currentDay = days[now.getDay()];
+        const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+
+        // Get active academic year first
+        const activeYear = await this.prisma.academicYear.findFirst({
+            where: { schoolId, status: 'ACTIVE' },
+            select: { id: true }
         });
 
-        return teachers.map((teacher) => ({
-            ...teacher,
-            user: {
-                ...teacher.user,
-                email: teacher.user.authIdentities?.[0]?.value || '',
-            },
-        }));
+        const [
+            totalTeachers,
+            inactiveTeachers,
+            allActiveTeachers,
+            teachingNowEntries,
+        ] = await Promise.all([
+            this.prisma.teacherProfile.count({ where: { schoolId } }),
+            this.prisma.teacherProfile.count({ where: { schoolId, isActive: false } }),
+            this.prisma.teacherProfile.findMany({
+                where: { schoolId, isActive: true },
+                orderBy: { joinDate: 'desc' },
+                take: 50, // Increased to support a more complete availability list
+                include: {
+                    user: { select: { name: true, photo: true } },
+                    personalInfo: { select: { fullName: true, phone: true, email: true } }
+                }
+            }),
+            activeYear ? this.prisma.timetableEntry.findMany({
+                where: {
+                    schoolId,
+                    academicYearId: activeYear.id,
+                    day: currentDay as any,
+                    timeSlot: {
+                        startTime: { lte: currentTime },
+                        endTime: { gte: currentTime }
+                    },
+                    status: 'PUBLISHED'
+                },
+                select: {
+                    teacherId: true,
+                    group: { select: { name: true } },
+                    subject: { select: { name: true } }
+                }
+            }) : Promise.resolve([])
+        ]);
+
+        const activeTeachers = totalTeachers - inactiveTeachers;
+
+        const teachingMap = new Map();
+        teachingNowEntries.forEach((e: any) => {
+            if (e.teacherId && e.group && e.subject) {
+                teachingMap.set(e.teacherId, {
+                    currentClass: `${e.group.name} (${e.subject.name})`
+                });
+            }
+        });
+
+        const availabilityList = allActiveTeachers.map(t => {
+            const teaching = teachingMap.get(t.id);
+            return {
+                id: t.id,
+                name: t.user?.name || t.personalInfo?.fullName || 'Unknown',
+                photo: t.user?.photo,
+                status: teaching ? 'teaching' : 'free',
+                currentClass: teaching?.currentClass,
+            };
+        });
+
+        return {
+            totalTeachers,
+            activeTeachers,
+            inactiveTeachers,
+            presentToday: activeTeachers, // Integration with StaffAttendance still needed for accurate attendance
+            onLeaveToday: 0,
+            substitutionsNeeded: 0,
+            classesWithoutTeachers: 0,
+            pendingEvaluations: 0,
+            pendingDisciplinaryCases: 0,
+            upcomingRetirements: 0,
+            contractExpirations: 0,
+            recentlyJoinedCount: availabilityList.length,
+            recentlyJoined: availabilityList, // This now doubles as the availability list
+            trainingDeadlines: 0,
+            certificatesExpiring: 0,
+        };
     }
 
     async findOne(schoolId: number, id: number) {
@@ -318,6 +476,10 @@ export class TeacherService {
                 trainings: true,
                 additionalRoles: true,
                 appraisals: true,
+                salaryConfigs: { where: { isActive: true }, take: 1 },
+                payrolls: { orderBy: { generatedAt: 'desc' }, take: 12 },
+                teacherBankAccounts: true,
+                documents: true,
             },
         });
 
@@ -334,8 +496,10 @@ export class TeacherService {
                 await tx.teacherProfile.update({
                     where: { id: staff.id },
                     data: {
+                        employmentType: dto.employmentType || 'FULL_TIME',
+                        department: dto.department,
                         joinDate: dto.joinDate ? new Date(dto.joinDate) : undefined,
-                        empCode: dto.empCode,
+                        empCode: dto.empCode?.trim().toUpperCase(),
                         preferredStages: dto.preferredStages,
                     },
                 });
@@ -355,9 +519,21 @@ export class TeacherService {
                         data: {
                             fullName: dto.name, // sync
                             phone: dto.phone,
-                            gender: dto.gender,
+                            email: dto.email,
+                            gender: dto.gender?.toUpperCase(),
                             dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
                             addressLine1: dto.addressLine1,
+                            addressLine2: dto.addressLine2,
+                            city: dto.city,
+                            state: dto.state,
+                            country: dto.country,
+                            postalCode: dto.postalCode,
+                            alternatePhone: dto.alternatePhone,
+                            emergencyContactName: dto.emergencyContactName,
+                            emergencyContactPhone: dto.emergencyContactPhone,
+                            emergencyRelation: dto.emergencyRelation,
+                            nationalIdMasked: dto.nationalIdMasked,
+                            taxIdMasked: dto.taxIdMasked,
                         },
                     });
                 } else {
@@ -515,14 +691,19 @@ export class TeacherService {
         const staff: any = await this.findOne(schoolId, id);
 
         try {
-            // Soft delete: Set isActive false on Profile and User
+            // Soft delete: Set isActive false on Profile and UserSchool membership
             await this.prisma.$transaction([
                 this.prisma.teacherProfile.update({
                     where: { id: staff.id },
                     data: { isActive: false },
                 }),
-                this.prisma.user.update({
-                    where: { id: staff.userId },
+                this.prisma.userSchool.update({
+                    where: {
+                        userId_schoolId: {
+                            userId: staff.userId,
+                            schoolId,
+                        }
+                    },
                     data: { isActive: false },
                 }),
             ]);
@@ -660,6 +841,84 @@ export class TeacherService {
         return this.prisma.teacherPreferredSubject.delete({
             where: {
                 teacherId_subjectId: { teacherId, subjectId }
+            }
+        });
+    }
+
+    async getPayrollInfo(schoolId: number, teacherId: number) {
+        await this.findOne(schoolId, teacherId);
+        const [salaryConfig, payrollHistory] = await Promise.all([
+            this.prisma.salaryConfig.findFirst({
+                where: { teacherId, schoolId, isActive: true }
+            }),
+            this.prisma.payroll.findMany({
+                where: { teacherId, schoolId },
+                orderBy: { generatedAt: 'desc' },
+                take: 12
+            })
+        ]);
+        return { salaryConfig, payrollHistory };
+    }
+
+    async upsertSalaryConfig(schoolId: number, teacherId: number, dto: UpsertSalaryConfigDto) {
+        await this.findOne(schoolId, teacherId);
+
+        // Deactivate existing
+        await this.prisma.salaryConfig.updateMany({
+            where: { teacherId, schoolId, isActive: true },
+            data: { isActive: false }
+        });
+
+        // Create new
+        return this.prisma.salaryConfig.create({
+            data: {
+                teacherId,
+                schoolId,
+                basicSalary: dto.basicSalary,
+                allowance: dto.allowance || 0,
+                deduction: dto.deduction || 0,
+                effectiveFrom: new Date(),
+                isActive: true
+            }
+        });
+    }
+
+    async upsertBankAccount(schoolId: number, teacherId: number, dto: UpsertBankAccountDto) {
+        await this.findOne(schoolId, teacherId);
+
+        if (dto.id) {
+            return this.prisma.teacherBankAccount.update({
+                where: { id: dto.id },
+                data: {
+                    accountHolderName: dto.accountHolderName,
+                    bankName: dto.bankName,
+                    accountNumber: dto.accountNumber,
+                    ifscCode: dto.ifscCode
+                }
+            });
+        }
+
+        // Try to find existing bank account to update if id not provided but one exists for teacher
+        const existing = await this.prisma.teacherBankAccount.findFirst({ where: { teacherId } });
+        if (existing) {
+            return this.prisma.teacherBankAccount.update({
+                where: { id: existing.id },
+                data: {
+                    accountHolderName: dto.accountHolderName,
+                    bankName: dto.bankName,
+                    accountNumber: dto.accountNumber,
+                    ifscCode: dto.ifscCode
+                }
+            });
+        }
+
+        return this.prisma.teacherBankAccount.create({
+            data: {
+                teacherId,
+                accountHolderName: dto.accountHolderName,
+                bankName: dto.bankName,
+                accountNumber: dto.accountNumber,
+                ifscCode: dto.ifscCode
             }
         });
     }

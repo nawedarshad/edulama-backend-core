@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TeacherStudentModule } from './student/student.module';
 import { TeacherClassModule } from './class/class.module';
 import { TeacherSectionModule } from './section/section.module';
-import { TeacherAttendanceModule } from './attendance/attendance.module';
+import { TeacherAttendanceModule } from './attendance/teacher-attendance.module';
 import { TeacherLeaveModule } from './leave/leave.module';
 import { StudentLeaveApprovalModule } from './student-leave-approval/student-leave-approval.module';
 import { TeacherTimetableModule } from './timetable/teacher-timetable.module';
@@ -15,9 +15,9 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { TeacherAnnouncementModule } from './announcement/teacher-announcement.module';
 import { TeacherProfileModule } from './profile/teacher-profile.module';
-
 import { DashboardModule } from './dashboard/dashboard.module';
 import { TeacherSchedulerModule } from './scheduler/scheduler.module';
+import { TeacherHomeworkModule } from './homework/teacher-homework.module';
 
 @Module({
     imports: [
@@ -38,6 +38,7 @@ import { TeacherSchedulerModule } from './scheduler/scheduler.module';
         TeacherProfileModule,
         TeacherSchedulerModule,
         DashboardModule,
+        TeacherHomeworkModule,
     ],
     controllers: [TeacherCalendarController],
 })

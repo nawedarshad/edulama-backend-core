@@ -13,6 +13,7 @@ export class PrincipalDiaryService {
             page = 1,
             limit = 10,
             teacherId,
+            groupId,
             classId,
             sectionId,
             subjectId,
@@ -29,6 +30,7 @@ export class PrincipalDiaryService {
 
         if (academicYearId) where.academicYearId = academicYearId;
         if (teacherId) where.teacherId = teacherId;
+        if (groupId) where.groupId = groupId;
         if (classId) where.classId = classId;
         if (sectionId) where.sectionId = sectionId;
         if (subjectId) where.subjectId = subjectId;
@@ -50,6 +52,7 @@ export class PrincipalDiaryService {
                 orderBy: { lessonDate: 'desc' },
                 include: {
                     teacher: { select: { id: true, user: { select: { name: true } } } },
+                    group: { select: { id: true, name: true } },
                     class: { select: { id: true, name: true } },
                     section: { select: { id: true, name: true } },
                     subject: { select: { id: true, name: true, code: true } },
@@ -76,12 +79,11 @@ export class PrincipalDiaryService {
 
     async create(schoolId: number, academicYearId: number, dto: CreatePrincipalDiaryDto, userId: number) {
         // 1. Find the Class Subject configuration
-        const classSubject = await this.prisma.classSubject.findFirst({
+        const classSubject = await this.prisma.subjectAssignment.findFirst({
             where: {
                 schoolId,
                 academicYearId,
-                classId: dto.classId,
-                sectionId: dto.sectionId,
+                groupId: dto.groupId,
                 subjectId: dto.subjectId,
             },
         });
@@ -99,6 +101,7 @@ export class PrincipalDiaryService {
             create: {
                 userId,
                 schoolId,
+                empCode: `SYSTEM-USER-${userId}`,
                 // Defaulting other required fields if any (schema allows defaults for most)
             },
         });
@@ -108,8 +111,9 @@ export class PrincipalDiaryService {
             data: {
                 schoolId,
                 academicYearId,
-                classId: dto.classId,
-                sectionId: dto.sectionId,
+                groupId: dto.groupId,
+                classId: dto.classId ?? null,
+                sectionId: dto.sectionId ?? null,
                 subjectId: dto.subjectId,
                 teacherId: principalTeacherProfile.id, // Assigned to Principal
                 classSubjectId: classSubject.id,
@@ -143,6 +147,7 @@ export class PrincipalDiaryService {
             where: { id, schoolId },
             include: {
                 teacher: { select: { id: true, user: { select: { name: true } } } },
+                group: { select: { id: true, name: true } },
                 class: { select: { id: true, name: true } },
                 section: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true } },

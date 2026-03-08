@@ -29,17 +29,17 @@ export class SchedulerController {
 
     @ApiOperation({ summary: 'Check if a schedule already exists' })
     @Post('check-existing')
-    async checkExisting(@Request() req, @Body() body: { classId: number, sectionId: number, subjectId: number }) {
+    async checkExisting(@Request() req, @Body() body: { groupId: number, subjectId: number }) {
         const schoolId = req.user.schoolId;
         const academicYearId = req.user.academicYearId;
-        return this.schedulerService.checkExisting(schoolId, academicYearId, body.classId, body.sectionId, body.subjectId);
+        return this.schedulerService.checkExisting(schoolId, academicYearId, body.groupId, body.subjectId);
     }
 
     @ApiOperation({ summary: 'Load existing schedule for editing' })
     @Post('load-existing')
-    async loadExisting(@Request() req, @Body() body: { classId: number, sectionId: number, subjectId: number }) {
+    async loadExisting(@Request() req, @Body() body: { groupId: number, subjectId: number }) {
         const schoolId = req.user.schoolId;
         const academicYearId = req.user.academicYearId;
-        return this.schedulerService.loadExistingSchedule(schoolId, academicYearId, body.classId, body.sectionId, body.subjectId);
+        return this.schedulerService.loadExistingSchedule(schoolId, academicYearId, body.groupId, body.subjectId);
     }
 }

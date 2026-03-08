@@ -4,6 +4,7 @@ import { TeacherAuthGuard } from '../common/guards/teacher.guard';
 import { ExamAttendanceService } from './exam-attendance.service';
 import { ExamService } from './exam.service';
 import { ResultService, BulkResultDto } from './result.service';
+import { ExamStatus } from '@prisma/client';
 
 @ApiTags('Teacher - Exam')
 @ApiBearerAuth()
@@ -24,7 +25,7 @@ export class ExamTeacherController {
         // We'll return exams that have schedules mapped to the subjects this teacher teaches,
         // or just all active exams for simplicity as filtering by subject mapping logic can be complex.
         // Returning all scheduled exams for the school and academic year.
-        return this.examService.findAll(schoolId, academicYearId, { status: 'SCHEDULED' });
+        return this.examService.findAll(schoolId, academicYearId, { status: ExamStatus.PUBLISHED });
     }
 
     @Get(':examId/schedules')

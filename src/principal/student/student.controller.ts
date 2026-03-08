@@ -34,7 +34,15 @@ export class StudentController {
     ) { }
 
     private async getActiveAcademicYear(schoolId: number, headerYearId?: string): Promise<number> {
-        if (headerYearId) return parseInt(headerYearId);
+        if (headerYearId) {
+            const id = parseInt(headerYearId);
+            if (!isNaN(id)) {
+                const year = await this.prisma.academicYear.findFirst({
+                    where: { id, schoolId }
+                });
+                if (year) return id;
+            }
+        }
 
         // Default to ACTIVE
         const year = await this.prisma.academicYear.findFirst({
@@ -83,6 +91,18 @@ export class StudentController {
     ) {
         const yearId = await this.getActiveAcademicYear(req.user.schoolId, yearIdHeader);
         return this.studentService.getAnalytics(req.user.schoolId, yearId);
+    }
+
+    @Get('lookup-parent')
+    @UseGuards(PrincipalAuthGuard)
+    @ApiOperation({ summary: 'Look up if a user with this email or phone already exists in the system (for smart parent linking)' })
+    @ApiQuery({ name: 'contact', required: true, description: 'The email address or phone number to look up' })
+    @ApiResponse({ status: 200, description: 'Returns user info if found, or { exists: false } if not.' })
+    lookupParent(
+        @Request() req,
+        @Query('contact') contact: string,
+    ) {
+        return this.studentService.lookupParentByContact(contact, req.user.schoolId);
     }
 
     @Get(':id')

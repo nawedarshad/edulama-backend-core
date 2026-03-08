@@ -3,8 +3,8 @@ import { SubstitutionService } from './substitution.service';
 import { CreateSubstitutionDto } from './dto/create-substitution.dto';
 import { UpdateSubstitutionDto } from './dto/update-substitution.dto';
 import { GetUser } from '../../common/decorators/get-user.decorator';
+import type { AuthUserPayload } from '../../common/decorators/get-user.decorator';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
-import type { User } from '@prisma/client';
 
 import { RequiredModule } from '../../common/decorators/required-module.decorator';
 import { ModuleGuard } from '../../common/guards/module.guard';
@@ -17,7 +17,7 @@ export class SubstitutionController {
 
     @Get('absent-teachers')
     getAbsentTeachers(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('date') date: string,
     ) {
@@ -26,7 +26,7 @@ export class SubstitutionController {
 
     @Get('impacted-classes')
     getImpactedClasses(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('date') date: string,
     ) {
@@ -35,7 +35,7 @@ export class SubstitutionController {
 
     @Get('available-teachers')
     getAvailableTeachers(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('date') date: string,
         @Query('periodId', ParseIntPipe) periodId: number,
@@ -45,7 +45,7 @@ export class SubstitutionController {
 
     @Post()
     createSubstitution(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Body() dto: CreateSubstitutionDto,
     ) {
@@ -54,7 +54,7 @@ export class SubstitutionController {
 
     @Patch(':id')
     updateSubstitution(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: UpdateSubstitutionDto,
     ) {
@@ -63,7 +63,7 @@ export class SubstitutionController {
 
     @Get('teacher-history')
     getTeacherHistory(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('teacherId', ParseIntPipe) teacherId: number,
         @Query('date') date?: string,
@@ -73,7 +73,7 @@ export class SubstitutionController {
 
     @Get()
     getSubstitutions(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('date') date?: string,
     ) {
@@ -82,7 +82,7 @@ export class SubstitutionController {
 
     @Delete(':id')
     deleteSubstitution(
-        @GetUser() user: User,
+        @GetUser() user: AuthUserPayload,
         @Param('id', ParseIntPipe) id: number,
     ) {
         return this.service.deleteSubstitution(user.schoolId, id);

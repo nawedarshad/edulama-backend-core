@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, ParseIntPipe, UseGuards, Req, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CalendarService } from './calendar.service';
-import { SetWorkingPatternDto, CreateCalendarExceptionDto, UpdateCalendarExceptionDto } from './dto/calendar.dto';
+import { SetWorkingPatternDto, CreateCalendarExceptionDto, UpdateCalendarExceptionDto, CloneCalendarDto } from './dto/calendar.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 
 import { RequiredModule } from '../../common/decorators/required-module.decorator';
@@ -138,8 +138,15 @@ export class CalendarController {
         calendar.days.forEach(day => {
             if (day.type !== 'WORKING') {
                 ics.push('BEGIN:VEVENT');
-                ics.push(`DTSTART;VALUE=DATE:${day.date.replace(/-/g, '')}`);
-                ics.push(`DTEND;VALUE=DATE:${day.date.replace(/-/g, '')}`);
+                const startDateStr = day.date.replace(/-/g, '');
+                // DTEND for all-day events must be the next day
+                const startDate = new Date(`${day.date}T00:00:00`);
+                const endDate = new Date(startDate);
+                endDate.setDate(startDate.getDate() + 1);
+                const endDateStr = endDate.toISOString().split('T')[0].replace(/-/g, '');
+
+                ics.push(`DTSTART;VALUE=DATE:${startDateStr}`);
+                ics.push(`DTEND;VALUE=DATE:${endDateStr}`);
                 ics.push(`SUMMARY:${day.title || day.type}`);
                 ics.push('END:VEVENT');
             }
@@ -155,8 +162,15 @@ export class CalendarController {
     @Get('validate')
     validateDate(
         @Req() req,
-        @Query('date') dateString: string
+        @Query('date') dateString: string,
+        @Query('classId') classId?: number
     ) {
-        return this.service.validateDate(req.user.schoolId, new Date(dateString));
+        return this.service.validateDate(req.user.schoolId, new Date(dateString), classId ? Number(classId) : undefined);
+    }
+
+    @ApiOperation({ summary: 'Clone Calendar', description: 'Copy patterns and exceptions from one year to another.' })
+    @Post('clone')
+    cloneCalendar(@Req() req, @Body() dto: CloneCalendarDto) {
+        return this.service.cloneCalendar(req.user.schoolId, dto);
     }
 }

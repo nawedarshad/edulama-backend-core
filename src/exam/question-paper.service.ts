@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { IsString, IsNotEmpty, IsOptional, IsNumber, IsEnum, IsJSON } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
-import { QuestionType } from '@prisma/client';
+import { QuestionType, ExamCategory } from '@prisma/client';
 
 // DTOs
 export class CreateQuestionPaperDto {
@@ -24,6 +24,22 @@ export class CreateQuestionPaperDto {
     @IsString()
     @IsOptional()
     solutionUrl?: string;
+
+    @IsString()
+    @IsOptional()
+    code?: string;
+
+    @IsString()
+    @IsOptional()
+    paperSet?: string;
+
+    @IsEnum(ExamCategory)
+    @IsOptional()
+    examinerType?: ExamCategory;
+
+    @IsString()
+    @IsOptional()
+    syllabus?: string;
 
     @IsNumber()
     @IsOptional()
@@ -87,6 +103,22 @@ export class UpdateQuestionPaperDto {
     @IsString()
     @IsOptional()
     solutionUrl?: string;
+
+    @IsString()
+    @IsOptional()
+    code?: string;
+
+    @IsString()
+    @IsOptional()
+    paperSet?: string;
+
+    @IsEnum(ExamCategory)
+    @IsOptional()
+    examinerType?: ExamCategory;
+
+    @IsString()
+    @IsOptional()
+    syllabus?: string;
 
     @IsNumber()
     @IsOptional()

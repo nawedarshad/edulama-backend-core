@@ -92,7 +92,7 @@ export class ReportCardService {
         return {
             schoolName: exam.school.name,
             examName: exam.name,
-            studentName: student.user.name,
+            studentName: student.user?.name || student.fullName,
             rollNumber: student.rollNo,
             class: student.class.name,
             section: student.section?.name,

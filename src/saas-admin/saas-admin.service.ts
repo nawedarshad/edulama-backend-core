@@ -83,7 +83,7 @@ export class SaaSAdminService {
 
             // Get School Admin Role
             let adminRole = await tx.role.findUnique({
-                where: { name: 'SCHOOL_ADMIN' },
+                where: { name: 'PRINCIPAL' },
             });
 
             // Fallback if role doesn't exist (bootstrapping issue)
@@ -91,37 +91,85 @@ export class SaaSAdminService {
                 // Log warning or handle?
             }
 
-            // Create Admin User
-            const user = await tx.user.create({
-                data: {
-                    schoolId: school.id,
-                    name: data.adminName,
-                    roleId: adminRole ? adminRole.id : 1, // Fallback
-                },
+            // Create or Find Admin User
+            const existingIdentity = await tx.authIdentity.findFirst({
+                where: { type: 'EMAIL', value: data.adminEmail }
             });
 
-            // Assign Role explicitly
-            if (adminRole) {
-                await tx.userRole.create({
+            let user = existingIdentity ? await tx.user.findUnique({ where: { id: existingIdentity.userId } }) : null;
+
+            if (!user) {
+                user = await tx.user.create({
+                    data: {
+                        name: data.adminName,
+                        isActive: true,
+                    },
+                });
+
+                // Create Auth Identity (Email)
+                const hashedPassword = await argon2.hash(data.initialPassword || 'password123');
+
+                await tx.authIdentity.create({
                     data: {
                         userId: user.id,
-                        roleId: adminRole.id
-                    }
+                        type: 'EMAIL',
+                        value: data.adminEmail,
+                        secret: hashedPassword,
+                        verified: true,
+                    },
                 });
             }
 
-            // Create Auth Identity (Email)
-            const hashedPassword = await argon2.hash(data.initialPassword || 'password123');
+            const createdAdminRoleId = adminRole ? adminRole.id : 1;
 
-            await tx.authIdentity.create({
-                data: {
+            // Link Admin to School
+            const userSchool = await tx.userSchool.upsert({
+                where: {
+                    userId_schoolId: {
+                        userId: user.id,
+                        schoolId: school.id,
+                    }
+                },
+                create: {
                     userId: user.id,
                     schoolId: school.id,
-                    type: 'EMAIL',
-                    value: data.adminEmail,
-                    secret: hashedPassword,
-                    verified: true,
+                    primaryRoleId: createdAdminRoleId,
+                    isActive: true,
                 },
+                update: {
+                    primaryRoleId: createdAdminRoleId,
+                    isActive: true,
+                }
+            });
+
+            // Ensure the role is assigned in the multi-role junction table (per school)
+            await tx.userSchoolRole.upsert({
+                where: {
+                    userSchoolId_roleId: {
+                        userSchoolId: userSchool.id,
+                        roleId: createdAdminRoleId,
+                    }
+                },
+                create: {
+                    userSchoolId: userSchool.id,
+                    roleId: createdAdminRoleId,
+                },
+                update: {}
+            });
+
+            // Ensure the role is assigned in the multi-role junction table
+            await tx.userRole.upsert({
+                where: {
+                    userId_roleId: {
+                        userId: user.id,
+                        roleId: createdAdminRoleId,
+                    }
+                },
+                create: {
+                    userId: user.id,
+                    roleId: createdAdminRoleId,
+                },
+                update: {} // No update needed if exists
             });
 
             // --- CREATE ACADEMIC YEAR ---
@@ -188,6 +236,25 @@ export class SaaSAdminService {
                 isActive: data.isActive,
                 type: data.type,
             } as any,
+        });
+    }
+
+    async deleteSchool(id: number) {
+        // Find if school exists
+        const school = await this.prisma.school.findUnique({
+            where: { id },
+        });
+
+        if (!school) {
+            throw new BadRequestException(`School with ID ${id} not found`);
+        }
+
+        // Delete the school
+        // Assuming Prisma onDelete: Cascade is properly set up in the schema
+        // for relations like UserSchool, SchoolModule, StudentProfile, etc.
+        // If not, we would need to manually delete dependencies in a transaction here.
+        return this.prisma.school.delete({
+            where: { id },
         });
     }
 
