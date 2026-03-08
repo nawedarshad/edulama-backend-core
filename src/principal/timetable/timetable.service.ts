@@ -49,17 +49,20 @@ export class TimetableService {
     // PERIODS & SLOTS
     // ----------------------------------------------------------------
     async createTimePeriod(schoolId: number, academicYearId: number, dto: CreateTimePeriodDto) {
-        await this.checkYearLock(schoolId, academicYearId);
-        return this.periods.createTimePeriod(schoolId, academicYearId, dto);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        await this.checkYearLock(schoolId, resolvedYearId);
+        return this.periods.createTimePeriod(schoolId, resolvedYearId, dto);
     }
 
     async findAllTimePeriods(schoolId: number, academicYearId: number) {
-        return this.periods.findAllTimePeriods(schoolId, academicYearId);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.periods.findAllTimePeriods(schoolId, resolvedYearId);
     }
 
     async updateTimePeriod(schoolId: number, academicYearId: number, id: number, dto: CreateTimePeriodDto) {
-        await this.checkYearLock(schoolId, academicYearId);
-        return this.periods.updateTimePeriod(schoolId, academicYearId, id, dto);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        await this.checkYearLock(schoolId, resolvedYearId);
+        return this.periods.updateTimePeriod(schoolId, resolvedYearId, id, dto);
     }
 
     async deleteTimePeriod(schoolId: number, id: number) {
@@ -71,16 +74,18 @@ export class TimetableService {
     }
 
     async syncTimeSlots(schoolId: number, academicYearId: number, periodId: number, days: DayOfWeek[]) {
-        await this.checkYearLock(schoolId, academicYearId);
-        return this.periods.syncTimeSlots(schoolId, academicYearId, periodId, days);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        await this.checkYearLock(schoolId, resolvedYearId);
+        return this.periods.syncTimeSlots(schoolId, resolvedYearId, periodId, days);
     }
 
     // ----------------------------------------------------------------
     // ENTRIES
     // ----------------------------------------------------------------
     async createEntry(schoolId: number, academicYearId: number, dto: CreateTimetableEntryDto) {
-        await this.checkYearLock(schoolId, academicYearId);
-        return this.entries.createEntry(schoolId, academicYearId, dto);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        await this.checkYearLock(schoolId, resolvedYearId);
+        return this.entries.createEntry(schoolId, resolvedYearId, dto);
     }
 
     async deleteEntry(schoolId: number, id: number) {
@@ -100,52 +105,63 @@ export class TimetableService {
     // AVAILABILITY & INVENTORY
     // ----------------------------------------------------------------
     async findFreeTeachers(schoolId: number, academicYearId: number, day: DayOfWeek, timeSlotId: number, subjectId?: number) {
-        return this.inventory.findFreeTeachers(schoolId, academicYearId, day, timeSlotId, subjectId);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.inventory.findFreeTeachers(schoolId, resolvedYearId, day, timeSlotId, subjectId);
     }
 
     async findFreeRooms(schoolId: number, academicYearId: number, day: DayOfWeek, timeSlotId: number) {
-        return this.inventory.findFreeRooms(schoolId, academicYearId, day, timeSlotId);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.inventory.findFreeRooms(schoolId, resolvedYearId, day, timeSlotId);
     }
 
     async checkAvailability(schoolId: number, academicYearId: number, dto: CreateTimetableEntryDto) {
-        return this.inventory.checkAvailability(schoolId, academicYearId, dto);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.inventory.checkAvailability(schoolId, resolvedYearId, dto);
     }
 
     // ----------------------------------------------------------------
     // CONTEXT & UI DATA
     // ----------------------------------------------------------------
     async getTimetableForGroup(schoolId: number, academicYearId: number, groupId: number) {
-        return this.context.getTimetableForGroup(schoolId, academicYearId, groupId);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.context.getTimetableForGroup(schoolId, resolvedYearId, groupId);
     }
 
     async getTimetableForRoom(schoolId: number, academicYearId: number, roomId: number) {
-        return this.context.getTimetableForRoom(schoolId, academicYearId, roomId);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.context.getTimetableForRoom(schoolId, resolvedYearId, roomId);
     }
 
     async getTimetableForTeacher(schoolId: number, academicYearId: number, teacherId: number) {
-        return this.context.getTimetableForTeacher(schoolId, academicYearId, teacherId);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.context.getTimetableForTeacher(schoolId, resolvedYearId, teacherId);
     }
 
     async getTimetableContext(schoolId: number, academicYearId: number, groupId: number, modules: string[] = []) {
-        return this.context.getTimetableContext(schoolId, academicYearId, groupId, modules);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.context.getTimetableContext(schoolId, resolvedYearId, groupId, modules);
     }
 
     // ----------------------------------------------------------------
     // ANALYTICS
     // ----------------------------------------------------------------
     async getAnalyticsData(schoolId: number, academicYearId: number) {
-        return this.analytics.getAnalyticsData(schoolId, academicYearId);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.analytics.getAnalyticsData(schoolId, resolvedYearId);
     }
 
     async getComprehensiveAnalytics(schoolId: number, academicYearId: number) {
-        return this.analytics.getComprehensiveAnalytics(schoolId, academicYearId);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.analytics.getComprehensiveAnalytics(schoolId, resolvedYearId);
     }
 
     async getTeacherWorkloadAnalytics(schoolId: number, academicYearId: number) {
-        return this.analytics.getTeacherWorkloadAnalytics(schoolId, academicYearId);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.analytics.getTeacherWorkloadAnalytics(schoolId, resolvedYearId);
     }
 
     async getGroupSubjectDistribution(schoolId: number, academicYearId: number, groupId: number) {
-        return this.analytics.getGroupSubjectDistribution(schoolId, academicYearId, groupId);
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        return this.analytics.getGroupSubjectDistribution(schoolId, resolvedYearId, groupId);
     }
 }

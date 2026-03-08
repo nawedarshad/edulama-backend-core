@@ -322,7 +322,11 @@ export class CalendarService {
             meta: {
                 count: days.length,
                 range: { start: startStr, end: endStr },
-                academicYearId: fallbackYear?.id || null
+                academicYearId: fallbackYear?.id || null,
+                academicYear: fallbackYear ? {
+                    startDate: fallbackYear.startDate.toISOString(),
+                    endDate: fallbackYear.endDate.toISOString()
+                } : null
             }
         };
     }
