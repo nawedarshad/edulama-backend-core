@@ -39,6 +39,30 @@ export class TeacherSubjectService {
                 group: {
                     select: {
                         id: true,
+                        name: true,
+                        class: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        },
+                        section: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                },
+                class: {
+                    select: {
+                        id: true,
+                        name: true
+                    }
+                },
+                section: {
+                    select: {
+                        id: true,
                         name: true
                     }
                 }
@@ -48,6 +72,12 @@ export class TeacherSubjectService {
                 { section: { name: 'asc' } }
             ]
         });
+
+        // DEBUG: log first assignment to see what fields are populated
+        if (assignments.length > 0) {
+            const first = assignments[0];
+            this.logger.debug(`[SubjectAssignment Debug] id=${first.id} classId=${first.classId} sectionId=${first.sectionId} groupId=${first.groupId} class=${JSON.stringify(first.class)} section=${JSON.stringify(first.section)} group=${JSON.stringify(first.group)}`);
+        }
 
         return Promise.all(assignments.map(async (a) => {
             const studentCount = await this.prisma.studentProfile.count({
@@ -90,6 +120,8 @@ export class TeacherSubjectService {
                 assignmentId: a.id,
                 subject: a.subject,
                 group: a.group,
+                class: a.class,
+                section: a.section,
                 periodsPerWeek: a.periodsPerWeek,
                 studentCount,
                 syllabusProgress: {
@@ -118,6 +150,8 @@ export class TeacherSubjectService {
             include: {
                 subject: true,
                 group: true,
+                class: true,
+                section: true,
                 academicYear: true
             }
         });
@@ -169,6 +203,8 @@ export class TeacherSubjectService {
                 assignmentId: assignment.id,
                 subject: assignment.subject,
                 group: assignment.group,
+                class: assignment.class,
+                section: assignment.section,
                 periodsPerWeek: assignment.periodsPerWeek
             },
             syllabi,
