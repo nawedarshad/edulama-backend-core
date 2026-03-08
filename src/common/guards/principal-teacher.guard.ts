@@ -53,6 +53,11 @@ export class PrincipalOrTeacherGuard implements CanActivate {
                 throw new UnauthorizedException('Insufficient permissions: Required PRINCIPAL or TEACHER role');
             }
 
+            // Ensure compatibility: map 'sub' to 'id' if 'id' is missing
+            if (user.sub && !user.id) {
+                user.id = user.sub;
+            }
+
             // Attach user to request for further use if needed
             request.user = user;
 
