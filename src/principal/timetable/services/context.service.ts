@@ -69,7 +69,7 @@ export class TimetableContextService {
         const scheduleId = group.scheduleId || group.class?.scheduleId;
 
         // 2. Fetch context data (Optimized with specific selections)
-        const [periods, subjects, teachers, rooms] = await Promise.all([
+        const [periods, subjects, teachers, rooms, entries, assignments] = await Promise.all([
             this.prisma.timePeriod.findMany({
                 where: { schoolId, academicYearId, scheduleId },
                 include: { timeSlots: true },
@@ -87,7 +87,32 @@ export class TimetableContextService {
                 where: { schoolId, status: 'ACTIVE' },
                 select: { id: true, name: true }
             }),
+            this.prisma.timetableEntry.findMany({
+                where: { schoolId, academicYearId, groupId },
+                include: {
+                    subject: { select: { name: true, code: true } },
+                    teacher: { select: { user: { select: { name: true } } } },
+                    room: { select: { name: true } },
+                    timeSlot: true,
+                },
+            }),
+            this.prisma.subjectAssignment.findMany({
+                where: { schoolId, academicYearId, groupId, isActive: true },
+                include: {
+                    subject: { select: { id: true, name: true, code: true, color: true } },
+                    teacher: { select: { id: true, user: { select: { name: true } } } },
+                }
+            })
         ]);
+
+        const allocations = assignments.map((a: any) => ({
+            subjectId: a.subject.id,
+            subjectName: a.subject.name,
+            subjectCode: a.subject.code,
+            teacherId: a.teacher?.id,
+            teacherName: a.teacher?.user?.name,
+            color: a.subject.color,
+        }));
 
         return {
             periods,
@@ -95,6 +120,8 @@ export class TimetableContextService {
             teachers,
             rooms,
             scheduleId,
+            entries,
+            allocations,
         };
     }
 }
