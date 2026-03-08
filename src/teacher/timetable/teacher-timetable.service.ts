@@ -9,8 +9,10 @@ export class TeacherTimetableService {
 
     private getDayOfWeek(dateString: string): DayOfWeek {
         const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
-        const date = new Date(dateString);
-        return days[date.getUTCDay()] as DayOfWeek;
+        // Parse "YYYY-MM-DD" explicitly to avoid UTC shift
+        const [year, month, day] = dateString.split('-').map(Number);
+        const date = new Date(year, month - 1, day);
+        return days[date.getDay()] as DayOfWeek;
     }
 
     private mapEntry(entry: any) {
@@ -130,7 +132,7 @@ export class TeacherTimetableService {
                 academicYearId: resolvedYearId,
                 day: dayOfWeek
             },
-            orderBy: { startTime: 'asc' }
+            orderBy: { period: { startTime: 'asc' } }
         });
 
         // 0.5 Fetch Assignments for ID mapping
