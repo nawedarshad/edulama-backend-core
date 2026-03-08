@@ -35,7 +35,11 @@ export class TeacherProfileService {
                     include: { subject: true }
                 },
                 ClassHeadTeacher: {
-                    include: { class: true }
+                    include: {
+                        class: {
+                            include: { sections: true }
+                        }
+                    }
                 },
                 SectionTeacher: {
                     include: {
