@@ -332,6 +332,117 @@ export class StudentService {
         }
     }
 
+    // ==========================
+    // GENERATE CREDENTIALS
+    // ==========================
+
+    async generateCredentials(
+        schoolId: number,
+        academicYearId: number,
+        classId?: number,
+        sectionId?: number,
+    ) {
+        this.logger.log(`Generating credentials for school ${schoolId}, year ${academicYearId}`);
+
+        // 1. Fetch STUDENT role
+        const studentRole = await this.prisma.role.findUnique({ where: { name: 'STUDENT' } });
+        if (!studentRole) {
+            throw new BadRequestException("Role 'STUDENT' not found. Please seed the database.");
+        }
+
+        // 2. Find all students missing a userId
+        const where: any = {
+            schoolId,
+            academicYearId,
+            isActive: true,
+            userId: null,
+        };
+        if (classId) where.classId = classId;
+        if (sectionId) where.sectionId = sectionId;
+
+        const students = await this.prisma.studentProfile.findMany({
+            where,
+            select: {
+                id: true,
+                fullName: true,
+                admissionNo: true,
+                dob: true,
+            },
+        });
+
+        this.logger.log(`Found ${students.length} students missing credentials`);
+
+        let provisioned = 0;
+        let skipped = 0;
+        const errors: string[] = [];
+
+        for (const student of students) {
+            try {
+                if (!student.dob) {
+                    skipped++;
+                    errors.push(`${student.fullName} (${student.admissionNo}): skipped — no DOB set`);
+                    continue;
+                }
+
+                const firstName = student.fullName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+                const username = `${firstName}${student.admissionNo.toLowerCase()}`;
+
+                const dobDate = new Date(student.dob);
+                const passwordRaw = [
+                    String(dobDate.getDate()).padStart(2, '0'),
+                    String(dobDate.getMonth() + 1).padStart(2, '0'),
+                    dobDate.getFullYear(),
+                ].join('');
+                const passwordHash = await argon2.hash(passwordRaw);
+
+                await this.prisma.$transaction(async (tx) => {
+                    // Create User
+                    const user = await tx.user.create({
+                        data: {
+                            name: student.fullName,
+                            isActive: true,
+                        },
+                    });
+
+                    // Create AuthIdentity (USERNAME) — password stored in secret field
+                    await tx.authIdentity.upsert({
+                        where: { type_value: { type: 'USERNAME', value: username } },
+                        create: { userId: user.id, type: 'USERNAME', value: username, secret: passwordHash, verified: true },
+                        update: {},
+                    });
+
+                    // Create UserSchool membership
+                    const membership = await tx.userSchool.create({
+                        data: { userId: user.id, schoolId, primaryRoleId: studentRole.id, isActive: true },
+                    });
+                    await tx.userSchoolRole.create({
+                        data: { userSchoolId: membership.id, roleId: studentRole.id },
+                    });
+
+                    // Link user to StudentProfile
+                    await tx.studentProfile.update({
+                        where: { id: student.id },
+                        data: { userId: user.id },
+                    });
+                });
+
+                provisioned++;
+                this.logger.log(`Credentials generated for student ${student.admissionNo} — username: ${username}`);
+            } catch (err: any) {
+                this.logger.error(`Failed for student ${student.admissionNo}: ${err.message}`);
+                errors.push(`${student.fullName} (${student.admissionNo}): ${err.message}`);
+            }
+        }
+
+        return {
+            total: students.length,
+            provisioned,
+            skipped,
+            errors,
+            message: `${provisioned} credential(s) generated, ${skipped} skipped.`,
+        };
+    }
+
     async findAll(
         schoolId: number,
         academicYearId: number,

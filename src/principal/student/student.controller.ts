@@ -68,6 +68,26 @@ export class StudentController {
         return this.studentService.create(req.user.schoolId, yearId, dto);
     }
 
+    @Post('generate-credentials')
+    @UseGuards(PrincipalAuthGuard)
+    @ApiOperation({ summary: 'Generate login credentials for all students missing a user account' })
+    @ApiResponse({ status: 200, description: 'Summary of credentials generated.' })
+    async generateCredentials(
+        @Request() req,
+        @Headers('x-academic-year-id') yearIdHeader?: string,
+        @Query('classId') classId?: string,
+        @Query('sectionId') sectionId?: string,
+    ) {
+        const yearId = await this.getActiveAcademicYear(req.user.schoolId, yearIdHeader);
+        return this.studentService.generateCredentials(
+            req.user.schoolId,
+            yearId,
+            classId ? parseInt(classId) : undefined,
+            sectionId ? parseInt(sectionId) : undefined,
+        );
+    }
+
+
     @Get()
     @UseGuards(PrincipalAuthGuard) // Read: Principal + Teacher
     @ApiOperation({ summary: 'Get all students with filters' })
