@@ -95,7 +95,7 @@ export class DashboardService {
             include: {
                 group: { select: { name: true } },
                 subject: { select: { name: true, code: true } },
-                timeSlot: { select: { startTime: true, endTime: true, period: { select: { name: true } } } }
+                timeSlot: { select: { startTime: true, endTime: true, period: { select: { name: true, startTime: true, endTime: true } } } }
             }
         });
 
@@ -116,7 +116,7 @@ export class DashboardService {
                         id: true,
                         startTime: true,
                         endTime: true,
-                        period: { select: { id: true, name: true, type: true } }
+                        period: { select: { id: true, name: true, type: true, startTime: true, endTime: true } }
                     }
                 },
                 room: { select: { name: true } }
