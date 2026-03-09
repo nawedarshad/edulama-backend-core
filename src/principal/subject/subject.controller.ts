@@ -15,6 +15,16 @@ export class SubjectController {
     constructor(private readonly subjectService: SubjectService) { }
 
     // ===================================================
+    // SYLLABUS
+    // ===================================================
+
+    @ApiOperation({ summary: 'Get full syllabus tree for the school' })
+    @Get('syllabus/all')
+    getAllSyllabus(@Request() req) {
+        return this.subjectService.getAllSyllabus(req.user.schoolId);
+    }
+
+    // ===================================================
     // STATS & EXPORTS
     // ===================================================
 
@@ -36,15 +46,6 @@ export class SubjectController {
         return this.subjectService.exportClassSubjects(req.user.schoolId);
     }
 
-    // ===================================================
-    // SYLLABUS
-    // ===================================================
-
-    @ApiOperation({ summary: 'Get full syllabus tree for the school' })
-    @Get('syllabus/all')
-    getAllSyllabus(@Request() req) {
-        return this.subjectService.getAllSyllabus(req.user.schoolId);
-    }
 
     // ===================================================
     // CATEGORIES
