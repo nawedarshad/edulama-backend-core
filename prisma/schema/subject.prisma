@@ -98,9 +98,30 @@ model SubjectAssignment {
   subject      Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   teacher      TeacherProfile? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   school       School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  academicYear AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  academicYear  AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  syllabusFiles SyllabusFile[]
 
   @@unique([schoolId, academicYearId, groupId, subjectId])
   @@unique([schoolId, academicYearId, classId, sectionId, subjectId])
   @@index([teacherId])
+}
+
+//-------------------------------------------------------------
+// SYLLABUS FILE (HOMEWORK module schools — PDF/image uploads)
+//-------------------------------------------------------------
+model SyllabusFile {
+  id                  Int    @id @default(autoincrement())
+  schoolId            Int
+  subjectAssignmentId Int
+  fileName            String
+  fileUrl             String
+  mimeType            String
+  fileSize            Int?
+
+  uploadedAt DateTime @default(now())
+
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  subjectAssignment SubjectAssignment @relation(fields: [subjectAssignmentId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, subjectAssignmentId])
 }

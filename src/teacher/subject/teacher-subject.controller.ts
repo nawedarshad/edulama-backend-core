@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Request, ParseIntPipe, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, Request, ParseIntPipe, Delete, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { TeacherSubjectService } from './teacher-subject.service';
 import { UserAuthGuard } from '../../common/guards/user.guard';
@@ -71,5 +72,37 @@ export class TeacherSubjectController {
     ) {
         // NestJS explicitly uses @Delete for HTTP DELETE
         return this.subjectService.deleteSyllabus(req.user.schoolId, req.user.id, id, syllabusId);
+    }
+
+    // ─────────────────────────────────────────────
+    // SYLLABUS FILES (HOMEWORK Module PDF/Images)
+    // ─────────────────────────────────────────────
+
+    @Get(':id/syllabus-files')
+    @ApiOperation({ summary: 'Get all uploaded syllabus files for a subject' })
+    getSyllabusFiles(@Request() req, @Param('id', ParseIntPipe) id: number) {
+        return this.subjectService.getSyllabusFiles(req.user.schoolId, req.user.id, id);
+    }
+
+    @Post(':id/syllabus-files')
+    @UseInterceptors(FileInterceptor('file'))
+    @ApiOperation({ summary: 'Upload a syllabus file (PDF/Image)' })
+    uploadSyllabusFile(
+        @Request() req,
+        @Param('id', ParseIntPipe) id: number,
+        @UploadedFile() file: any
+    ) {
+        if (!file) throw new BadRequestException('No file provided');
+        return this.subjectService.uploadSyllabusFile(req.user.schoolId, req.user.id, id, file);
+    }
+
+    @Delete(':id/syllabus-files/:fileId')
+    @ApiOperation({ summary: 'Delete a syllabus file' })
+    deleteSyllabusFile(
+        @Request() req,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('fileId', ParseIntPipe) fileId: number
+    ) {
+        return this.subjectService.deleteSyllabusFile(req.user.schoolId, req.user.id, id, fileId);
     }
 }

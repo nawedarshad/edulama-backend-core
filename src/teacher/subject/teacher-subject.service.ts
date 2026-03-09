@@ -1,6 +1,9 @@
 import { Injectable, NotFoundException, Logger, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateSyllabusDto } from './dto/create-syllabus.dto';
+import * as fs from 'fs';
+import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class TeacherSubjectService {
@@ -415,5 +418,99 @@ export class TeacherSubjectService {
         return this.prisma.syllabus.delete({
             where: { id: syllabusId }
         });
+    }
+
+    // ─────────────────────────────────────────────
+    // SYLLABUS FILES (HOMEWORK Module PDF/Images)
+    // ─────────────────────────────────────────────
+
+    async getSyllabusFiles(schoolId: number, userId: number, assignmentId: number) {
+        const assignment = await this.prisma.subjectAssignment.findFirst({
+            where: { id: assignmentId, schoolId }
+        });
+
+        if (!assignment) throw new NotFoundException('Assignment not found');
+
+        return this.prisma.syllabusFile.findMany({
+            where: { schoolId, subjectAssignmentId: assignmentId },
+            orderBy: { uploadedAt: 'desc' }
+        });
+    }
+
+    async uploadSyllabusFile(schoolId: number, userId: number, assignmentId: number, file: any) {
+        const teacher = await this.prisma.teacherProfile.findUnique({
+            where: { userId },
+            select: { id: true }
+        });
+        if (!teacher) throw new ForbiddenException('Teacher profile not found');
+
+        const assignment = await this.prisma.subjectAssignment.findFirst({
+            where: { id: assignmentId, schoolId, teacherId: teacher.id }
+        });
+        if (!assignment) throw new ForbiddenException('Assignment not accessible');
+
+        // Save file to disk
+        const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'syllabus');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+
+        const ext = path.extname(file.originalname);
+        const fileName = `${uuidv4()}${ext}`;
+        const filePath = path.join(uploadDir, fileName);
+        fs.writeFileSync(filePath, file.buffer);
+
+        const fileUrl = `/uploads/syllabus/${fileName}`;
+
+        return this.prisma.syllabusFile.create({
+            data: {
+                schoolId,
+                subjectAssignmentId: assignmentId,
+                fileName: file.originalname,
+                fileUrl,
+                mimeType: file.mimetype,
+                fileSize: file.size,
+            }
+        });
+    }
+
+    async deleteSyllabusFile(schoolId: number, userId: number, assignmentId: number, fileId: number) {
+        const teacher = await this.prisma.teacherProfile.findUnique({
+            where: { userId },
+            select: { id: true }
+        });
+        if (!teacher) throw new ForbiddenException('Teacher profile not found');
+
+        const assignment = await this.prisma.subjectAssignment.findFirst({
+            where: { id: assignmentId, schoolId, teacherId: teacher.id }
+        });
+        if (!assignment) throw new ForbiddenException('Assignment not accessible');
+
+        const existingFile = await this.prisma.syllabusFile.findFirst({
+            where: {
+                id: fileId,
+                subjectAssignmentId: assignmentId,
+                schoolId
+            }
+        });
+
+        if (!existingFile) throw new NotFoundException('Syllabus file not found');
+
+        // Delete from DB first
+        await this.prisma.syllabusFile.delete({
+            where: { id: fileId }
+        });
+
+        // Try to delete physical file
+        try {
+            const filePath = path.join(process.cwd(), 'public', existingFile.fileUrl);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        } catch (e) {
+            this.logger.warn(`Failed to delete physical file: ${existingFile.fileUrl}`, e);
+        }
+
+        return { success: true };
     }
 }
