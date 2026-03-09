@@ -37,6 +37,16 @@ export class SubjectController {
     }
 
     // ===================================================
+    // SYLLABUS
+    // ===================================================
+
+    @ApiOperation({ summary: 'Get full syllabus tree for the school' })
+    @Get('syllabus/all')
+    getAllSyllabus(@Request() req) {
+        return this.subjectService.getAllSyllabus(req.user.schoolId);
+    }
+
+    // ===================================================
     // CATEGORIES
     // ===================================================
 

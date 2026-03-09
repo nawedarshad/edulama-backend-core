@@ -29,6 +29,7 @@ import { PublicInquiryController } from './principal/inquiry/public-inquiry.cont
 import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health/health.controller';
 import { FileUploadModule } from './common/file-upload/file-upload.module';
+import { PublicSchoolModule } from './public-school/public-school.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { FileUploadModule } from './common/file-upload/file-upload.module';
     InquiryModule,
     AuthModule,
     FileUploadModule,
+    PublicSchoolModule,
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],

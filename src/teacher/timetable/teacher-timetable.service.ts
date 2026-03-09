@@ -347,7 +347,7 @@ export class TeacherTimetableService {
             }
         });
 
-        const result = {};
+        const result: Record<string, any[]> = {};
         const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 
         for (const dateObj of days) {

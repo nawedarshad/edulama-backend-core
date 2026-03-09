@@ -385,7 +385,7 @@ export class TeacherSubjectService {
                 orderIndex: dto.orderIndex,
                 learningOutcomes: dto.learningOutcomes,
                 estimatedHours: dto.estimatedHours,
-                status: dto.status,
+                status: dto.status as keyof typeof import('@prisma/client').SyllabusStatus | undefined,
                 type: dto.type,
                 isCompleted: dto.status === 'COMPLETED' ? true : (dto.status ? false : existingSyllabus.isCompleted)
             }

@@ -244,7 +244,7 @@ export class SubjectService {
     }
 
     // ==================================================================
-    // 3. STATS
+    // 3. STATS & SYLLABUS
     // ==================================================================
 
     async getStats(schoolId: number) {
@@ -264,6 +264,107 @@ export class SubjectService {
             totalSubjects,
             assignedSubjects,
             categoryStats: categoryCounts
+        };
+    }
+
+    async getAllSyllabus(schoolId: number) {
+        this.logger.log(`[School ${schoolId}] Fetching full syllabus tree`);
+        const academicYear = await this.getActiveAcademicYear(schoolId);
+
+        // 1. Check if school uses HOMEWORK module
+        const school = await this.prisma.school.findUnique({
+            where: { id: schoolId },
+            include: { schoolModules: { include: { module: true } } }
+        });
+
+        const usesHomeworkModule = school?.schoolModules.some(
+            sm => sm.enabled && sm.module.key === 'HOMEWORK'
+        ) || false;
+
+        // 2. Find all classes and their active subjects/assignments
+        const classes: any[] = await this.prisma.class.findMany({
+            where: { schoolId },
+            include: {
+                sections: {
+                    include: {
+                        SubjectAssignment: {
+                            where: { academicYearId: academicYear.id },
+                            include: {
+                                subject: {
+                                    include: {
+                                        syllabi: {
+                                            where: {
+                                                academicYearId: academicYear.id,
+                                                parentId: null // top level units
+                                            },
+                                            orderBy: { orderIndex: 'asc' },
+                                            include: {
+                                                children: {
+                                                    orderBy: { orderIndex: 'asc' },
+                                                    include: {
+                                                        children: { orderBy: { orderIndex: 'asc' } }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                teacher: {
+                                    include: { user: true }
+                                },
+                                // For HOMEWORK schools
+                                syllabusFiles: true
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: {
+                name: 'asc'
+            }
+        });
+
+        // 3. Format the response data for the frontend
+        const formattedClasses = classes.map(cls => ({
+            id: cls.id,
+            name: cls.name,
+            sections: cls.sections.map(sec => ({
+                id: sec.id,
+                name: sec.name,
+                subjects: sec.SubjectAssignment.map(assignment => ({
+                    id: assignment.subject.id,
+                    name: assignment.subject.name,
+                    teacherName: assignment.teacher?.user?.name || 'Unassigned',
+                    syllabusText: assignment.subject.syllabi.filter(u => (!u.classId || u.classId === cls.id)).map(unit => ({
+                        id: unit.id,
+                        title: unit.title,
+                        chapters: unit.children.map(chapter => ({
+                            id: chapter.id,
+                            title: chapter.title,
+                            topics: chapter.children.map(topic => ({
+                                id: topic.id,
+                                title: topic.title,
+                                isCompleted: topic.isCompleted
+                            }))
+                        }))
+                    })),
+                    syllabusFiles: assignment.syllabusFiles.map(file => ({
+                        id: file.id,
+                        fileName: file.fileName,
+                        fileUrl: file.fileUrl,
+                        mimeType: file.mimeType,
+                        fileSize: file.fileSize,
+                        createdAt: file.createdAt
+                    }))
+                }))
+            }))
+        }));
+
+        return {
+            schoolName: school?.name || 'School',
+            academicYear: academicYear.name,
+            usesHomeworkModule,
+            classes: formattedClasses
         };
     }
 
