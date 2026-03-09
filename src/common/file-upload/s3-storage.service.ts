@@ -21,7 +21,7 @@ export class S3StorageService {
         this.bucketName = this.configService.get<string>('R2_BUCKET_NAME', 'edulama');
 
         // The public serving URL provided by the user
-        this.publicUrl = 'https://bhvhvh.r2.cloudflarestorage.com/edulama';
+        this.publicUrl = `https://${accountId}.r2.cloudflarestorage.com/edulama`;
 
         if (!accountId || !accessKeyId || !secretAccessKey) {
             this.logger.warn('S3 credentials not fully configured in environment variables.');
