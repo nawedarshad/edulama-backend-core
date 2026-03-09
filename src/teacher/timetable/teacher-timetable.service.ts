@@ -101,15 +101,25 @@ export class TeacherTimetableService {
             ]
         });
 
-        // Group by day
+        // Group by day and sort numerically within each day
         const grouped = entries.reduce((acc, entry) => {
             if (!acc[entry.day]) acc[entry.day] = [];
             acc[entry.day].push(entry);
             return acc;
         }, {} as Record<string, typeof entries>);
 
+        const parseMins = (time: string) => {
+            if (!time) return 0;
+            const [h, m] = time.trim().split(' ')[0].split(':').map(Number);
+            return (h || 0) * 60 + (m || 0);
+        };
+
         return Object.keys(grouped).reduce((acc, day) => {
-            acc[day] = grouped[day].map(e => this.mapEntry(e));
+            // Sort each day's entries numerically by start time
+            const dayEntries = grouped[day].sort((a, b) =>
+                parseMins(a.timeSlot?.startTime) - parseMins(b.timeSlot?.startTime)
+            );
+            acc[day] = dayEntries.map(e => this.mapEntry(e));
             return acc;
         }, {} as any);
     }
@@ -217,10 +227,15 @@ export class TeacherTimetableService {
             }
         }
 
-        // 7. Sort by period start time
-        return result.sort((a: any, b: any) =>
-            (a.period?.startTime || '').localeCompare(b.period?.startTime || ''),
-        );
+        // 7. Sort by period start time numerically
+        return result.sort((a: any, b: any) => {
+            const parseMins = (time: string) => {
+                if (!time) return 0;
+                const [h, m] = time.trim().split(' ')[0].split(':').map(Number);
+                return (h || 0) * 60 + (m || 0);
+            };
+            return parseMins(a.period?.startTime) - parseMins(b.period?.startTime);
+        });
     }
 
     async getSubstitutions(schoolId: number, userId: number, academicYearId?: number) {
@@ -356,11 +371,13 @@ export class TeacherTimetableService {
                 }));
 
             const combined = [...dailyEntries, ...dailySubs].map(e => this.mapEntry(e)).sort((a: any, b: any) => {
-                const timeA = a.period?.startTime || '00:00';
-                const timeB = b.period?.startTime || '00:00';
-                return timeA.localeCompare(timeB);
+                const parseMins = (time: string) => {
+                    if (!time) return 0;
+                    const [h, m] = time.trim().split(' ')[0].split(':').map(Number);
+                    return (h || 0) * 60 + (m || 0);
+                };
+                return parseMins(a.period?.startTime) - parseMins(b.period?.startTime);
             });
-
             result[dateStr] = combined;
         }
 
