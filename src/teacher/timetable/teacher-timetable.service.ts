@@ -18,26 +18,37 @@ export class TeacherTimetableService {
     private mapEntry(entry: any) {
         if (!entry) return null;
 
-        const period = {
-            id: entry.timeSlot?.id,
-            name: entry.timeSlot?.period?.name || (entry.status === 'FREE' ? 'Free' : `Period ${entry.timeSlot?.startTime}`),
-            startTime: entry.timeSlot?.startTime,
-            endTime: entry.timeSlot?.endTime
+        // Prefer the TimePeriod's startTime/endTime (always stored as "HH:MM" strings like "09:00")
+        // over TimeSlot.startTime which may be an ISO timestamp or a raw DB value.
+        const periodStartTime = entry.timeSlot?.period?.startTime ?? entry.timeSlot?.startTime;
+        const periodEndTime = entry.timeSlot?.period?.endTime ?? entry.timeSlot?.endTime;
+
+        // Normalise to "HH:MM" if the value looks like an ISO timestamp
+        const normaliseTime = (t: string | null | undefined): string | undefined => {
+            if (!t) return undefined;
+            // ISO string like "2026-03-08T03:30:00.000Z"
+            if (t.includes('T')) {
+                const d = new Date(t);
+                if (!isNaN(d.valueOf())) {
+                    const hh = d.getHours().toString().padStart(2, '0');
+                    const mm = d.getMinutes().toString().padStart(2, '0');
+                    return `${hh}:${mm}`;
+                }
+            }
+            return t; // already "HH:MM"
         };
 
-        // Extract class/section info from group if missing
-        let classObj = entry.class;
-        let sectionObj = entry.section;
-
-        if (entry.group) {
-            // Some entries might have group but not class/section directly
-            // though Prisma include might differ
-        }
+        const period = {
+            id: entry.timeSlot?.id,
+            name: entry.timeSlot?.period?.name ?? `Period`,
+            startTime: normaliseTime(periodStartTime),
+            endTime: normaliseTime(periodEndTime),
+        };
 
         return {
             ...entry,
             period,
-            timeSlot: undefined // Frontend expects 'period'
+            timeSlot: undefined, // Frontend expects 'period'
         };
     }
 

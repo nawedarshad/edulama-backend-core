@@ -6,6 +6,19 @@ import { DayOfWeek } from '@prisma/client';
 export class DashboardService {
     constructor(private readonly prisma: PrismaService) { }
 
+    /** Normalise a time string to "HH:MM" regardless of whether it's an ISO
+     *  timestamp ("2026-03-08T03:30:00.000Z") or already "HH:MM". */
+    private normaliseTime(t: string | null | undefined): string {
+        if (!t) return '00:00';
+        if (t.includes('T')) {
+            const d = new Date(t);
+            if (!isNaN(d.valueOf())) {
+                return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+            }
+        }
+        return t;
+    }
+
     async getDashboardStats(schoolId: number, userId: number) {
         // 1. Get Teacher Profile ID
         const teacher = await this.prisma.teacherProfile.findUnique({
@@ -159,7 +172,8 @@ export class DashboardService {
         const currentHash = this.getCurrentTimeHash();
 
         for (const entry of timelineEntries) {
-            if (entry.timeSlot.startTime <= currentHash && entry.timeSlot.period?.type === 'TEACHING') {
+            const entryStart = this.normaliseTime(entry.timeSlot.period?.startTime ?? entry.timeSlot.startTime);
+            if (entryStart <= currentHash && entry.timeSlot.period?.type === 'TEACHING') {
                 const sessionExists = await this.prisma.attendanceSession.count({
                     where: {
                         schoolId,
@@ -329,30 +343,39 @@ export class DashboardService {
             nextClass: nextClass ? {
                 className: nextClass.group.name,
                 subject: nextClass.subject?.name || 'N/A',
-                time: `${nextClass.timeSlot.startTime} - ${nextClass.timeSlot.endTime}`
+                time: `${this.normaliseTime(nextClass.timeSlot?.period?.startTime ?? nextClass.timeSlot.startTime)} - ${this.normaliseTime(nextClass.timeSlot?.period?.endTime ?? nextClass.timeSlot.endTime)}`
             } : null,
-            timeline: timelineEntries.map(entry => ({
-                id: entry.id,
-                periodName: entry.timeSlot.period?.name || 'Unnamed',
-                startTime: entry.timeSlot.startTime,
-                endTime: entry.timeSlot.endTime,
-                className: entry.group.name,
-                subject: entry.subject?.name || 'Free / Activity',
-                room: entry.room?.name || 'N/A',
-                type: entry.timeSlot.period?.type,
-                assignmentId: entry.groupId && entry.subjectId
-                    ? getAssignmentId(entry.groupId, entry.subjectId)
-                    : null
-            })),
-            substitutions: substitutions.map(sub => ({
-                id: sub.id,
-                className: sub.entry.group.name,
-                subject: sub.entry.subject?.name || 'N/A',
-                period: sub.entry.timeSlot.period?.name || 'Unnamed',
-                time: `${sub.entry.timeSlot.startTime} - ${sub.entry.timeSlot.endTime}`,
-                note: sub.note,
-                assignmentId: null
-            })),
+            timeline: timelineEntries.map(entry => {
+                // Prefer TimePeriod startTime/endTime (always "HH:MM"), fallback to TimeSlot's
+                const start = this.normaliseTime(entry.timeSlot.period?.startTime ?? entry.timeSlot.startTime);
+                const end = this.normaliseTime(entry.timeSlot.period?.endTime ?? entry.timeSlot.endTime);
+                return {
+                    id: entry.id,
+                    periodName: entry.timeSlot.period?.name || 'Unnamed',
+                    startTime: start,
+                    endTime: end,
+                    className: entry.group.name,
+                    subject: entry.subject?.name || 'Free / Activity',
+                    room: entry.room?.name || 'N/A',
+                    type: entry.timeSlot.period?.type,
+                    assignmentId: entry.groupId && entry.subjectId
+                        ? getAssignmentId(entry.groupId, entry.subjectId)
+                        : null
+                };
+            }),
+            substitutions: substitutions.map(sub => {
+                const start = this.normaliseTime(sub.entry.timeSlot.period?.startTime ?? sub.entry.timeSlot.startTime);
+                const end = this.normaliseTime(sub.entry.timeSlot.period?.endTime ?? sub.entry.timeSlot.endTime);
+                return {
+                    id: sub.id,
+                    className: sub.entry.group.name,
+                    subject: sub.entry.subject?.name || 'N/A',
+                    period: sub.entry.timeSlot.period?.name || 'Unnamed',
+                    time: `${start} - ${end}`,
+                    note: sub.note,
+                    assignmentId: null
+                };
+            }),
             alerts: {
                 unmarkedAttendance: unmarkedAttendanceCount,
                 pendingLeaves: pendingLeaveRequests,
