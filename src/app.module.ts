@@ -28,7 +28,7 @@ import { InquiryModule } from './principal/inquiry/inquiry.module';
 import { PublicInquiryController } from './principal/inquiry/public-inquiry.controller';
 import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health/health.controller';
-
+import { FileUploadModule } from './common/file-upload/file-upload.module';
 
 @Module({
   imports: [
@@ -63,6 +63,7 @@ import { HealthController } from './health/health.controller';
     WebPageModule,
     InquiryModule,
     AuthModule,
+    FileUploadModule,
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],

@@ -1,15 +1,17 @@
 import { Injectable, NotFoundException, Logger, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateSyllabusDto } from './dto/create-syllabus.dto';
-import * as fs from 'fs';
-import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { S3StorageService } from '../../common/file-upload/s3-storage.service';
 
 @Injectable()
 export class TeacherSubjectService {
     private readonly logger = new Logger(TeacherSubjectService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly s3Service: S3StorageService
+    ) { }
 
     // 1. Get All Assigned Subjects
     async findAll(schoolId: number, userId: number) {
@@ -445,23 +447,29 @@ export class TeacherSubjectService {
         if (!teacher) throw new ForbiddenException('Teacher profile not found');
 
         const assignment = await this.prisma.subjectAssignment.findFirst({
-            where: { id: assignmentId, schoolId, teacherId: teacher.id }
+            where: { id: assignmentId, schoolId, teacherId: teacher.id },
+            include: { academicYear: true }
         });
         if (!assignment) throw new ForbiddenException('Assignment not accessible');
 
-        // Save file to disk
-        const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'syllabus');
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
+        // Extract file extension and determine generic file name
+        const originalNameParts = file.originalname.split('.');
+        let ext = '';
+        if (originalNameParts.length > 1) {
+            ext = `.${originalNameParts.pop()}`;
         }
 
-        const ext = path.extname(file.originalname);
+        // Use user-requested path format: [tenantId]/[AcademicYear]/subject/[subjectId]/syllabus/[filename]
+        const tenantId = schoolId;
+        const academicYear = assignment.academicYear.startDate.getFullYear(); // E.g., 2024
+        const subjectId = assignment.subjectId;
         const fileName = `${uuidv4()}${ext}`;
-        const filePath = path.join(uploadDir, fileName);
-        fs.writeFileSync(filePath, file.buffer);
+        const customKey = `${tenantId}/${academicYear}/subject/${subjectId}/syllabus/${fileName}`;
 
-        const fileUrl = `/uploads/syllabus/${fileName}`;
+        // Upload to S3
+        const fileUrl = await this.s3Service.uploadFile(file.buffer, fileName, file.mimetype, customKey);
 
+        // Store into database
         return this.prisma.syllabusFile.create({
             data: {
                 schoolId,
@@ -501,14 +509,10 @@ export class TeacherSubjectService {
             where: { id: fileId }
         });
 
-        // Try to delete physical file
-        try {
-            const filePath = path.join(process.cwd(), 'public', existingFile.fileUrl);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        } catch (e) {
-            this.logger.warn(`Failed to delete physical file: ${existingFile.fileUrl}`, e);
+        // Delete from R2 S3 bucket using the stored fileUrl
+        const customKey = this.s3Service.extractKeyFromUrl(existingFile.fileUrl);
+        if (customKey) {
+            await this.s3Service.deleteFile(customKey);
         }
 
         return { success: true };

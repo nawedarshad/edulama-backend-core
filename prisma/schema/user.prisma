@@ -119,6 +119,7 @@ model School {
 
   timetableSettings TimetableSettings?
   academicGroups    AcademicGroup[]
+  syllabusFiles     SyllabusFile[]
 
   @@index([code])
   @@index([subdomain])

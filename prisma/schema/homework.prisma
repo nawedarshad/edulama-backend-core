@@ -1,78 +1,78 @@
 enum HomeworkStatus {
-    PENDING
-    SUBMITTED
-    LATE
-    ABSENT
+  PENDING
+  SUBMITTED
+  LATE
+  ABSENT
 }
 
 model Homework {
-    id             Int @id @default(autoincrement())
-    schoolId       Int
-    academicYearId Int
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
 
-    // Teacher who created it
-    teacherId Int
-    teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  // Teacher who created it
+  teacherId Int
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
 
-    // Academic context
-    groupId   Int
-    classId   Int?
-    sectionId Int?
-    subjectId Int
+  // Academic context
+  groupId   Int
+  classId   Int?
+  sectionId Int?
+  subjectId Int
 
-    // Content
-    title       String
-    description String?
-    dueDate     DateTime
+  // Content
+  title       String
+  description String?
+  dueDate     DateTime
 
-    // What was taught in the session this homework is linked to
-    taughtToday String?
+  // What was taught in the session this homework is linked to
+  taughtToday String?
 
-    // Attachments e.g. [{ "title": "Chapter 3 Notes", "url": "..." }]
-    attachments Json?
+  // Attachments e.g. [{ "title": "Chapter 3 Notes", "url": "..." }]
+  attachments Json?
 
-    // Override tracking
-    isOverriddenByPrincipal Boolean @default(false)
-    overriddenById          Int? // User.id of the principal who last overrode
+  // Override tracking
+  isOverriddenByPrincipal Boolean @default(false)
+  overriddenById          Int? // User.id of the principal who last overrode
 
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    // Relations
-    school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-    academicYear AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-    group        AcademicGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-    class        Class?        @relation(fields: [classId], references: [id], onDelete: Cascade)
-    section      Section?      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-    subject      Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  // Relations
+  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  group        AcademicGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  class        Class?        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section?      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject      Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
-    submissions HomeworkSubmission[]
+  submissions HomeworkSubmission[]
 
-    @@index([schoolId, academicYearId])
-    @@index([teacherId])
-    @@index([groupId, classId, sectionId])
-    @@index([subjectId])
-    @@index([dueDate])
+  @@index([schoolId, academicYearId])
+  @@index([teacherId])
+  @@index([groupId, classId, sectionId])
+  @@index([subjectId])
+  @@index([dueDate])
 }
 
 model HomeworkSubmission {
-    id         Int @id @default(autoincrement())
-    homeworkId Int
-    studentId  Int
-    schoolId   Int
+  id         Int @id @default(autoincrement())
+  homeworkId Int
+  studentId  Int
+  schoolId   Int
 
-    status      HomeworkStatus @default(PENDING)
-    submittedAt DateTime?
-    remarks     String?
+  status      HomeworkStatus @default(PENDING)
+  submittedAt DateTime?
+  remarks     String?
 
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    homework Homework       @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
-    student  StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  homework Homework       @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  student  StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-    @@unique([homeworkId, studentId])
-    @@index([homeworkId])
-    @@index([studentId])
-    @@index([schoolId])
+  @@unique([homeworkId, studentId])
+  @@index([homeworkId])
+  @@index([studentId])
+  @@index([schoolId])
 }
