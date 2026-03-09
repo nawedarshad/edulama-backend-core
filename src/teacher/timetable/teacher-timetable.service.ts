@@ -119,41 +119,13 @@ export class TeacherTimetableService {
         const teacherId = await this.getTeacherIdFromUser(userId);
 
         const dayOfWeek = this.getDayOfWeek(date);
-        const dateObj = new Date(date);
-        const startOfDay = new Date(dateObj);
-        startOfDay.setUTCHours(0, 0, 0, 0);
-        const endOfDay = new Date(dateObj);
-        endOfDay.setUTCHours(23, 59, 59, 999);
 
-        // 0. Fetch ALL TimeSlots for this day
-        const allTimeSlots = await this.prisma.timeSlot.findMany({
-            where: {
-                schoolId,
-                academicYearId: resolvedYearId,
-                day: dayOfWeek
-            },
-            orderBy: { period: { startTime: 'asc' } }
-        });
+        // Build date boundaries for override lookups (local midnight, not UTC)
+        const [y, m, d] = date.split('-').map(Number);
+        const startOfDay = new Date(y, m - 1, d, 0, 0, 0, 0);
+        const endOfDay = new Date(y, m - 1, d, 23, 59, 59, 999);
 
-        // 0.5 Fetch Assignments for ID mapping
-        const assignments = await this.prisma.subjectAssignment.findMany({
-            where: {
-                schoolId,
-                teacherId,
-                isActive: true,
-                academicYearId: resolvedYearId
-            },
-            select: { id: true, groupId: true, subjectId: true }
-        });
-
-        const getAssignmentId = (groupId: number, subjectId: number) => {
-            return assignments.find(a =>
-                a.groupId === groupId &&
-                a.subjectId === subjectId
-            )?.id;
-        };
-
-        // 1. Get Regular Schedule
+        // 1. Regular entries for this teacher on this day (same strategy as getWeeklyTimetable)
         const regularEntries = await this.prisma.timetableEntry.findMany({
             where: {
                 schoolId,
@@ -167,33 +139,36 @@ export class TeacherTimetableService {
                 timeSlot: { include: { period: true } },
                 room: { select: { id: true, name: true } },
             },
+            orderBy: { timeSlot: { startTime: 'asc' } },
         });
 
-        // 2. Get Overrides (Cancellations or Substitutions affecting this teacher's regular classes)
+        // 2. Assignment map for assignmentId resolution
+        const assignments = await this.prisma.subjectAssignment.findMany({
+            where: { schoolId, teacherId, isActive: true, academicYearId: resolvedYearId },
+            select: { id: true, groupId: true, subjectId: true },
+        });
+        const getAssignmentId = (groupId: number, subjectId: number) =>
+            assignments.find(a => a.groupId === groupId && a.subjectId === subjectId)?.id;
+
+        // 3. Overrides affecting my classes today
         const myOverrides = await this.prisma.timetableOverride.findMany({
             where: {
                 schoolId,
                 academicYearId: resolvedYearId,
-                date: {
-                    gte: startOfDay,
-                    lte: endOfDay
-                },
+                date: { gte: startOfDay, lte: endOfDay },
                 entry: { teacherId },
             },
             include: {
-                substituteTeacher: { select: { id: true, user: { select: { name: true } } } }
-            }
+                substituteTeacher: { select: { id: true, user: { select: { name: true } } } },
+            },
         });
 
-        // 3. Get Substitutions (Classes I am covering for someone else)
-        const substitutions = await this.prisma.timetableOverride.findMany({
+        // 4. Classes I am covering for someone else today
+        const substitutionDuties = await this.prisma.timetableOverride.findMany({
             where: {
                 schoolId,
                 academicYearId: resolvedYearId,
-                date: {
-                    gte: startOfDay,
-                    lte: endOfDay
-                },
+                date: { gte: startOfDay, lte: endOfDay },
                 substituteTeacherId: teacherId,
                 type: TimetableOverrideType.SUBSTITUTE,
             },
@@ -204,72 +179,48 @@ export class TeacherTimetableService {
                         subject: { select: { id: true, name: true, code: true, color: true } },
                         timeSlot: { include: { period: true } },
                         room: { select: { id: true, name: true } },
-                        teacher: { select: { id: true, user: { select: { name: true } } } }
-                    }
+                        teacher: { select: { id: true, user: { select: { name: true } } } },
+                    },
                 },
-                substituteRoom: { select: { id: true, name: true } }
-            }
+                substituteRoom: { select: { id: true, name: true } },
+            },
         });
 
-        // 4. Construct Final Schedule (Map over ALL periods to include FREE slots)
-        const finalSchedule = await Promise.all(allTimeSlots.map(async (slot) => {
-            // Slot needs period for mapEntry
-            const slotWithPeriod = await this.prisma.timeSlot.findUnique({
-                where: { id: slot.id },
-                include: { period: true }
-            });
-
-            // Check for substitutions I'm doing in this period
-            const substitutionDuty = substitutions.find(sub => sub.entry.timeSlotId === slot.id);
-            if (substitutionDuty) {
+        // 5. Build result — regular entries with override status applied
+        const result: any[] = regularEntries.map(entry => {
+            const override = myOverrides.find(o => o.entryId === entry.id);
+            const assignmentId = getAssignmentId(entry.groupId, entry.subjectId!);
+            if (override) {
                 return this.mapEntry({
-                    ...substitutionDuty.entry,
-                    id: `sub-${substitutionDuty.id}`,
-                    originalEntryId: substitutionDuty.entry.id,
-                    status: 'SUBSTITUTION_DUTY',
-                    room: substitutionDuty.substituteRoom || substitutionDuty.entry.room,
-                    originalTeacher: substitutionDuty.entry.teacher,
-                    note: substitutionDuty.note,
-                    timeSlot: slotWithPeriod,
-                    assignmentId: getAssignmentId(substitutionDuty.entry.groupId, substitutionDuty.entry.subjectId!)
+                    ...entry,
+                    status: override.type === TimetableOverrideType.CANCELLED ? 'CANCELLED' : 'SUBSTITUTED',
+                    overrideNote: override.note,
+                    substituteTeacher: override.substituteTeacher,
+                    assignmentId,
                 });
             }
-
-            // Check for regular class
-            const regularEntry = regularEntries.find(e => e.timeSlotId === slot.id);
-            if (regularEntry) {
-                const override = myOverrides.find(o => o.entryId === regularEntry.id);
-                const assignmentId = getAssignmentId(regularEntry.groupId, regularEntry.subjectId!);
-
-                if (override) {
-                    return this.mapEntry({
-                        ...regularEntry,
-                        status: override.type === TimetableOverrideType.CANCELLED ? 'CANCELLED' : 'SUBSTITUTED',
-                        overrideNote: override.note,
-                        substituteTeacher: override.substituteTeacher,
-                        assignmentId
-                    });
-                }
-                return this.mapEntry({ ...regularEntry, status: 'REGULAR', assignmentId });
-            }
-
-            // No class = Free Period
-            return this.mapEntry({
-                id: `free-${slot.id}`,
-                status: 'FREE',
-                timeSlot: slotWithPeriod,
-                subject: null,
-                group: null,
-                room: null
-            });
-        }));
-
-        // Sort by time
-        return finalSchedule.sort((a: any, b: any) => {
-            const timeA = a.period?.startTime || '00:00';
-            const timeB = b.period?.startTime || '00:00';
-            return timeA.localeCompare(timeB);
+            return this.mapEntry({ ...entry, status: 'REGULAR', assignmentId });
         });
+
+        // 6. Append substitution duties not already in my regular slot
+        for (const sub of substitutionDuties) {
+            if (!regularEntries.some(e => e.timeSlotId === sub.entry.timeSlotId)) {
+                result.push(this.mapEntry({
+                    ...sub.entry,
+                    id: `sub-${sub.id}`,
+                    status: 'SUBSTITUTION_DUTY',
+                    room: sub.substituteRoom || sub.entry.room,
+                    originalTeacher: sub.entry.teacher,
+                    note: sub.note,
+                    assignmentId: getAssignmentId(sub.entry.groupId, sub.entry.subjectId!),
+                }));
+            }
+        }
+
+        // 7. Sort by period start time
+        return result.sort((a: any, b: any) =>
+            (a.period?.startTime || '').localeCompare(b.period?.startTime || ''),
+        );
     }
 
     async getSubstitutions(schoolId: number, userId: number, academicYearId?: number) {
