@@ -90,10 +90,11 @@ export class TeacherSubjectController {
     uploadSyllabusFile(
         @Request() req,
         @Param('id', ParseIntPipe) id: number,
-        @UploadedFile() file: any
+        @UploadedFile() file: any,
+        @Body('title') title?: string
     ) {
         if (!file) throw new BadRequestException('No file provided');
-        return this.subjectService.uploadSyllabusFile(req.user.schoolId, req.user.id, id, file);
+        return this.subjectService.uploadSyllabusFile(req.user.schoolId, req.user.id, id, file, title);
     }
 
     @Delete(':id/syllabus-files/:fileId')

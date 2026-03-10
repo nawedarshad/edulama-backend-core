@@ -439,7 +439,7 @@ export class TeacherSubjectService {
         });
     }
 
-    async uploadSyllabusFile(schoolId: number, userId: number, assignmentId: number, file: any) {
+    async uploadSyllabusFile(schoolId: number, userId: number, assignmentId: number, file: any, title?: string) {
         const teacher = await this.prisma.teacherProfile.findUnique({
             where: { userId },
             select: { id: true }
@@ -474,6 +474,7 @@ export class TeacherSubjectService {
             data: {
                 schoolId,
                 subjectAssignmentId: assignmentId,
+                title,
                 fileName: file.originalname,
                 fileUrl,
                 mimeType: file.mimetype,

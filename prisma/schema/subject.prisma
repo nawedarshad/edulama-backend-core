@@ -110,9 +110,10 @@ model SubjectAssignment {
 // SYLLABUS FILE (HOMEWORK module schools — PDF/image uploads)
 //-------------------------------------------------------------
 model SyllabusFile {
-  id                  Int    @id @default(autoincrement())
+  id                  Int     @id @default(autoincrement())
   schoolId            Int
   subjectAssignmentId Int
+  title               String?
   fileName            String
   fileUrl             String
   mimeType            String
