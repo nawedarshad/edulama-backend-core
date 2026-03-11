@@ -45,6 +45,18 @@ export class TeacherHomeworkService {
         return activeYear.id;
     }
 
+    private async checkLockStatus(schoolId: number, userId: number, homeworkId: number): Promise<void> {
+        const homework = await this.findOne(schoolId, userId, homeworkId);
+
+        const now = new Date();
+        const createdDate = new Date(homework.createdAt);
+        const diffInHours = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60);
+
+        if (diffInHours > 48) {
+            throw new ForbiddenException('Homework submission status is locked (2 days passed since creation).');
+        }
+    }
+
     // ─────────────────────────────────────────────
     // CREATE HOMEWORK (auto-creates submission rows)
     // ─────────────────────────────────────────────
@@ -210,7 +222,7 @@ export class TeacherHomeworkService {
     // ─────────────────────────────────────────────
 
     async markSubmission(schoolId: number, userId: number, homeworkId: number, dto: MarkSubmissionDto) {
-        await this.findOne(schoolId, userId, homeworkId); // ownership check
+        await this.checkLockStatus(schoolId, userId, homeworkId); // ownership and lock check
 
         return this.prisma.homeworkSubmission.upsert({
             where: { homeworkId_studentId: { homeworkId, studentId: dto.studentId } },
@@ -235,7 +247,7 @@ export class TeacherHomeworkService {
     // ─────────────────────────────────────────────
 
     async bulkMarkSubmissions(schoolId: number, userId: number, homeworkId: number, submissions: MarkSubmissionDto[]) {
-        await this.findOne(schoolId, userId, homeworkId); // ownership check
+        await this.checkLockStatus(schoolId, userId, homeworkId); // ownership and lock check
 
         const results = await Promise.all(
             submissions.map((s) =>

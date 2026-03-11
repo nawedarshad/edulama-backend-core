@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+import { HomeworkStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateClassDiaryDto } from './dto/create-class-diary.dto';
 import { UpdateClassDiaryDto } from './dto/update-class-diary.dto';
@@ -101,19 +102,72 @@ export class TeacherClassDiaryService {
             throw new BadRequestException('A diary entry for this date already exists.');
         }
 
-        return this.prisma.classDiary.create({
-            data: {
-                ...dto,
-                groupId: resolvedGroupId,
-                schoolId,
-                academicYearId: resolvedYearId,
-                teacherId,
-                studyMaterial: dto.studyMaterial || [],
-                objective: dto.objective,
-                activity: dto.activity,
-                remarks: dto.remarks,
-                media: dto.media || [],
-            },
+        return this.prisma.$transaction(async (tx) => {
+            const diary = await tx.classDiary.create({
+                data: {
+                    ...dto,
+                    groupId: resolvedGroupId,
+                    schoolId,
+                    academicYearId: resolvedYearId,
+                    teacherId,
+                    studyMaterial: dto.studyMaterial || [],
+                    objective: dto.objective,
+                    activity: dto.activity,
+                    remarks: dto.remarks,
+                    media: dto.media || [],
+                },
+            });
+
+            // Auto-create Homework if homework field is populated
+            if (dto.homework && dto.homework.trim().length > 0) {
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                tomorrow.setHours(23, 59, 59, 999);
+
+                const homework = await tx.homework.create({
+                    data: {
+                        schoolId,
+                        academicYearId: resolvedYearId,
+                        teacherId,
+                        groupId: resolvedGroupId,
+                        classId: dto.classId || null,
+                        sectionId: dto.sectionId || null,
+                        subjectId: dto.subjectId,
+                        title: dto.title || `Homework: ${dto.topic || 'Untitled'}`,
+                        description: dto.homework,
+                        dueDate: tomorrow,
+                        taughtToday: dto.topic || dto.title,
+                        attachments: [],
+                    },
+                });
+
+                // Auto-create submission rows for all active students in the resolved group/section
+                const students = await tx.studentProfile.findMany({
+                    where: {
+                        schoolId,
+                        isActive: true,
+                        OR: [
+                            ...(dto.sectionId ? [{ sectionId: dto.sectionId }] : []),
+                            { academicGroups: { some: { id: resolvedGroupId } } }
+                        ]
+                    },
+                    select: { id: true },
+                });
+
+                if (students.length > 0) {
+                    await tx.homeworkSubmission.createMany({
+                        data: students.map((s) => ({
+                            homeworkId: homework.id,
+                            studentId: s.id,
+                            schoolId,
+                            status: HomeworkStatus.PENDING,
+                        })),
+                        skipDuplicates: true,
+                    });
+                }
+            }
+
+            return diary;
         });
     }
 
