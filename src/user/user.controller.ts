@@ -2,10 +2,10 @@ import { Controller, Patch, Body, UseGuards } from '@nestjs/common';
 import { UserService } from './user.service';
 import { GetUser } from '../common/decorators/get-user.decorator';
 import type { User } from '@prisma/client';
-import { TeacherAuthGuard } from '../common/guards/teacher.guard';
+import { UserAuthGuard } from '../common/guards/user.guard';
 
 @Controller('users')
-@UseGuards(TeacherAuthGuard)
+@UseGuards(UserAuthGuard)
 export class UserController {
     constructor(private readonly userService: UserService) { }
 

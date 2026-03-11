@@ -155,6 +155,9 @@ export class NotificationService {
             });
 
             const roleUsers = memberships.map(m => m.user);
+            this.logger.log(`[NotificationService] Role-based: found ${roleUsers.length} users for roleIds=[${dto.targetRoleIds?.join(',')}]`);
+            const usersWithTokens = roleUsers.filter(u => u.deviceToken && Expo.isExpoPushToken(u.deviceToken));
+            this.logger.log(`[NotificationService] Role-based: ${usersWithTokens.length} users have valid Expo push tokens`);
 
             if (roleUsers.length > 0) {
                 // Avoid duplicates if user was also in targetUserIds

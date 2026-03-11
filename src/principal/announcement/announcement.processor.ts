@@ -65,7 +65,8 @@ export class AnnouncementProcessor extends WorkerHost {
                 },
                 select: { userId: true }
             });
-            students.forEach((s: any) => targetUserIds.add(s.userId));
+            // Filter out null userIds (students without accounts)
+            students.filter((s: any) => s.userId != null).forEach((s: any) => targetUserIds.add(s.userId));
         }
 
         // 2. Resolve Iteratively using Bulk Fetched Data
@@ -88,6 +89,7 @@ export class AnnouncementProcessor extends WorkerHost {
 
                 if (roleNameKeyword) {
                     const matchingRoles = allRoles.filter((r: any) => r.name.toUpperCase().includes(roleNameKeyword));
+                    this.logger.log(`[Processor] Audience type ${audience.type}: matched roles = ${JSON.stringify(matchingRoles.map((r: any) => ({ id: r.id, name: r.name })))}`);
                     matchingRoles.forEach((r: any) => targetRoleIds.add(r.id));
                 }
             }
@@ -100,6 +102,8 @@ export class AnnouncementProcessor extends WorkerHost {
             voiceAudioUrl: announcement.voiceAudioUrl,
             voiceDuration: announcement.voiceDuration,
         };
+
+        this.logger.log(`[Processor] Resolved for schoolId=${schoolId}: isGlobal=${isGlobal}, targetUserIds=[${Array.from(targetUserIds).join(',')}], targetRoleIds=[${Array.from(targetRoleIds).join(',')}]`);
 
         // 2. Send Standard Notification
         await this.notificationService.create(schoolId, creatorId, {
