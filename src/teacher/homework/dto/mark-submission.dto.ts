@@ -1,6 +1,7 @@
-import { IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsEnum, IsInt, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { HomeworkStatus } from '@prisma/client';
+import { Type } from 'class-transformer';
 
 export class MarkSubmissionDto {
     @ApiProperty()
@@ -19,5 +20,8 @@ export class MarkSubmissionDto {
 
 export class BulkMarkSubmissionDto {
     @ApiProperty({ type: [MarkSubmissionDto] })
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => MarkSubmissionDto)
     submissions: MarkSubmissionDto[];
 }
