@@ -3,9 +3,15 @@ import { ValidationPipe } from '@nestjs/common';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Increase payload limits
+  app.use(json({ limit: '500mb' }));
+  app.use(urlencoded({ extended: true, limit: '500mb' }));
+
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } }));
   app.setGlobalPrefix('core');
   app.useGlobalFilters(new GlobalExceptionFilter());
@@ -33,6 +39,6 @@ async function bootstrap() {
   await app.listen(process.env.PORT ?? 3005);
 }
 bootstrap();
- 
- 
- 
+
+
+

@@ -12,7 +12,7 @@ import { ModuleGuard } from '../../common/guards/module.guard';
 @ApiTags('Teacher - Class Diary')
 @ApiBearerAuth()
 @UseGuards(TeacherAuthGuard, ModuleGuard)
-@RequiredModule('LESSON_PLANNING')
+@RequiredModule('HOMEWORK')
 @Controller('teacher/diary')
 export class TeacherClassDiaryController {
     constructor(private readonly classDiaryService: TeacherClassDiaryService) { }

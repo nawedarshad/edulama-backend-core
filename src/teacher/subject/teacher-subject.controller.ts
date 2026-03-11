@@ -85,7 +85,11 @@ export class TeacherSubjectController {
     }
 
     @Post(':id/syllabus-files')
-    @UseInterceptors(FileInterceptor('file'))
+    @UseInterceptors(FileInterceptor('file', {
+        limits: {
+            fileSize: 500 * 1024 * 1024, // 500MB
+        },
+    }))
     @ApiOperation({ summary: 'Upload a syllabus file (PDF/Image)' })
     uploadSyllabusFile(
         @Request() req,

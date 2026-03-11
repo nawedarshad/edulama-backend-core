@@ -24,7 +24,7 @@ import { RequiredModule } from '../../common/decorators/required-module.decorato
 import { ModuleGuard } from '../../common/guards/module.guard';
 
 @UseGuards(PrincipalAuthGuard, ModuleGuard)
-@RequiredModule('LESSON_PLANNING')
+@RequiredModule('HOMEWORK')
 @Controller('principal/class-diaries')
 export class PrincipalDiaryController {
     constructor(private readonly diaryService: PrincipalDiaryService) { }
