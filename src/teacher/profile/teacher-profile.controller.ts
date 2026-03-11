@@ -1,11 +1,11 @@
 import { Controller, Get, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { UserAuthGuard } from '../../common/guards/user.guard';
+import { TeacherAuthGuard } from '../../common/guards/teacher.guard';
 import { TeacherProfileService } from './teacher-profile.service';
 
 @ApiTags('Teacher - Profile')
 @ApiBearerAuth()
-@UseGuards(UserAuthGuard)
+@UseGuards(TeacherAuthGuard)
 @Controller('teacher/profile')
 export class TeacherProfileController {
     constructor(private readonly profileService: TeacherProfileService) { }

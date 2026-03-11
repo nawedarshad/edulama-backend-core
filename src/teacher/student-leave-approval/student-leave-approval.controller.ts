@@ -1,13 +1,13 @@
 import { Controller, Get, Patch, Param, Body, UseGuards, Request, ParseIntPipe, Query, DefaultValuePipe } from '@nestjs/common';
 import { StudentLeaveApprovalService } from './student-leave-approval.service';
 import { ClassTeacherActionDto } from './dto/class-teacher-action.dto';
-import { UserAuthGuard } from '../../common/guards/user.guard';
+import { TeacherAuthGuard } from '../../common/guards/teacher.guard';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
 
 @ApiTags('Teacher - Student Leave Approval')
 @ApiBearerAuth()
 @Controller('teacher/student-leave-approvals')
-@UseGuards(UserAuthGuard)
+@UseGuards(TeacherAuthGuard)
 export class StudentLeaveApprovalController {
     constructor(private readonly approvalService: StudentLeaveApprovalService) { }
 

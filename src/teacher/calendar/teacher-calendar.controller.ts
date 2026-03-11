@@ -1,13 +1,13 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { CalendarService } from 'src/principal/calendar/calendar.service';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
-import { UserAuthGuard } from 'src/common/guards/user.guard';
+import { TeacherAuthGuard } from 'src/common/guards/teacher.guard';
 import { GetCalendarDto } from 'src/principal/calendar/dto/calendar.dto';
 
 import { RequiredModule } from '../../common/decorators/required-module.decorator';
 import { ModuleGuard } from '../../common/guards/module.guard';
 
-@UseGuards(UserAuthGuard, ModuleGuard)
+@UseGuards(TeacherAuthGuard, ModuleGuard)
 @RequiredModule('CALENDAR')
 @Controller('teacher/calendar')
 export class TeacherCalendarController {

@@ -60,37 +60,41 @@ export class NotificationService {
             }
         };
 
-        // 2. If global, fetch users in chunks and create deliveries
+        // 2. If global, fetch users in chunks via UserSchool to respect school isolation
         if (dto.isGlobal) {
             let skip = 0;
             const limit = 500;
             while (true) {
-                const chunk = await this.prisma.user.findMany({
+                const memberships = await this.prisma.userSchool.findMany({
                     where: { schoolId, isActive: true },
-                    select: { id: true, deviceToken: true },
+                    select: { user: { select: { id: true, deviceToken: true } } },
                     skip,
                     take: limit,
                     orderBy: { id: 'asc' },
                 });
 
-                if (chunk.length === 0) break;
+                if (memberships.length === 0) break;
+                const chunk = memberships.map(m => m.user);
                 await processUserChunk(chunk);
                 skip += limit;
             }
 
-            return notification; // Return early if global, as everyone is covered
+            return notification;
         }
 
-        // 3. If target users provided, create deliveries
+        // 3. If target users provided, create deliveries (already correctly scoped by schoolId check)
         if (dto.targetUserIds && dto.targetUserIds.length > 0) {
-            // Verify users belong to school and fetch tokens
-            const validUsers = await this.prisma.user.findMany({
+            // Verify users belong to school and fetch tokens via UserSchool
+            const memberships = await this.prisma.userSchool.findMany({
                 where: {
                     schoolId,
-                    id: { in: dto.targetUserIds },
+                    userId: { in: dto.targetUserIds },
+                    isActive: true
                 },
-                select: { id: true, deviceToken: true },
+                select: { user: { select: { id: true, deviceToken: true } } },
             });
+
+            const validUsers = memberships.map(m => m.user);
 
             if (validUsers.length > 0) {
                 await this.prisma.notificationDelivery.createMany({
@@ -98,6 +102,7 @@ export class NotificationService {
                         notificationId: notification.id,
                         userId: u.id,
                     })),
+                    skipDuplicates: true
                 });
 
                 // Notify users in real-time (Socket) + Push
@@ -114,7 +119,7 @@ export class NotificationService {
                         createdAt: new Date(),
                     });
 
-                    // Collect Puh Token
+                    // Collect Push Token
                     if (user.deviceToken && Expo.isExpoPushToken(user.deviceToken)) {
                         pushTokens.push({ token: user.deviceToken, user });
                     }
@@ -135,16 +140,21 @@ export class NotificationService {
             }
         }
 
-        // 3. If target roles provided, fetch users and create deliveries
+        // 4. If target roles provided, fetch users via UserSchoolRole
         if (dto.targetRoleIds && dto.targetRoleIds.length > 0) {
-            const roleUsers = await this.prisma.user.findMany({
+            const memberships = await this.prisma.userSchool.findMany({
                 where: {
                     schoolId,
-                    roleId: { in: dto.targetRoleIds },
-                    isActive: true // Only active users
+                    isActive: true,
+                    OR: [
+                        { primaryRoleId: { in: dto.targetRoleIds } },
+                        { roles: { some: { roleId: { in: dto.targetRoleIds } } } }
+                    ]
                 },
-                select: { id: true, deviceToken: true },
+                select: { user: { select: { id: true, deviceToken: true } } },
             });
+
+            const roleUsers = memberships.map(m => m.user);
 
             if (roleUsers.length > 0) {
                 // Avoid duplicates if user was also in targetUserIds
