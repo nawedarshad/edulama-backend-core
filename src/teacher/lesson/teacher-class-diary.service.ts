@@ -6,11 +6,15 @@ import { UpdateClassDiaryDto } from './dto/update-class-diary.dto';
 import { ClassDiaryQueryDto } from './dto/class-diary-query.dto';
 import { TeacherTimetableService } from '../timetable/teacher-timetable.service';
 
+import { S3StorageService } from '../../common/file-upload/s3-storage.service';
+import { v4 as uuidv4 } from 'uuid';
+
 @Injectable()
 export class TeacherClassDiaryService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly teacherTimetableService: TeacherTimetableService
+        private readonly teacherTimetableService: TeacherTimetableService,
+        private readonly s3Service: S3StorageService,
     ) { }
 
     private async getTeacherIdFromUser(userId: number): Promise<number> {
@@ -381,5 +385,36 @@ export class TeacherClassDiaryService {
         return this.prisma.classDiary.delete({
             where: { id },
         });
+    }
+
+    async uploadMedia(schoolId: number, userId: number, file: any, title?: string) {
+        const teacherId = await this.getTeacherIdFromUser(userId);
+
+        // Extract file extension
+        const originalNameParts = file.originalname.split('.');
+        let ext = '';
+        if (originalNameParts.length > 1) {
+            ext = `.${originalNameParts.pop()}`;
+        }
+
+        // Use consistent path format: [tenantId]/[AcademicYear]/diary/[teacherId]/[filename]
+        const tenantId = schoolId;
+        const activeYear = await this.prisma.academicYear.findFirst({
+            where: { schoolId, status: 'ACTIVE' },
+        });
+        const academicYear = activeYear ? activeYear.startDate.getFullYear() : new Date().getFullYear();
+        
+        const fileName = `${uuidv4()}${ext}`;
+        const customKey = `${tenantId}/${academicYear}/diary/${teacherId}/${fileName}`;
+
+        // Upload to S3
+        const fileUrl = await this.s3Service.uploadFile(file.buffer, fileName, file.mimetype, customKey);
+
+        return {
+            title: title || file.originalname,
+            url: fileUrl,
+            mimeType: file.mimetype,
+            size: file.size,
+        };
     }
 }

@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, Query, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { TeacherClassDiaryService } from './teacher-class-diary.service';
 import { CreateClassDiaryDto } from './dto/create-class-diary.dto';
@@ -16,6 +17,22 @@ import { ModuleGuard } from '../../common/guards/module.guard';
 @Controller('teacher/diary')
 export class TeacherClassDiaryController {
     constructor(private readonly classDiaryService: TeacherClassDiaryService) { }
+
+    @ApiOperation({ summary: 'Upload diary media (image/document)' })
+    @Post('upload')
+    @UseInterceptors(FileInterceptor('file', {
+        limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+    }))
+    uploadMedia(
+        @Request() req,
+        @UploadedFile() file: any,
+        @Body('title') title?: string
+    ) {
+        if (!file) throw new BadRequestException('No file provided');
+        const schoolId = req.user.schoolId;
+        const userId = req.user.id;
+        return this.classDiaryService.uploadMedia(schoolId, userId, file, title);
+    }
 
     @ApiOperation({ summary: 'Create a new class diary entry' })
     @Post()
