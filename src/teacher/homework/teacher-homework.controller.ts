@@ -61,7 +61,7 @@ export class TeacherHomeworkController {
     }
 
     @ApiOperation({ summary: 'Bulk mark multiple student submissions at once' })
-    @Post(':id/submissions/bulk')
+    @Post(':id/bulk-mark')
     bulkMarkSubmissions(@Request() req, @Param('id') id: string, @Body() dto: BulkMarkSubmissionDto) {
         return this.homeworkService.bulkMarkSubmissions(req.user.schoolId, req.user.id, +id, dto.submissions);
     }

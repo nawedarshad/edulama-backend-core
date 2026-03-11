@@ -216,7 +216,7 @@ export class TeacherClassDiaryService {
             };
         }
 
-        return this.prisma.classDiary.findMany({
+        const diaries = await this.prisma.classDiary.findMany({
             where,
             include: {
                 group: { select: { id: true, name: true } },
@@ -226,6 +226,32 @@ export class TeacherClassDiaryService {
             },
             orderBy: { lessonDate: 'desc' },
         });
+
+        // Fetch homework due dates for all diaries
+        return Promise.all(diaries.map(async (diary) => {
+            const tenSeconds = 10 * 1000;
+            const startTime = new Date(diary.createdAt.getTime() - tenSeconds);
+            const endTime = new Date(diary.createdAt.getTime() + tenSeconds);
+
+            const homework = await this.prisma.homework.findFirst({
+                where: {
+                    schoolId,
+                    teacherId,
+                    subjectId: diary.subjectId,
+                    groupId: diary.groupId,
+                    createdAt: {
+                        gte: startTime,
+                        lte: endTime,
+                    },
+                },
+                select: { dueDate: true }
+            });
+
+            return {
+                ...diary,
+                homeworkDueDate: homework?.dueDate || null
+            };
+        }));
     }
 
     async findOne(schoolId: number, userId: number, id: number) {
@@ -245,7 +271,28 @@ export class TeacherClassDiaryService {
             throw new NotFoundException(`Class diary entry #${id} not found`);
         }
 
-        return diary;
+        const tenSeconds = 10 * 1000;
+        const startTime = new Date(diary.createdAt.getTime() - tenSeconds);
+        const endTime = new Date(diary.createdAt.getTime() + tenSeconds);
+
+        const homework = await this.prisma.homework.findFirst({
+            where: {
+                schoolId,
+                teacherId,
+                subjectId: diary.subjectId,
+                groupId: diary.groupId,
+                createdAt: {
+                    gte: startTime,
+                    lte: endTime,
+                },
+            },
+            select: { dueDate: true }
+        });
+
+        return {
+            ...diary,
+            homeworkDueDate: homework?.dueDate || null
+        };
     }
 
     async update(schoolId: number, userId: number, id: number, dto: UpdateClassDiaryDto) {
