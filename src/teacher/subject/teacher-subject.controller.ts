@@ -101,6 +101,8 @@ export class TeacherSubjectController {
         return this.subjectService.uploadSyllabusFile(req.user.schoolId, req.user.id, id, file, title);
     }
 
+    @Delete(':id/syllabus-files/:fileId')
+    @ApiOperation({ summary: 'Delete a syllabus file' })
     deleteSyllabusFile(
         @Request() req,
         @Param('id', ParseIntPipe) id: number,
