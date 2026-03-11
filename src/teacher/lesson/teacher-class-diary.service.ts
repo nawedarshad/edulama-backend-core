@@ -45,9 +45,40 @@ export class TeacherClassDiaryService {
         const teacherId = await this.getTeacherIdFromUser(userId);
         const resolvedYearId = await this.resolveAcademicYearId(schoolId, academicYearId);
 
+        // Resolve groupId if missing or 0
+        let resolvedGroupId = dto.groupId;
+        console.log(`[ClassDiary] Create attempt - Incoming groupId: ${dto.groupId}, sectionId: ${dto.sectionId}, classId: ${dto.classId}`);
+
+        if (!resolvedGroupId || resolvedGroupId === 0) {
+            if (dto.sectionId) {
+                const group = await this.prisma.academicGroup.findFirst({
+                    where: { schoolId, sectionId: dto.sectionId },
+                    select: { id: true }
+                });
+                if (group) {
+                    resolvedGroupId = group.id;
+                    console.log(`[ClassDiary] Resolved groupId ${resolvedGroupId} from sectionId ${dto.sectionId}`);
+                }
+            } else if (dto.classId) {
+                const group = await this.prisma.academicGroup.findFirst({
+                    where: { schoolId, classId: dto.classId, sectionId: null },
+                    select: { id: true }
+                });
+                if (group) {
+                    resolvedGroupId = group.id;
+                    console.log(`[ClassDiary] Resolved groupId ${resolvedGroupId} from classId ${dto.classId}`);
+                }
+            }
+        }
+
+        if (!resolvedGroupId || resolvedGroupId === 0) {
+            console.error(`[ClassDiary] Failed to resolve groupId. Incoming:`, dto);
+            throw new BadRequestException('A valid academic group ID is required for diary entry.');
+        }
+
+        console.log(`[ClassDiary] Final resolvedGroupId: ${resolvedGroupId}`);
+
         // Check for existing entry for this specific date
-        // Convert input date to start/end of day range or just check exact match if frontend sends uniform time
-        // Better: Check for "Same Day"
         const diaryDate = new Date(dto.lessonDate);
         const startOfDay = new Date(diaryDate); startOfDay.setHours(0, 0, 0, 0);
         const endOfDay = new Date(diaryDate); endOfDay.setHours(23, 59, 59, 999);
@@ -57,7 +88,7 @@ export class TeacherClassDiaryService {
                 schoolId,
                 teacherId,
                 academicYearId: resolvedYearId,
-                groupId: dto.groupId,
+                groupId: resolvedGroupId,
                 subjectId: dto.subjectId,
                 lessonDate: {
                     gte: startOfDay,
@@ -67,14 +98,13 @@ export class TeacherClassDiaryService {
         });
 
         if (existing) {
-            // Instead of error, we could return it or just block. 
-            // User requirement says "one dairy per day".
             throw new BadRequestException('A diary entry for this date already exists.');
         }
 
         return this.prisma.classDiary.create({
             data: {
                 ...dto,
+                groupId: resolvedGroupId,
                 schoolId,
                 academicYearId: resolvedYearId,
                 teacherId,
