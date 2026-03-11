@@ -101,13 +101,22 @@ export class TeacherSubjectController {
         return this.subjectService.uploadSyllabusFile(req.user.schoolId, req.user.id, id, file, title);
     }
 
-    @Delete(':id/syllabus-files/:fileId')
-    @ApiOperation({ summary: 'Delete a syllabus file' })
     deleteSyllabusFile(
         @Request() req,
         @Param('id', ParseIntPipe) id: number,
         @Param('fileId', ParseIntPipe) fileId: number
     ) {
         return this.subjectService.deleteSyllabusFile(req.user.schoolId, req.user.id, id, fileId);
+    }
+
+    @Patch(':id/syllabus-files/:fileId')
+    @ApiOperation({ summary: 'Update a syllabus file (rename)' })
+    patchSyllabusFile(
+        @Request() req,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('fileId', ParseIntPipe) fileId: number,
+        @Body('title') title: string
+    ) {
+        return this.subjectService.updateSyllabusFile(req.user.schoolId, req.user.id, id, fileId, title);
     }
 }

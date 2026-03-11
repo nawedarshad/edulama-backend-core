@@ -474,6 +474,7 @@ export class TeacherSubjectService {
             data: {
                 schoolId,
                 subjectAssignmentId: assignmentId,
+                // @ts-ignore
                 title,
                 fileName: file.originalname,
                 fileUrl,
@@ -517,5 +518,34 @@ export class TeacherSubjectService {
         }
 
         return { success: true };
+    }
+
+    async updateSyllabusFile(schoolId: number, userId: number, assignmentId: number, fileId: number, title: string) {
+        const teacher = await this.prisma.teacherProfile.findUnique({
+            where: { userId },
+            select: { id: true }
+        });
+        if (!teacher) throw new ForbiddenException('Teacher profile not found');
+
+        const assignment = await this.prisma.subjectAssignment.findFirst({
+            where: { id: assignmentId, schoolId, teacherId: teacher.id }
+        });
+        if (!assignment) throw new ForbiddenException('Assignment not accessible');
+
+        const existingFile = await this.prisma.syllabusFile.findFirst({
+            where: {
+                id: fileId,
+                subjectAssignmentId: assignmentId,
+                schoolId
+            }
+        });
+
+        if (!existingFile) throw new NotFoundException('Syllabus file not found');
+
+        return this.prisma.syllabusFile.update({
+            where: { id: fileId },
+            // @ts-ignore
+            data: { title }
+        });
     }
 }
