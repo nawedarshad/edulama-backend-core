@@ -54,21 +54,27 @@ export class TeacherTimetableController {
         const academicYearId = req.user.academicYearId;
 
         if (!query.startDate || !query.endDate) {
-            // Default to current week? Or throw error?
-            // Let's require dates or default to current week.
-            // For now, let's assume valid input or throw in service if needed/validate in DTO.
-            // But logic needs dates.
-            // If missing, default to current week (Monday to Saturday)
             const today = new Date();
-            const first = today.getDate() - today.getDay() + 1; // Monday
-            const last = first + 5; // Saturday
-
+            const first = today.getDate() - today.getDay() + 1;
+            const last = first + 5;
             const start = new Date(today.setDate(first)).toISOString().split('T')[0];
             const end = new Date(today.setDate(last)).toISOString().split('T')[0];
-
             return this.timetableService.getTimetableRange(schoolId, userId, academicYearId, query.startDate || start, query.endDate || end);
         }
 
         return this.timetableService.getTimetableRange(schoolId, userId, academicYearId, query.startDate, query.endDate);
+    }
+
+    @ApiOperation({ summary: 'Get next scheduled class for a subject' })
+    @Get('next-class')
+    getNextClassDate(
+        @Request() req,
+        @Query('groupId') groupId: number,
+        @Query('subjectId') subjectId: number,
+        @Query('fromDate') fromDate: string
+    ) {
+        const schoolId = req.user.schoolId;
+        const userId = req.user.id;
+        return this.timetableService.getNextClassDate(schoolId, userId, Number(groupId), Number(subjectId), fromDate);
     }
 }

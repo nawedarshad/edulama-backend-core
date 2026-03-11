@@ -76,4 +76,9 @@ export class CreateClassDiaryDto {
     @IsOptional()
     @IsInt()
     lessonId?: number;
+
+    @ApiProperty({ required: false })
+    @IsOptional()
+    @IsISO8601()
+    homeworkDueDate?: string;
 }

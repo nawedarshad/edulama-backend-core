@@ -14,9 +14,10 @@ import { LessonAnalyticsService } from './lesson-analytics.service';
 
 import { SchedulerController } from '../scheduler/scheduler.controller';
 import { SchedulerService } from '../scheduler/scheduler.service';
+import { TeacherTimetableModule } from '../timetable/teacher-timetable.module';
 
 @Module({
-    imports: [PrismaModule, AuditLogModule, HttpModule, ConfigModule],
+    imports: [PrismaModule, AuditLogModule, HttpModule, ConfigModule, TeacherTimetableModule],
     controllers: [TeacherClassDiaryController, TeacherLessonContentController, SchedulerController],
     providers: [TeacherClassDiaryService, LessonContentService, LessonAnalyticsService, SchedulerService],
     exports: [TeacherClassDiaryService, LessonContentService, LessonAnalyticsService, SchedulerService],

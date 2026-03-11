@@ -394,4 +394,34 @@ export class TeacherTimetableService {
 
         return result;
     }
+
+    async getNextClassDate(schoolId: number, userId: number, groupId: number, subjectId: number, fromDate: string): Promise<Date> {
+        const teacherId = await this.getTeacherIdFromUser(userId);
+        const entries = await this.prisma.timetableEntry.findMany({
+            where: { schoolId, teacherId, groupId, subjectId },
+            select: { day: true }
+        });
+
+        if (entries.length === 0) {
+            const nextDay = new Date(fromDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            return nextDay;
+        }
+
+        const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+        const scheduledDays = entries.map(e => dayNames.indexOf(e.day));
+
+        const start = new Date(fromDate);
+        for (let i = 1; i <= 7; i++) {
+            const current = new Date(start);
+            current.setDate(start.getDate() + i);
+            if (scheduledDays.includes(current.getDay())) {
+                return current;
+            }
+        }
+
+        const fallback = new Date(fromDate);
+        fallback.setDate(fallback.getDate() + 1);
+        return fallback;
+    }
 }

@@ -4,10 +4,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateClassDiaryDto } from './dto/create-class-diary.dto';
 import { UpdateClassDiaryDto } from './dto/update-class-diary.dto';
 import { ClassDiaryQueryDto } from './dto/class-diary-query.dto';
+import { TeacherTimetableService } from '../timetable/teacher-timetable.service';
 
 @Injectable()
 export class TeacherClassDiaryService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly teacherTimetableService: TeacherTimetableService
+    ) { }
 
     private async getTeacherIdFromUser(userId: number): Promise<number> {
         const teacher = await this.prisma.teacherProfile.findUnique({
@@ -120,9 +124,20 @@ export class TeacherClassDiaryService {
 
             // Auto-create Homework if homework field is populated
             if (dto.homework && dto.homework.trim().length > 0) {
-                const tomorrow = new Date();
-                tomorrow.setDate(tomorrow.getDate() + 1);
-                tomorrow.setHours(23, 59, 59, 999);
+                let dueDate: Date;
+                if (dto.homeworkDueDate) {
+                    dueDate = new Date(dto.homeworkDueDate);
+                    dueDate.setHours(23, 59, 59, 999);
+                } else {
+                    dueDate = await this.teacherTimetableService.getNextClassDate(
+                        schoolId,
+                        userId,
+                        resolvedGroupId,
+                        dto.subjectId,
+                        dto.lessonDate
+                    );
+                    dueDate.setHours(23, 59, 59, 999);
+                }
 
                 const homework = await tx.homework.create({
                     data: {
@@ -135,7 +150,7 @@ export class TeacherClassDiaryService {
                         subjectId: dto.subjectId,
                         title: dto.title || `Homework: ${dto.topic || 'Untitled'}`,
                         description: dto.homework,
-                        dueDate: tomorrow,
+                        dueDate: dueDate,
                         taughtToday: dto.topic || dto.title,
                         attachments: [],
                     },
@@ -288,12 +303,20 @@ export class TeacherClassDiaryService {
                 });
 
                 if (existingHomework) {
+                    const hwUpdateData: any = {
+                        description: dto.homework,
+                        taughtToday: dto.topic || dto.title || existingHomework.taughtToday,
+                    };
+
+                    if (dto.homeworkDueDate) {
+                        const dueDate = new Date(dto.homeworkDueDate);
+                        dueDate.setHours(23, 59, 59, 999);
+                        hwUpdateData.dueDate = dueDate;
+                    }
+
                     await tx.homework.update({
                         where: { id: existingHomework.id },
-                        data: {
-                            description: dto.homework,
-                            taughtToday: dto.topic || dto.title || existingHomework.taughtToday,
-                        },
+                        data: hwUpdateData,
                     });
                 }
             }

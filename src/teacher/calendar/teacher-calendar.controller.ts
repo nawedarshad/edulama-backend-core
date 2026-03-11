@@ -20,4 +20,12 @@ export class TeacherCalendarController {
     ) {
         return this.calendarService.generateCalendar(user.schoolId, dto.startDate, dto.endDate, undefined, user.academicYearId);
     }
+
+    @Get('validate-date')
+    async validateDate(
+        @GetUser() user: any,
+        @Query('date') date: string,
+    ) {
+        return this.calendarService.validateDate(user.schoolId, new Date(date));
+    }
 }
