@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { HomeworkStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateClassDiaryDto } from './dto/create-class-diary.dto';
@@ -236,19 +236,69 @@ export class TeacherClassDiaryService {
     async update(schoolId: number, userId: number, id: number, dto: UpdateClassDiaryDto) {
         const teacherId = await this.getTeacherIdFromUser(userId);
 
-        // Verify ownership
-        await this.findOne(schoolId, userId, id);
+        // Verify ownership and get current state
+        const diary = await this.findOne(schoolId, userId, id);
 
-        return this.prisma.classDiary.update({
-            where: { id },
-            data: {
-                ...dto,
-                studyMaterial: dto.studyMaterial ?? undefined, // Only update if provided
-                objective: dto.objective,
-                activity: dto.activity,
-                remarks: dto.remarks,
-                media: dto.media,
-            },
+        // 1. Check 48-hour lock
+        const now = new Date();
+        const createdDate = new Date(diary.createdAt);
+        const diffInHours = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60);
+        if (diffInHours > 48) {
+            throw new ForbiddenException('Class diary entry is locked (2 days passed since creation).');
+        }
+
+        // 2. Prepare update data and sanitize groupId
+        const updateData: any = {
+            ...dto,
+            studyMaterial: dto.studyMaterial ?? undefined,
+            objective: dto.objective,
+            activity: dto.activity,
+            remarks: dto.remarks,
+            media: dto.media,
+        };
+
+        if (updateData.groupId === 0 || updateData.groupId === null) {
+            delete updateData.groupId;
+        }
+
+        return this.prisma.$transaction(async (tx) => {
+            const updatedDiary = await tx.classDiary.update({
+                where: { id },
+                data: updateData,
+            });
+
+            // 3. Sync Homework if changed
+            if (dto.homework !== undefined) {
+                // Find homework created around the same time as the diary (within 10s)
+                const tenSeconds = 10 * 1000;
+                const startTime = new Date(diary.createdAt.getTime() - tenSeconds);
+                const endTime = new Date(diary.createdAt.getTime() + tenSeconds);
+
+                const existingHomework = await tx.homework.findFirst({
+                    where: {
+                        schoolId,
+                        teacherId,
+                        subjectId: diary.subjectId,
+                        groupId: diary.groupId,
+                        createdAt: {
+                            gte: startTime,
+                            lte: endTime,
+                        },
+                    },
+                });
+
+                if (existingHomework) {
+                    await tx.homework.update({
+                        where: { id: existingHomework.id },
+                        data: {
+                            description: dto.homework,
+                            taughtToday: dto.topic || dto.title || existingHomework.taughtToday,
+                        },
+                    });
+                }
+            }
+
+            return updatedDiary;
         });
     }
 
