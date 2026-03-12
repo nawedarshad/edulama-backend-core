@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AttendanceConfigService } from 'src/principal/attendance-config/attendance-config.service';
 import { TakeAttendanceDto } from './dto/take-attendance.dto';
 import { UpdateAttendanceDto } from './dto/update-attendance.dto';
-import { AttendanceMode, AttendanceStatus, DailyAttendanceAccess } from '@prisma/client';
+import { AttendanceMode, AttendanceStatus, DailyAttendanceAccess, DayOfWeek } from '@prisma/client';
 import { MarkStudentLateDto } from './dto/mark-student-late.dto';
 
 @Injectable()
@@ -65,27 +65,68 @@ export class TeacherAttendanceService {
             }
         }
 
-        // 4. Validate Responsibility (CLASS_TEACHER vs ALL_TEACHERS)
-        const isSectionTeacher = await this.prisma.sectionTeacher.findFirst({
-            where: {
-                teacherId: teacher.id,
-                sectionId: dto.sectionId,
-            }
-        });
+        // 4. Validate Authorization
+        if (config.mode === AttendanceMode.DAILY) {
+            if (config.responsibility === DailyAttendanceAccess.FIRST_PERIOD_TEACHER) {
+                // Find first period teacher for this class/section and day
+                const dayOfWeek = this.getDayOfWeek(attendanceDate);
+                const firstEntry = await this.prisma.timetableEntry.findFirst({
+                    where: {
+                        schoolId,
+                        academicYearId: dto.academicYearId,
+                        group: { classId: dto.classId, sectionId: dto.sectionId },
+                        day: dayOfWeek,
+                        status: 'PUBLISHED',
+                    },
+                    include: { timeSlot: true },
+                    orderBy: { timeSlot: { startTime: 'asc' } }
+                });
 
-        if (!isSectionTeacher) {
-            // Also check if they are the Class Head Teacher (Class Teacher)
-            const isClassHead = await this.prisma.classHeadTeacher.findUnique({
+                if (!firstEntry) {
+                    throw new BadRequestException('No timetable entry found for this class today. Attendance cannot be taken.');
+                }
+
+                if (firstEntry.teacherId !== teacher.id) {
+                    throw new ForbiddenException('Only the teacher of the first period is authorized to mark daily attendance.');
+                }
+            } else {
+                // Default: CLASS_TEACHER logic
+                const isSectionTeacher = await this.prisma.sectionTeacher.findFirst({
+                    where: {
+                        teacherId: teacher.id,
+                        sectionId: dto.sectionId,
+                    }
+                });
+
+                if (!isSectionTeacher) {
+                    const isClassHead = await this.prisma.classHeadTeacher.findUnique({
+                        where: { classId: dto.classId }
+                    });
+
+                    const authorized = isClassHead && isClassHead.teacherId === teacher.id;
+                    if (!authorized) {
+                        throw new ForbiddenException('Only the assigned Class Teacher can take attendance.');
+                    }
+                }
+            }
+        } else if (config.mode === AttendanceMode.PERIOD_WISE) {
+            // PERIOD_WISE: Check if teacher is assigned to this period/subject
+            const dayOfWeek = this.getDayOfWeek(attendanceDate);
+            const isAuthorized = await this.prisma.timetableEntry.findFirst({
                 where: {
-                    groupId: 0, classId: dto.classId,
+                    schoolId,
+                    academicYearId: dto.academicYearId,
+                    teacherId: teacher.id,
+                    group: { classId: dto.classId, sectionId: dto.sectionId },
+                    subjectId: dto.subjectId,
+                    day: dayOfWeek,
+                    status: 'PUBLISHED',
+                    timeSlot: dto.timePeriodId ? { id: dto.timePeriodId } : undefined,
                 }
             });
 
-            // Allow if they are either section teacher or class head teacher
-            const authorized = isSectionTeacher || (isClassHead && isClassHead.teacherId === teacher.id);
-
-            if (!authorized) {
-                throw new ForbiddenException('Only the assigned Class Teacher can take attendance.');
+            if (!isAuthorized) {
+                throw new ForbiddenException('You are not authorized to mark attendance for this period/subject.');
             }
         }
 
@@ -816,5 +857,18 @@ export class TeacherAttendanceService {
             });
         }
         return [];
+    }
+
+    private getDayOfWeek(date: Date): DayOfWeek {
+        const days: DayOfWeek[] = [
+            DayOfWeek.SUNDAY,
+            DayOfWeek.MONDAY,
+            DayOfWeek.TUESDAY,
+            DayOfWeek.WEDNESDAY,
+            DayOfWeek.THURSDAY,
+            DayOfWeek.FRIDAY,
+            DayOfWeek.SATURDAY,
+        ];
+        return days[date.getDay()];
     }
 }
