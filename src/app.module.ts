@@ -30,6 +30,7 @@ import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health/health.controller';
 import { FileUploadModule } from './common/file-upload/file-upload.module';
 import { PublicSchoolModule } from './public-school/public-school.module';
+import { SupportModule } from './common/support/support.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { PublicSchoolModule } from './public-school/public-school.module';
     AuthModule,
     FileUploadModule,
     PublicSchoolModule,
+    SupportModule,
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],

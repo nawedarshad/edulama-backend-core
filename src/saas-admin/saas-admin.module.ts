@@ -5,9 +5,10 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { SaaSAdminFeaturesController } from './saas-admin-features.controller';
 import { PrismaModule } from '../prisma/prisma.module';
+import { PlatformSettingsModule } from './settings/platform-settings.module';
 
 @Module({
-    imports: [PrismaModule, HttpModule, ConfigModule],
+    imports: [PrismaModule, HttpModule, ConfigModule, PlatformSettingsModule],
     controllers: [SaaSAdminController, SaaSAdminFeaturesController],
     providers: [SaaSAdminService],
     exports: [SaaSAdminService],
