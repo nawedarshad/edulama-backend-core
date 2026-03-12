@@ -122,17 +122,25 @@ export class ParentLeaveService {
             // 5. Calculate effective working days
             const daysCount = await this.computeEffectiveDays(schoolId, startDate, endDate);
 
-            // 6. Determine initial status based on workflow
+            // 6. Fetch school type to check for COACHING override
+            const school = await this.prisma.school.findUnique({
+                where: { id: schoolId },
+                select: { type: true }
+            });
+
+            // 7. Determine initial status based on workflow
             let initialStatus: LeaveStatus;
-            if (leaveType.studentLeaveApprovalWorkflow === StudentLeaveApprovalWorkflow.CLASS_TEACHER_FIRST) {
+            const isCoaching = school?.type === 'COACHING';
+
+            if (!isCoaching && leaveType.studentLeaveApprovalWorkflow === StudentLeaveApprovalWorkflow.CLASS_TEACHER_FIRST) {
                 initialStatus = LeaveStatus.PENDING_CLASS_TEACHER;
                 this.logger.log(`Leave routed to class teacher first for student ${studentId}`);
             } else {
                 initialStatus = LeaveStatus.PENDING;
-                this.logger.log(`Leave routed directly to principal for student ${studentId}`);
+                this.logger.log(`Leave routed directly to principal for student ${studentId}${isCoaching ? ' (Coaching Override)' : ''}`);
             }
 
-            // 7. Create leave request
+            // 8. Create leave request
             const leaveRequest = await this.prisma.leaveRequest.create({
                 data: {
                     schoolId,

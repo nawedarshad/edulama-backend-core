@@ -55,6 +55,13 @@ export class TeacherProfileService {
                         section: true
                     }
                 },
+                subjectAssignments: {
+                    include: {
+                        class: true,
+                        section: true,
+                        subject: true
+                    }
+                },
                 houseMasterOf: true,
 
                 // School info (minimal)
