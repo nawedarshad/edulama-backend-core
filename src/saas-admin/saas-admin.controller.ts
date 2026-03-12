@@ -102,4 +102,17 @@ export class SaaSAdminController {
     remove(@Param('id', ParseIntPipe) id: number) {
         return this.saasAdminService.deleteSchool(id);
     }
+
+    @Get(':id/settings')
+    getSettings(@Param('id', ParseIntPipe) id: number) {
+        return this.saasAdminService.getSchoolSettings(id);
+    }
+
+    @Patch(':id/settings')
+    updateSettings(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() data: any
+    ) {
+        return this.saasAdminService.updateSchoolSettings(id, data);
+    }
 }

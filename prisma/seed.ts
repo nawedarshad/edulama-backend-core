@@ -4,6 +4,7 @@ const prisma = new PrismaClient();
 
 const modules = [
     { key: "ATTENDANCE", name: "Attendance Management" },
+    { key: "LATE_ATTENDANCE", name: "Late Attendance Tracking" },
     { key: "EXAMS", name: "Exams & Results" },
     { key: "TIMETABLE", name: "Timetable Management" },
     { key: "LESSON_PLANNING", name: "Lesson Planning & Diary" },

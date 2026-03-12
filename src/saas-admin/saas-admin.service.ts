@@ -304,4 +304,24 @@ export class SaaSAdminService {
         return results;
     }
 
+    async getSchoolSettings(schoolId: number) {
+        return this.prisma.schoolSettings.findUnique({
+            where: { schoolId }
+        });
+    }
+
+    async updateSchoolSettings(schoolId: number, data: any) {
+        return this.prisma.schoolSettings.upsert({
+            where: { schoolId },
+            update: data,
+            create: {
+                ...data,
+                schoolId,
+                // These are required by schema but might not be in 'data'
+                schoolStartTime: data.schoolStartTime || new Date(new Date().setHours(8, 0, 0, 0)),
+                schoolEndTime: data.schoolEndTime || new Date(new Date().setHours(15, 0, 0, 0)),
+            }
+        });
+    }
+
 }

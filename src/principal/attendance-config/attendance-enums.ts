@@ -1,0 +1,29 @@
+export enum LateMarkingResponsibility {
+  GATEKEEPER = 'GATEKEEPER',
+  TAKER = 'TAKER',
+  CLASS_TEACHER = 'CLASS_TEACHER',
+  FIRST_PERIOD_TEACHER = 'FIRST_PERIOD_TEACHER',
+}
+
+export enum LateAttendanceStatus {
+  PRESENT = 'PRESENT',
+  LATE = 'LATE',
+  HALFDAY = 'HALFDAY',
+  ABSENT = 'ABSENT',
+}
+
+export enum AttendanceTrackingStrategy {
+  ONLY_ATTENDANCE = 'ONLY_ATTENDANCE',
+  ATTENDANCE_AND_LATE_SEPARATE = 'ATTENDANCE_AND_LATE_SEPARATE',
+  LATE_IN_ATTENDANCE = 'LATE_IN_ATTENDANCE',
+}
+
+export enum AttendanceMode {
+  DAILY = 'DAILY',
+  PERIOD_WISE = 'PERIOD_WISE',
+}
+
+export enum DailyAttendanceAccess {
+  CLASS_TEACHER = 'CLASS_TEACHER',
+  FIRST_PERIOD_TEACHER = 'FIRST_PERIOD_TEACHER',
+}

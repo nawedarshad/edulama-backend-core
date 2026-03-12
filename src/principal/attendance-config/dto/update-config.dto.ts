@@ -1,5 +1,5 @@
-import { IsEnum, IsNotEmpty, IsNumber } from 'class-validator';
-import { AttendanceMode, DailyAttendanceAccess, AttendanceTrackingStrategy } from '@prisma/client';
+import { IsEnum, IsNotEmpty, IsNumber, IsOptional } from 'class-validator';
+import { AttendanceMode, AttendanceTrackingStrategy, DailyAttendanceAccess, LateMarkingResponsibility, LateAttendanceStatus } from '../attendance-enums';
 
 export class UpdateAttendanceConfigDto {
     @IsNumber()
@@ -10,11 +10,19 @@ export class UpdateAttendanceConfigDto {
     @IsNotEmpty()
     mode: AttendanceMode;
 
-    @IsEnum(DailyAttendanceAccess)
-    @IsNotEmpty()
-    responsibility: DailyAttendanceAccess;
-
     @IsEnum(AttendanceTrackingStrategy)
     @IsNotEmpty()
     trackingStrategy: AttendanceTrackingStrategy;
+
+    @IsEnum(LateMarkingResponsibility)
+    @IsOptional()
+    lateMarkingResponsibility?: LateMarkingResponsibility;
+
+    @IsEnum(LateAttendanceStatus)
+    @IsOptional()
+    lateCountingPolicy?: LateAttendanceStatus;
+
+    @IsEnum(DailyAttendanceAccess)
+    @IsNotEmpty()
+    responsibility: DailyAttendanceAccess;
 }

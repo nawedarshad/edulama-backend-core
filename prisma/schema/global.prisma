@@ -65,6 +65,20 @@ enum DailyAttendanceAccess {
   FIRST_PERIOD_TEACHER
 }
 
+enum LateMarkingResponsibility {
+  GATEKEEPER
+  TAKER
+  CLASS_TEACHER
+  FIRST_PERIOD_TEACHER
+}
+
+enum LateAttendanceStatus {
+  PRESENT
+  LATE
+  HALFDAY
+  ABSENT
+}
+
 model SchoolSettings {
   id       Int @id @default(autoincrement())
   schoolId Int @unique
@@ -107,9 +121,12 @@ model SchoolSettings {
   defaultPeriodLength    Int     @default(45)
 
   // Attendance
-  lateMarkThreshold     Int?
-  absentAfter           Int?
-  allowExcuseSubmission Boolean @default(true)
+  lateMarkThreshold         Int?
+  lateMarkingResponsibility LateMarkingResponsibility @default(TAKER)
+  lateCountingPolicy       LateAttendanceStatus       @default(LATE)
+  isTrackingStrategyLocked  Boolean                    @default(false)
+  absentAfter               Int?
+  allowExcuseSubmission     Boolean                    @default(true)
 
   // Academic constraints
   maxSubjectsPerStudent     Int @default(8)
