@@ -107,4 +107,9 @@ export class SupportService {
 
         return ticket;
     }
+    async findAllTickets() {
+        return this.prisma.contactInquiry.findMany({
+            orderBy: { createdAt: 'desc' },
+        });
+    }
 }
