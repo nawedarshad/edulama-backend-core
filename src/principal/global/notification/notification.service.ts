@@ -347,4 +347,20 @@ export class NotificationService {
 
         return { count: result.count };
     }
+
+    async markMyNotificationAsRead(schoolId: number, userId: number, notificationId: number) {
+        const result = await this.prisma.notificationDelivery.updateMany({
+            where: {
+                notificationId: BigInt(notificationId),
+                userId,
+                notification: { schoolId },
+                readAt: null
+            },
+            data: {
+                readAt: new Date()
+            }
+        });
+
+        return { count: result.count };
+    }
 }

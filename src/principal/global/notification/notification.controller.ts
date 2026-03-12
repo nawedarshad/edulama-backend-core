@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Request, UseGuards, Delete, Param, ParseIntPipe } from '@nestjs/common';
+import { Body, Controller, Get, Post, Request, UseGuards, Delete, Param, ParseIntPipe, Patch } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { UserAuthGuard } from '../../../common/guards/user.guard';
@@ -28,6 +28,12 @@ export class NotificationController {
     @Get('my')
     getMyNotifications(@Request() req) {
         return this.notificationService.getMyNotifications(req.user.schoolId, req.user.id);
+    }
+
+    @Patch('my/:id/read')
+    markAsRead(@Request() req, @Param('id', ParseIntPipe) id: number) {
+        console.log(`[NotificationController] Marking notification ${id} as read for user ${req.user.id}`);
+        return this.notificationService.markMyNotificationAsRead(req.user.schoolId, req.user.id, id);
     }
 
     @Delete('my/:id')
