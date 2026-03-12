@@ -1,3 +1,4 @@
+import { IsEnum, IsNotEmpty, IsNumber } from 'class-validator';
 import { AttendanceMode, DailyAttendanceAccess, AttendanceTrackingStrategy } from '@prisma/client';
 
 export class UpdateAttendanceConfigDto {
