@@ -13,8 +13,7 @@ async function seedSettings() {
       await prisma.platformSetting.create({
         data: {
           key: 'HELP_SUPPORT_EMAIL',
-          value: 'admin@edulama.com',
-          description: 'Recipient email for platform support inquiries'
+          value: 'admin@edulama.com'
         }
       });
       console.log('Created HELP_SUPPORT_EMAIL: admin@edulama.com');

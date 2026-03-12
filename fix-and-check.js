@@ -17,8 +17,7 @@ async function run() {
       await prisma.platformSetting.create({
         data: {
           key: 'HELP_SUPPORT_EMAIL',
-          value: 'admin@edulama.com',
-          description: 'Recipient for support tickets'
+          value: 'admin@edulama.com'
         }
       });
       console.log('CREATED setting: HELP_SUPPORT_EMAIL = admin@edulama.com');
