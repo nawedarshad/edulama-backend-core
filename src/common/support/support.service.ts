@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePlatformSupportTicketDto } from './dto/create-support-ticket.dto';
 import * as nodemailer from 'nodemailer';
 import { ConfigService } from '@nestjs/config';
