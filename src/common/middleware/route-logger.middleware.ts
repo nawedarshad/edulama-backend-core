@@ -7,11 +7,12 @@ export class RouteLoggerMiddleware implements NestMiddleware {
 
     use(req: Request, res: Response, next: NextFunction) {
         this.logger.log(`Incoming request: ${req.method} ${req.originalUrl}`);
-
-        // Log router stack to see what routes are registered
-        // slightly hacky but useful for debugging 404s in express
-        if ((req as any).app && (req as any).app._router && (req as any).app._router.stack) {
-            // This might be too verbose, so maybe just log the request for now.
+        this.logger.debug(`Headers: ${JSON.stringify(req.headers)}`);
+        
+        if (req.body && Object.keys(req.body).length > 0) {
+            this.logger.debug(`Body: ${JSON.stringify(req.body)}`);
+        } else if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT') {
+            this.logger.warn(`Empty body on ${req.method} request!`);
         }
 
         next();
