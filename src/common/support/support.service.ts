@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class SupportService {
     private readonly logger = new Logger(SupportService.name);
-    private transporter: nodemailer.Transporter;
+    private transporter: nodemailer.Transporter | null = null;
 
     constructor(
         private prisma: PrismaService,
@@ -26,10 +26,15 @@ export class SupportService {
                 secure: Number(port) === 465,
                 auth: { user, pass },
             });
+            this.logger.log('Nodemailer transporter initialized successfully');
+        } else {
+            this.logger.warn('Nodemailer transporter NOT initialized - missing config');
+            this.logger.debug(`Config: host=${host}, port=${port}, user=${user}`);
         }
     }
 
     async createTicket(dto: CreatePlatformSupportTicketDto) {
+        this.logger.log(`Creating support ticket for: ${dto.email}`);
         // 1. Save to ContactInquiry (as scheduled in plan)
         const ticket = await this.prisma.contactInquiry.create({
             data: {
@@ -43,15 +48,29 @@ export class SupportService {
         });
 
         // 2. Fetch help support email from PlatformSettings
-        const helpEmails = await this.prisma.platformSetting.findMany({
-            where: { key: 'HELP_SUPPORT_EMAIL' },
+        let helpEmails = await this.prisma.platformSetting.findMany({
+            where: { 
+                OR: [
+                    { key: 'HELP_SUPPORT_EMAIL' },
+                    { key: 'help_support_email' }
+                ]
+            },
         });
+
+        // Fallback if none found
+        if (helpEmails.length === 0) {
+            this.logger.warn('HELP_SUPPORT_EMAIL not found in database. Using fallback admin@edulama.com');
+            helpEmails = [{ value: 'admin@edulama.com' } as any];
+        }
+
+        this.logger.debug(`Found ${helpEmails.length} recipient emails in PlatformSettings`);
 
         // 3. Send email if configured
         if (this.transporter && helpEmails.length > 0) {
             const recipients = helpEmails.map(s => s.value).join(', ');
             const fromEmail = this.config.get<string>('MAIL_FROM') || 'support@edulama.com';
 
+            this.logger.log(`Attempting to send email to: ${recipients}`);
             try {
                 await this.transporter.sendMail({
                     from: `"EduLama Support" <${fromEmail}>`,
