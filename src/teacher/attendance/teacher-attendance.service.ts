@@ -14,6 +14,10 @@ export class TeacherAttendanceService {
         private readonly configService: AttendanceConfigService,
     ) { }
 
+    async getConfig(schoolId: number, academicYearId: number) {
+        return this.configService.getConfig(schoolId, academicYearId);
+    }
+
     async takeAttendance(teacherId: number, dto: TakeAttendanceDto) {
         // 1. Fetch Teacher Profile with School ID
         const teacher = await this.prisma.teacherProfile.findUnique({

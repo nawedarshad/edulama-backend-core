@@ -54,6 +54,12 @@ enum AttendanceMode {
   PERIOD_WISE
 }
 
+enum AttendanceTrackingStrategy {
+  ONLY_ATTENDANCE
+  ATTENDANCE_AND_LATE_SEPARATE
+  LATE_IN_ATTENDANCE
+}
+
 enum DailyAttendanceAccess {
   CLASS_TEACHER
   FIRST_PERIOD_TEACHER
@@ -84,8 +90,9 @@ model SchoolSettings {
   website String?
 
   // Academic
-  attendanceMode        AttendanceMode        @default(DAILY)
-  dailyAttendanceAccess DailyAttendanceAccess @default(CLASS_TEACHER)
+  attendanceMode        AttendanceMode             @default(DAILY)
+  trackingStrategy      AttendanceTrackingStrategy @default(ONLY_ATTENDANCE)
+  dailyAttendanceAccess DailyAttendanceAccess      @default(CLASS_TEACHER)
   gradingSystem         GradingSystem         @default(PERCENTAGE)
   promotionPolicy       PromotionPolicy       @default(MANUAL)
 

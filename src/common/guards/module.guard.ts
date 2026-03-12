@@ -38,6 +38,19 @@ export class ModuleGuard implements CanActivate {
         // ── 2. Module check from JWT (zero extra DB query) ──────────────────
         const modules: string[] = user.modules ?? [];
 
+        // Special handling for Attendance vs Late modules if "Separate Late Module" is enabled
+        if (requiredModuleKey === 'LATE_ATTENDANCE') {
+            const schoolSettings = await this.prisma.schoolSettings.findUnique({
+                where: { schoolId: user.schoolId },
+                select: { trackingStrategy: true }
+            });
+
+            if (schoolSettings?.trackingStrategy !== 'ATTENDANCE_AND_LATE_SEPARATE') {
+                this.logger.warn(`LATE_ATTENDANCE module requested but strategy is ${schoolSettings?.trackingStrategy}`);
+                throw new ForbiddenException(`The Late Attendance module is not enabled for your school configuration.`);
+            }
+        }
+
         if (!modules.includes(requiredModuleKey)) {
             this.logger.warn(`Module '${requiredModuleKey}' not in JWT for school ${user.schoolId}`);
             throw new ForbiddenException(`Module '${requiredModuleKey}' is not enabled for your school.`);

@@ -141,6 +141,13 @@ export class TeacherAttendanceController {
         );
     }
 
+    @Get('config')
+    @ApiOperation({ summary: 'Get Attendance Configuration', description: 'Get the school\'s attendance mode and responsibility for the current academic year.' })
+    async getConfig(@Request() req, @Query('academicYearId', ParseIntPipe) academicYearId: number) {
+        const schoolId = req.user.schoolId;
+        return this.service.getConfig(schoolId, academicYearId);
+    }
+
     @Get('students')
     @ApiOperation({ summary: 'Get Students for Attendance', description: 'Get accessible students for the teacher.' })
     async getStudents(
