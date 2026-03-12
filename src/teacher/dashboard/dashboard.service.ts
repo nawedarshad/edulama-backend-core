@@ -74,6 +74,7 @@ export class DashboardService {
                 academicYearId,
                 teacherId: teacher.id,
                 day: currentDayEnum,
+                status: { in: ['PUBLISHED', 'LOCKED'] },
                 timeSlot: { period: { type: 'TEACHING' } }
             }
         });
@@ -85,6 +86,7 @@ export class DashboardService {
                 academicYearId,
                 teacherId: teacher.id,
                 day: currentDayEnum,
+                status: { in: ['PUBLISHED', 'LOCKED'] },
                 timeSlot: {
                     endTime: {
                         gt: this.getCurrentTimeHash() // Helper to compare "HH:MM"
@@ -105,7 +107,8 @@ export class DashboardService {
                 schoolId,
                 academicYearId,
                 teacherId: teacher.id,
-                day: currentDayEnum
+                day: currentDayEnum,
+                status: { in: ['PUBLISHED', 'LOCKED'] }
             },
             orderBy: { timeSlot: { startTime: 'asc' } },
             include: {

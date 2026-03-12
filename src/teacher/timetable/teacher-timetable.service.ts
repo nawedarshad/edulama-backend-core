@@ -99,6 +99,7 @@ export class TeacherTimetableService {
                 schoolId,
                 academicYearId: resolvedYearId,
                 teacherId,
+                status: { in: ['PUBLISHED', 'LOCKED'] },
             },
             include: {
                 group: { select: { id: true, name: true } },
@@ -153,6 +154,7 @@ export class TeacherTimetableService {
                 academicYearId: resolvedYearId,
                 teacherId,
                 day: dayOfWeek,
+                status: { in: ['PUBLISHED', 'LOCKED'] },
             },
             include: {
                 group: { select: { id: true, name: true } },
@@ -303,7 +305,12 @@ export class TeacherTimetableService {
         // 1. Fetch all regular entries for this teacher
         // (We need to filter by day of week for each day in range, effectively all entries if range covers a week)
         const allEntries = await this.prisma.timetableEntry.findMany({
-            where: { schoolId, academicYearId: resolvedYearId, teacherId },
+            where: { 
+                schoolId, 
+                academicYearId: resolvedYearId, 
+                teacherId,
+                status: { in: ['PUBLISHED', 'LOCKED'] },
+            },
             include: {
                 group: { select: { id: true, name: true } },
                 subject: { select: { id: true, name: true, code: true, color: true } },
@@ -398,7 +405,13 @@ export class TeacherTimetableService {
     async getNextClassDate(schoolId: number, userId: number, groupId: number, subjectId: number, fromDate: string): Promise<Date> {
         const teacherId = await this.getTeacherIdFromUser(userId);
         const entries = await this.prisma.timetableEntry.findMany({
-            where: { schoolId, teacherId, groupId, subjectId },
+            where: { 
+                schoolId, 
+                teacherId, 
+                groupId, 
+                subjectId,
+                status: { in: ['PUBLISHED', 'LOCKED'] },
+            },
             select: { day: true }
         });
 
