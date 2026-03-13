@@ -226,6 +226,22 @@ export class TeacherAttendanceService {
                     finalRemarks = finalRemarks ? `${finalRemarks} | On Leave` : 'On Leave';
                 }
 
+                // Check for Late Marking (Only relevant if not on leave)
+                let isLate = false;
+                let lateReason = undefined;
+                let lateMarkedAt = undefined;
+                let lateMarkedById = undefined;
+
+                if (finalStatus !== AttendanceStatus.EXCUSED) {
+                    if (record.isLate || record.status === AttendanceStatus.LATE) {
+                        isLate = true;
+                        finalStatus = AttendanceStatus.PRESENT; // Late arrival counts as Present
+                        lateReason = record.lateReason;
+                        lateMarkedAt = new Date();
+                        lateMarkedById = teacher.userId;
+                    }
+                }
+
                 await tx.attendance.upsert({
                     where: {
                         schoolId_attendanceSessionId_studentProfileId: {
@@ -235,9 +251,12 @@ export class TeacherAttendanceService {
                         }
                     },
                     update: {
-                        // Strategy: Overwrite status and remarks. preserve isLate if status is PRESENT.
                         status: finalStatus,
                         remarks: finalRemarks,
+                        isLate,
+                        lateReason,
+                        lateMarkedAt,
+                        lateMarkedById,
                     },
                     create: {
                         schoolId,
@@ -245,6 +264,10 @@ export class TeacherAttendanceService {
                         studentProfileId: pid as number,
                         status: finalStatus,
                         remarks: finalRemarks,
+                        isLate,
+                        lateReason,
+                        lateMarkedAt,
+                        lateMarkedById,
                     }
                 });
             }

@@ -33,6 +33,7 @@ export class AttendanceConfigService {
                 mode: schoolSettings?.attendanceMode || 'DAILY',
                 responsibility: schoolSettings?.dailyAttendanceAccess || 'CLASS_TEACHER',
                 trackingStrategy: schoolSettings?.trackingStrategy || 'ONLY_ATTENDANCE',
+                lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility || 'TAKER',
                 warning: 'Configuration not found for this academic year, returning defaults from SchoolSettings.'
             };
         }
@@ -40,6 +41,7 @@ export class AttendanceConfigService {
         return {
             ...config,
             trackingStrategy: schoolSettings?.trackingStrategy || 'ONLY_ATTENDANCE',
+            lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility || 'TAKER',
         };
     }
 

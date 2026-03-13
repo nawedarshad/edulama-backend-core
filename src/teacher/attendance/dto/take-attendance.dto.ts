@@ -18,6 +18,13 @@ export class StudentAttendanceDto {
     @IsString()
     @IsOptional()
     remarks?: string;
+
+    @IsOptional()
+    isLate?: boolean;
+
+    @IsString()
+    @IsOptional()
+    lateReason?: string;
 }
 
 export class TakeAttendanceDto {
