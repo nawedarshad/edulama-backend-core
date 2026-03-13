@@ -32,7 +32,7 @@ export class AttendanceConfigService {
             return {
                 mode: schoolSettings?.attendanceMode || 'DAILY',
                 responsibility: schoolSettings?.dailyAttendanceAccess || 'CLASS_TEACHER',
-                trackingStrategy: schoolSettings?.trackingStrategy || 'SIMPLE',
+                trackingStrategy: schoolSettings?.trackingStrategy || 'ATTENDANCE_SIMPLE',
                 lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility || 'TAKER',
                 warning: 'Configuration not found for this academic year, returning defaults from SchoolSettings.'
             };

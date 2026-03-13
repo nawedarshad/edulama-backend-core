@@ -13,7 +13,7 @@ export enum LateAttendanceStatus {
 }
 
 export enum AttendanceTrackingStrategy {
-  SIMPLE = 'SIMPLE',
+  ATTENDANCE_SIMPLE = 'ATTENDANCE_SIMPLE',
   GATE_MARKING = 'GATE_MARKING',
   TAKER_MARKING = 'TAKER_MARKING',
 }

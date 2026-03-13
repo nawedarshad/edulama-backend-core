@@ -13,11 +13,11 @@ async function migrate() {
       }
     },
     data: {
-      trackingStrategy: 'SIMPLE'
+      trackingStrategy: 'ATTENDANCE_SIMPLE' as any
     }
   });
 
-  console.log(`Updated ${result.count} school settings to SIMPLE strategy.`);
+  console.log(`Updated ${result.count} school settings to ATTENDANCE_SIMPLE strategy.`);
 }
 
 migrate()
