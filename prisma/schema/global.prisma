@@ -55,6 +55,9 @@ enum AttendanceMode {
 }
 
 enum AttendanceTrackingStrategy {
+  SIMPLE
+  GATE_MARKING
+  TAKER_MARKING
   ONLY_ATTENDANCE
   ATTENDANCE_AND_LATE_SEPARATE
   LATE_IN_ATTENDANCE
@@ -105,7 +108,7 @@ model SchoolSettings {
 
   // Academic
   attendanceMode        AttendanceMode             @default(DAILY)
-  trackingStrategy      AttendanceTrackingStrategy @default(ONLY_ATTENDANCE)
+  trackingStrategy      AttendanceTrackingStrategy @default(SIMPLE)
   dailyAttendanceAccess DailyAttendanceAccess      @default(CLASS_TEACHER)
   gradingSystem         GradingSystem         @default(PERCENTAGE)
   promotionPolicy       PromotionPolicy       @default(MANUAL)

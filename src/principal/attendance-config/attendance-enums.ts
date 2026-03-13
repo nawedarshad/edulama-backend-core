@@ -13,9 +13,9 @@ export enum LateAttendanceStatus {
 }
 
 export enum AttendanceTrackingStrategy {
-  ONLY_ATTENDANCE = 'ONLY_ATTENDANCE',
-  ATTENDANCE_AND_LATE_SEPARATE = 'ATTENDANCE_AND_LATE_SEPARATE',
-  LATE_IN_ATTENDANCE = 'LATE_IN_ATTENDANCE',
+  SIMPLE = 'SIMPLE',
+  GATE_MARKING = 'GATE_MARKING',
+  TAKER_MARKING = 'TAKER_MARKING',
 }
 
 export enum AttendanceMode {

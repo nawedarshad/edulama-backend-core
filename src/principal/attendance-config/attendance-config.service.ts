@@ -32,7 +32,7 @@ export class AttendanceConfigService {
             return {
                 mode: schoolSettings?.attendanceMode || 'DAILY',
                 responsibility: schoolSettings?.dailyAttendanceAccess || 'CLASS_TEACHER',
-                trackingStrategy: schoolSettings?.trackingStrategy || 'ONLY_ATTENDANCE',
+                trackingStrategy: schoolSettings?.trackingStrategy || 'SIMPLE',
                 lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility || 'TAKER',
                 warning: 'Configuration not found for this academic year, returning defaults from SchoolSettings.'
             };
@@ -40,23 +40,12 @@ export class AttendanceConfigService {
 
         return {
             ...config,
-            trackingStrategy: schoolSettings?.trackingStrategy || 'ONLY_ATTENDANCE',
+            trackingStrategy: schoolSettings?.trackingStrategy || 'SIMPLE',
             lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility || 'TAKER',
         };
     }
 
     async updateConfig(schoolId: number, dto: UpdateAttendanceConfigDto) {
-        // 1. Check if strategy is locked
-        const currentSettings = await (this.prisma.schoolSettings as any).findUnique({
-            where: { schoolId },
-            select: { id: true } as any
-        }) as any;
-
-        // Since we can't store strategy in DB without migrations, we'll default it or use module check
-        // For now, let's assume it's NOT locked if it's ONLY_ATTENDANCE
-        const hasExistingStrategy = false; // We can't know for sure without the field
-        const isChangingStrategy = true; // Always allow change for now since it doesn't crash
-
         const [config] = await Promise.all([
             this.prisma.attendanceConfig.upsert({
                 where: {
@@ -80,32 +69,34 @@ export class AttendanceConfigService {
                     responsibility: true,
                 }
             }),
-            (this.prisma.schoolSettings as any).upsert({
+            this.prisma.schoolSettings.update({
                 where: { schoolId },
-                create: {
-                    schoolId,
-                    schoolStartTime: new Date(),
-                    schoolEndTime: new Date(),
-                } as any,
-                update: {
-                    // Do not update missing fields to avoid crashes
-                } as any
+                data: {
+                    attendanceMode: dto.mode,
+                    dailyAttendanceAccess: dto.responsibility,
+                    trackingStrategy: dto.trackingStrategy,
+                    lateMarkingResponsibility: dto.lateMarkingResponsibility || 'TAKER',
+                    lateCountingPolicy: dto.lateCountingPolicy || 'LATE',
+                }
             })
         ]);
 
-        const schoolSettings = await (this.prisma.schoolSettings as any).findUnique({
+        const schoolSettings = await this.prisma.schoolSettings.findUnique({
             where: { schoolId },
             select: { 
-                id: true
-            } as any
-        }) as any;
+                trackingStrategy: true,
+                lateMarkingResponsibility: true,
+                lateCountingPolicy: true,
+                isTrackingStrategyLocked: true,
+            }
+        });
 
         return {
             ...config,
-            trackingStrategy: 'ONLY_ATTENDANCE', // Force default for now to stop crashes
-            lateMarkingResponsibility: 'TAKER',
-            lateCountingPolicy: 'LATE',
-            isTrackingStrategyLocked: false,
+            trackingStrategy: schoolSettings?.trackingStrategy,
+            lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility,
+            lateCountingPolicy: schoolSettings?.lateCountingPolicy,
+            isTrackingStrategyLocked: schoolSettings?.isTrackingStrategyLocked,
         };
     }
 }
