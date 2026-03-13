@@ -6,6 +6,5 @@ export class UpdatePlatformSettingDto {
     key: string;
 
     @IsString()
-    @IsNotEmpty()
     value: string;
 }
