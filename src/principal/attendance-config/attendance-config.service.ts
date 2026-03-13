@@ -40,7 +40,7 @@ export class AttendanceConfigService {
 
         return {
             ...config,
-            trackingStrategy: schoolSettings?.trackingStrategy || 'SIMPLE',
+            trackingStrategy: schoolSettings?.trackingStrategy || 'ATTENDANCE_SIMPLE',
             lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility || 'TAKER',
         };
     }
