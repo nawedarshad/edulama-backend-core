@@ -23,17 +23,17 @@ export class AttendanceConfigService {
             }),
             (this.prisma.schoolSettings as any).findUnique({
                 where: { schoolId },
-                select: { motto: true } // motto definitely exists
+                select: { attendanceMode: true, dailyAttendanceAccess: true, trackingStrategy: true } 
             }) as any
         ]);
 
-        // If no config exists for this AY, return defaults
+        // If no config exists for this AY, return defaults from school settings
         if (!config) {
             return {
-                mode: 'DAILY',
-                responsibility: 'CLASS_TEACHER',
+                mode: schoolSettings?.attendanceMode || 'DAILY',
+                responsibility: schoolSettings?.dailyAttendanceAccess || 'CLASS_TEACHER',
                 trackingStrategy: schoolSettings?.trackingStrategy || 'ONLY_ATTENDANCE',
-                warning: 'Configuration not found for this academic year, returning defaults.'
+                warning: 'Configuration not found for this academic year, returning defaults from SchoolSettings.'
             };
         }
 
