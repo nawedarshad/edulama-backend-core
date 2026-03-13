@@ -474,6 +474,8 @@ export class TeacherAttendanceService {
         const startDate = new Date(year, month - 1, 1);
         const endDate = new Date(year, month, 0);
 
+        console.log(`[getMonthlyAttendance Debug] Finding sessions for schoolId=${schoolId}, classId=${classId}, sectionId=${sectionId}, subjectId=${subjectId}, startDate=${startDate.toISOString()}, endDate=${endDate.toISOString()}`);
+
         const sessions = await this.prisma.attendanceSession.findMany({
             where: {
                 schoolId,
