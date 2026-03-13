@@ -476,7 +476,8 @@ export class TeacherAttendanceService {
                 .map(a => ({
                     studentProfileId: a.studentProfileId,
                     userId: a.studentProfile?.userId, // ADDED: Match by UserID
-                    studentName: a.studentProfile?.user?.name || 'Unknown Student',
+                    name: a.studentProfile?.user?.name || 'Unknown Student',
+                    rollNumber: a.studentProfile?.rollNo || '',
                     status: a.status,
                     isLate: a.isLate,
                     lateReason: a.lateReason,
@@ -541,8 +542,8 @@ export class TeacherAttendanceService {
                 .map(a => ({
                     studentProfileId: a.studentProfileId,
                     userId: a.studentProfile?.userId, // Match by UserID
-                    studentName: a.studentProfile?.user?.name || 'Unknown Student',
-                    rollNo: a.studentProfile?.rollNo, // Added rollNo
+                    name: a.studentProfile?.user?.name || 'Unknown Student',
+                    rollNumber: a.studentProfile?.rollNo || '',
                     photo: a.studentProfile?.user?.photo, // Added photo
                     status: a.status,
                     remarks: a.remarks,
@@ -655,7 +656,8 @@ export class TeacherAttendanceService {
         return leaves.map(leave => ({
             studentProfileId: leave.applicant.studentProfile?.id,
             userId: leave.applicantId, // ADDED: Ensuring userId is returned for frontend matching
-            studentName: leave.applicant.name,
+            name: leave.applicant.name,
+            rollNumber: '', // Leaves might not have roll number in this context
             leaveType: leave.leaveTypeId,
             startDate: leave.startDate,
             endDate: leave.endDate,
@@ -719,7 +721,8 @@ export class TeacherAttendanceService {
 
         return (session as any).attendances.map(a => ({
             studentProfileId: a.studentProfileId,
-            studentName: a?.studentProfile?.user.name,
+            name: a?.studentProfile?.user.name || 'Unknown Student',
+            rollNumber: a?.studentProfile?.rollNo || '',
             userId: a?.studentProfile?.user.id,
             lateReason: a.lateReason,
             lateMarkedAt: a.lateMarkedAt,
@@ -840,7 +843,7 @@ export class TeacherAttendanceService {
 
         if (!query || query.length < 2) return [];
 
-        return this.prisma.studentProfile.findMany({
+        const students = await this.prisma.studentProfile.findMany({
             where: {
                 schoolId,
                 OR: [
@@ -856,6 +859,7 @@ export class TeacherAttendanceService {
                 sectionId: true,
                 admissionNo: true,
                 rollNo: true,
+                fullName: true,
                 class: { select: { name: true } },
                 section: { select: { name: true } },
                 user: {
@@ -867,10 +871,22 @@ export class TeacherAttendanceService {
                 }
             }
         });
+
+        return students.map(s => ({
+            id: s.id.toString(),
+            studentProfileId: s.id,
+            userId: s.user?.id,
+            name: s.fullName || s.user?.name || 'Unknown Student',
+            rollNumber: s.rollNo || '',
+            admissionNo: s.admissionNo,
+            className: s.class?.name,
+            sectionName: s.section?.name,
+            photo: s.user?.photo
+        }));
     }
     async getStudentsForAttendance(teacherId: number, schoolId: number, classId?: number, sectionId?: number) {
         if (classId && sectionId) {
-            return this.prisma.studentProfile.findMany({
+            const students = await this.prisma.studentProfile.findMany({
                 where: {
                     schoolId,
                     classId,
@@ -895,6 +911,17 @@ export class TeacherAttendanceService {
                     rollNo: 'asc'
                 }
             });
+
+            return students.map(s => ({
+                id: s.id.toString(),
+                studentProfileId: s.id,
+                userId: s.userId,
+                name: s.fullName || s.user?.name || 'Unknown Student',
+                rollNumber: s.rollNo || '',
+                classId: s.classId,
+                sectionId: s.sectionId,
+                photo: s.user?.photo
+            }));
         }
         return [];
     }
