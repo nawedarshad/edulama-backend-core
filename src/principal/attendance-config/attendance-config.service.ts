@@ -8,6 +8,7 @@ export class AttendanceConfigService {
     constructor(private readonly prisma: PrismaService) { }
 
     async getConfig(schoolId: number, academicYearId: number) {
+        console.log(`[getConfig] Fetching config for schoolId: ${schoolId}, academicYearId: ${academicYearId}`);
         const [config, schoolSettings] = await Promise.all([
             this.prisma.attendanceConfig.findUnique({
                 where: {
@@ -27,8 +28,12 @@ export class AttendanceConfigService {
             }) as any
         ]);
 
+        console.log(`[getConfig] AttendanceConfig table result:`, config);
+        console.log(`[getConfig] SchoolSettings table result:`, schoolSettings);
+
         // If no config exists for this AY, return defaults from school settings
         if (!config) {
+            console.log(`[getConfig] No AttendanceConfig found. Falling back to SchoolSettings.`);
             return {
                 mode: schoolSettings?.attendanceMode || 'DAILY',
                 responsibility: schoolSettings?.dailyAttendanceAccess || 'CLASS_TEACHER',
@@ -37,6 +42,7 @@ export class AttendanceConfigService {
             };
         }
 
+        console.log(`[getConfig] Returning config from AttendanceConfig table.`);
         return {
             ...config,
             trackingStrategy: schoolSettings?.trackingStrategy || 'ONLY_ATTENDANCE',
