@@ -31,6 +31,7 @@ import { HealthController } from './health/health.controller';
 import { FileUploadModule } from './common/file-upload/file-upload.module';
 import { PublicSchoolModule } from './public-school/public-school.module';
 import { SupportModule } from './common/support/support.module';
+import { AppConfigModule } from './common/app-config/app-config.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { SupportModule } from './common/support/support.module';
     FileUploadModule,
     PublicSchoolModule,
     SupportModule,
+    AppConfigModule,
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],
