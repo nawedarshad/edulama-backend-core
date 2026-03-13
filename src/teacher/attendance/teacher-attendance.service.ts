@@ -478,9 +478,9 @@ export class TeacherAttendanceService {
                     userId: a.studentProfile?.userId, // ADDED: Match by UserID
                     studentName: a.studentProfile?.user?.name || 'Unknown Student',
                     status: a.status,
-                    remarks: a.remarks,
                     isLate: a.isLate,
                     lateReason: a.lateReason,
+                    remarks: a.remarks,
                 }))
         };
     }

@@ -23,7 +23,7 @@ export class AttendanceConfigService {
             }),
             (this.prisma.schoolSettings as any).findUnique({
                 where: { schoolId },
-                select: { attendanceMode: true, dailyAttendanceAccess: true, trackingStrategy: true } 
+                select: { attendanceMode: true, dailyAttendanceAccess: true, trackingStrategy: true, lateMarkingResponsibility: true } 
             }) as any
         ]);
 
