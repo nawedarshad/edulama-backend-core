@@ -144,15 +144,25 @@ export class TeacherAttendanceService {
         // 6. Create Attendance Session
         // Check if session already exists
         // 5. Create or Get Attendance Session
-        // Check if session already exists (could be created by Mark Late)
+        const academicGroup = await this.prisma.academicGroup.findFirst({
+            where: { schoolId, sectionId: dto.sectionId }
+        });
+        
+        if (!academicGroup) {
+            throw new BadRequestException('Matching Academic Group not found for the provided section.');
+        }
+        
+        const validGroupId = academicGroup.id;
+
         let session = await this.prisma.attendanceSession.findFirst({
             where: {
                 schoolId,
                 academicYearId: dto.academicYearId,
-                groupId: 0, classId: dto.classId,
+                groupId: validGroupId,
+                classId: dto.classId,
                 sectionId: dto.sectionId,
                 subjectId: dto.subjectId || undefined,
-                timePeriodId: dto.timePeriodId || undefined || undefined,
+                timePeriodId: dto.timePeriodId || undefined,
                 date: new Date(dto.date),
             }
         });
@@ -164,7 +174,8 @@ export class TeacherAttendanceService {
                     data: {
                         schoolId,
                         academicYearId: dto.academicYearId,
-                        groupId: 0, classId: dto.classId,
+                        groupId: validGroupId,
+                        classId: dto.classId,
                         sectionId: dto.sectionId,
                         subjectId: dto.subjectId,
                         timePeriodId: dto.timePeriodId || undefined,
