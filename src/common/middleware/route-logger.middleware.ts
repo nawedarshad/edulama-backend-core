@@ -7,7 +7,6 @@ export class RouteLoggerMiddleware implements NestMiddleware {
 
     use(req: Request, res: Response, next: NextFunction) {
         this.logger.log(`Incoming request: ${req.method} ${req.originalUrl}`);
-        this.logger.debug(`Headers: ${JSON.stringify(req.headers)}`);
         
         if (req.body && Object.keys(req.body).length > 0) {
             this.logger.debug(`Body: ${JSON.stringify(req.body)}`);
