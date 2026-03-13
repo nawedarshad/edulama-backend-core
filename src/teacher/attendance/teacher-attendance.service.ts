@@ -863,7 +863,118 @@ export class TeacherAttendanceService {
         return [];
     }
 
+    async getDailyAssignments(teacherId: number, schoolId: number, academicYearId: number, dateStr: string) {
+        const teacher = await this.prisma.teacherProfile.findUnique({
+            where: { userId: teacherId }
+        });
+        if (!teacher) return [];
+
+        const config = await this.configService.getConfig(schoolId, academicYearId);
+        
+        if (config.mode !== AttendanceMode.DAILY) {
+            return []; // Only relevant for DAILY mode
+        }
+
+        if (config.responsibility === DailyAttendanceAccess.CLASS_TEACHER) {
+            const assignments: any[] = [];
+            
+            const sectionTeacherRefs = await this.prisma.sectionTeacher.findMany({
+                where: { teacherId: teacher.id },
+                include: { section: { include: { class: true } } }
+            });
+            
+            for (const ref of sectionTeacherRefs) {
+                if (ref.section && ref.section.class) {
+                    assignments.push({
+                        type: 'DAILY',
+                        classId: ref.section.classId,
+                        className: ref.section.class.name,
+                        sectionId: ref.sectionId,
+                        sectionName: ref.section.name,
+                    });
+                }
+            }
+
+            const headTeacherRefs = await this.prisma.classHeadTeacher.findMany({
+                where: { teacherId: teacher.id },
+                include: { class: { include: { sections: true } } }
+            });
+
+            for (const ref of headTeacherRefs) {
+                if (ref.class && ref.class.sections && ref.class.sections.length > 0) {
+                    for (const section of ref.class.sections) {
+                        if (!assignments.find(a => a.classId === ref.classId && a.sectionId === section.id)) {
+                            assignments.push({
+                                type: 'DAILY',
+                                classId: ref.classId,
+                                className: ref.class.name,
+                                sectionId: section.id,
+                                sectionName: section.name,
+                            });
+                        }
+                    }
+                }
+            }
+            
+            return assignments;
+
+        } else if (config.responsibility === DailyAttendanceAccess.FIRST_PERIOD_TEACHER) {
+            const targetDate = new Date(dateStr);
+            const dayOfWeek = this.getDayOfWeek(targetDate);
+            
+            const myEntriesToday = await this.prisma.timetableEntry.findMany({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    teacherId: teacher.id,
+                    day: dayOfWeek,
+                    status: 'PUBLISHED'
+                },
+                include: {
+                    group: { include: { class: true } },
+                    timeSlot: true
+                },
+                orderBy: { timeSlot: { startTime: 'asc' } }
+            });
+
+            const assignments: any[] = [];
+            const processedSections = new Set<number>();
+
+            for (const entry of myEntriesToday) {
+                if (!entry.groupId || processedSections.has(entry.groupId)) continue;
+                
+                const firstPeriodForSection = await this.prisma.timetableEntry.findFirst({
+                    where: {
+                        schoolId,
+                        academicYearId,
+                        groupId: entry.groupId,
+                        day: dayOfWeek,
+                        status: 'PUBLISHED'
+                    },
+                    include: { timeSlot: true },
+                    orderBy: { timeSlot: { startTime: 'asc' } }
+                });
+
+                if (firstPeriodForSection && firstPeriodForSection.teacherId === teacher.id) {
+                    assignments.push({
+                        type: 'DAILY',
+                        classId: entry.group.classId,
+                        className: entry.group.class.name,
+                        sectionId: entry.groupId,
+                        sectionName: entry.group.name,
+                    });
+                    processedSections.add(entry.groupId);
+                }
+            }
+
+            return assignments;
+        }
+        
+        return [];
+    }
+
     private getDayOfWeek(date: Date): DayOfWeek {
+
         const days: DayOfWeek[] = [
             DayOfWeek.SUNDAY,
             DayOfWeek.MONDAY,

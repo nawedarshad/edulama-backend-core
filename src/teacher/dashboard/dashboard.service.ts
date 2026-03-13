@@ -112,7 +112,7 @@ export class DashboardService {
             },
             orderBy: { timeSlot: { startTime: 'asc' } },
             include: {
-                group: { select: { name: true } },
+                group: { select: { id: true, name: true, classId: true } },
                 subject: { select: { name: true, code: true } },
                 timeSlot: {
                     select: {
@@ -363,7 +363,10 @@ export class DashboardService {
                     type: entry.timeSlot.period?.type,
                     assignmentId: entry.groupId && entry.subjectId
                         ? getAssignmentId(entry.groupId, entry.subjectId)
-                        : null
+                        : null,
+                    classId: entry.group.classId,
+                    sectionId: entry.groupId,
+                    subjectId: entry.subjectId
                 };
             }),
             substitutions: substitutions.map(sub => {

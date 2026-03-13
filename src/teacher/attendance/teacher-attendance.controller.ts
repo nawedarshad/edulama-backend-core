@@ -148,6 +148,18 @@ export class TeacherAttendanceController {
         return this.service.getConfig(schoolId, academicYearId);
     }
 
+    @Get('daily-assignments')
+    @ApiOperation({ summary: 'Get Daily Attendance Assignments', description: 'Returns classes/sections the teacher is authorized to take daily attendance for, based on tenant config.' })
+    async getDailyAssignments(
+        @Request() req,
+        @Query('academicYearId', ParseIntPipe) academicYearId: number,
+        @Query('date') date: string,
+    ) {
+        const userId = req.user.id;
+        const schoolId = req.user.schoolId;
+        return this.service.getDailyAssignments(userId, schoolId, academicYearId, date);
+    }
+
     @Get('students')
     @ApiOperation({ summary: 'Get Students for Attendance', description: 'Get accessible students for the teacher.' })
     async getStudents(
