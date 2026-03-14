@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateStaffAttendanceDto } from './dto/update-staff-attendance.dto';
@@ -76,11 +75,6 @@ export class SchoolAdminAttendanceService {
             where: {
                 schoolId,
                 isActive: true,
-                user: {
-                    role: {
-                        name: 'TEACHER'
-                    }
-                }
             },
             include: {
                 user: {
@@ -353,7 +347,7 @@ export class SchoolAdminAttendanceService {
         const schoolId = user.schoolId;
 
         // 2. Fetch all late attendance monitors for this academic year
-        const monitors = await this.prisma.lateAttendanceMonitor.findMany({
+        const monitors: any[] = await this.prisma.lateAttendanceMonitor.findMany({
             where: {
                 schoolId,
                 academicYearId,
@@ -540,7 +534,7 @@ export class SchoolAdminAttendanceService {
         if (!session) {
             // If no session exists, return the student list for manual marking
             // behave like "Take Attendance" view for Principal
-            const students = await this.prisma.studentProfile.findMany({
+            const students: any[] = await this.prisma.studentProfile.findMany({
                 where: {
                     schoolId,
                     classId,
@@ -582,8 +576,8 @@ export class SchoolAdminAttendanceService {
             sessionId: session.id,
             date: session.date,
             takenAt: session.takenAt,
-            markedBy: (session as any).markedBy?.name,
-            attendances: (session as any).attendances.map(a => ({
+            markedBy: session.markedBy?.name,
+            attendances: session.attendances.map(a => ({
                 studentProfileId: a.studentProfileId,
                 userId: a.studentProfile.userId,
                 studentName: a.studentProfile.user.name,
@@ -862,8 +856,9 @@ export class SchoolAdminAttendanceService {
         };
 
         counts.forEach(c => {
-            if (stats[c.status] !== undefined) {
-                stats[c.status] = c._count.status;
+            const status = c.status as keyof typeof stats;
+            if (stats[status] !== undefined) {
+                stats[status] = c._count.status;
             }
             stats.TOTAL += c._count.status;
         });
