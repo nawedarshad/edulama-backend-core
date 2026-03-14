@@ -18,17 +18,19 @@ export class TimetableEntryService {
         const { groupId, teacherId, roomId, subjectId, timeSlotId, day } = dto;
 
         // 1. Ownership & N+1 Optimization: Fetch related entities once
-        const [group, teacher, room, subject] = await Promise.all([
+        const [group, teacher, room, subject, timeSlot] = await Promise.all([
             this.prisma.academicGroup.findFirst({ where: { id: groupId, schoolId } }),
             teacherId ? this.prisma.teacherProfile.findFirst({ where: { id: teacherId, schoolId } }) : null,
             roomId ? this.prisma.room.findFirst({ where: { id: roomId, schoolId } }) : null,
-            subjectId ? this.prisma.subject.findFirst({ where: { id: subjectId, schoolId } }) : null
+            subjectId ? this.prisma.subject.findFirst({ where: { id: subjectId, schoolId } }) : null,
+            this.prisma.timeSlot.findFirst({ where: { id: timeSlotId, schoolId } })
         ]);
 
         if (!group) throw new NotFoundException('Group not found or unauthorized');
         if (teacherId && !teacher) throw new NotFoundException('Teacher not found or unauthorized');
         if (roomId && !room) throw new NotFoundException('Room not found or unauthorized');
         if (subjectId && !subject) throw new NotFoundException('Subject not found or unauthorized');
+        if (!timeSlot) throw new NotFoundException('Time slot not found or unauthorized. It may have been modified or deleted.');
 
         // 2. Transactional Create (Atomic Conflict Check + Create)
         const entry = await this.prisma.$transaction(async (tx) => {

@@ -123,15 +123,47 @@ export class TimetablePeriodService {
         endTime: string,
         scheduleId: number | null | undefined
     ) {
-        // 1. Delete existing slots for this period
-        await tx.timeSlot.deleteMany({
+        // 1. Fetch existing slots for this period
+        const existingSlots = await tx.timeSlot.findMany({
             where: { schoolId, periodId },
         });
 
-        // 2. Create new slots
-        if (days.length > 0) {
+        const existingDays = existingSlots.map(s => s.day);
+        const daysToRemove = existingDays.filter(d => !days.includes(d));
+        const daysToUpdate = existingDays.filter(d => days.includes(d));
+        const daysToAdd = days.filter(d => !existingDays.includes(d));
+
+        // 2. Delete slots for days that are no longer selected
+        if (daysToRemove.length > 0) {
+            await tx.timeSlot.deleteMany({
+                where: {
+                    schoolId,
+                    periodId,
+                    day: { in: daysToRemove }
+                },
+            });
+        }
+
+        // 3. Update existing slots (Preserves IDs for linked TimetableEntries)
+        if (daysToUpdate.length > 0) {
+            await tx.timeSlot.updateMany({
+                where: {
+                    schoolId,
+                    periodId,
+                    day: { in: daysToUpdate }
+                },
+                data: {
+                    startTime,
+                    endTime,
+                    scheduleId
+                }
+            });
+        }
+
+        // 4. Create new slots for newly selected days
+        if (daysToAdd.length > 0) {
             await tx.timeSlot.createMany({
-                data: days.map(day => ({
+                data: daysToAdd.map(day => ({
                     schoolId,
                     academicYearId,
                     periodId,
