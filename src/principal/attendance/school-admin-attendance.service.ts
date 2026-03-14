@@ -134,17 +134,17 @@ export class SchoolAdminAttendanceService {
             // - If no record but user is on leave, status = EXCUSED.
             // - Else, status = undefined (Not Taken).
 
-            let status: AttendanceStatus | 'EXCUSED' | null = undefined;
-            let remarks: string | null = undefined;
-            let checkInTime: Date | null = undefined;
-            let checkOutTime: Date | null = undefined;
+            let status: AttendanceStatus | 'EXCUSED' | undefined = undefined;
+            let remarks: string | undefined = undefined;
+            let checkInTime: Date | undefined = undefined;
+            let checkOutTime: Date | undefined = undefined;
             let isLate = false;
 
             if (attendance) {
                 status = attendance.status as AttendanceStatus;
-                remarks = attendance.remarks;
-                checkInTime = attendance.checkInTime;
-                checkOutTime = attendance.checkOutTime;
+                remarks = attendance.remarks ?? undefined;
+                checkInTime = attendance.checkInTime ?? undefined;
+                checkOutTime = attendance.checkOutTime ?? undefined;
                 isLate = attendance.isLate;
             } else if (isOnLeave) {
                 status = AttendanceStatus.EXCUSED;
@@ -229,7 +229,7 @@ export class SchoolAdminAttendanceService {
             throw new NotFoundException('User not found.');
         }
 
-        const schoolId = user.schoolId;
+        const schoolId = user.schoolId as number;
 
         // Check if user is Principal or School Administrator
         const isPrincipal = user?.role?.name === 'PRINCIPAL';
@@ -249,6 +249,18 @@ export class SchoolAdminAttendanceService {
 
         if (!student) {
             throw new NotFoundException('Student not found in your school.');
+        }
+
+        const group = await this.prisma.academicGroup.findFirst({
+            where: {
+                schoolId,
+                classId: dto.classId,
+                sectionId: dto.sectionId,
+            }
+        });
+
+        if (!group) {
+            throw new BadRequestException('Academic Group not found for the specified class and section.');
         }
 
         // 3. Check if attendance session exists for this class/section/date
@@ -273,6 +285,7 @@ export class SchoolAdminAttendanceService {
                 data: {
                     schoolId,
                     academicYearId: dto.academicYearId,
+                    groupId: group.id,
                     classId: dto.classId,
                     sectionId: dto.sectionId,
                     date: attendanceDate,
@@ -344,7 +357,7 @@ export class SchoolAdminAttendanceService {
             throw new ForbiddenException('Only Principal or School Administrators can view late monitors.');
         }
 
-        const schoolId = user.schoolId;
+        const schoolId = user.schoolId as number;
 
         // 2. Fetch all late attendance monitors for this academic year
         const monitors: any[] = await this.prisma.lateAttendanceMonitor.findMany({
@@ -398,7 +411,19 @@ export class SchoolAdminAttendanceService {
             throw new NotFoundException('User not found.');
         }
 
-        const schoolId = user.schoolId;
+        const schoolId = user.schoolId as number;
+
+        const group = await this.prisma.academicGroup.findFirst({
+            where: {
+                schoolId,
+                classId: dto.classId,
+                sectionId: dto.sectionId,
+            }
+        });
+
+        if (!group) {
+            throw new BadRequestException('Academic Group not found for the specified class and section.');
+        }
 
         // 2. Create or Update Attendance Session
         let session = await this.prisma.attendanceSession.findFirst({
@@ -420,6 +445,7 @@ export class SchoolAdminAttendanceService {
                     data: {
                         schoolId,
                         academicYearId: dto.academicYearId,
+                        groupId: group.id,
                         classId: dto.classId,
                         sectionId: dto.sectionId,
                         subjectId: dto.subjectId,
@@ -496,7 +522,7 @@ export class SchoolAdminAttendanceService {
     ) {
         const user = await this.prisma.user.findUnique({ where: { id: userId } });
         if (!user) throw new NotFoundException('User not found');
-        const schoolId = user.schoolId;
+        const schoolId = user.schoolId as number;
 
         const session = await this.prisma.attendanceSession.findFirst({
             where: {
@@ -576,8 +602,8 @@ export class SchoolAdminAttendanceService {
             sessionId: session.id,
             date: session.date,
             takenAt: session.takenAt,
-            markedBy: session.markedBy?.name,
-            attendances: session.attendances.map(a => ({
+            markedBy: (session as any).markedBy?.name,
+            attendances: (session as any).attendances.map((a: any) => ({
                 studentProfileId: a.studentProfileId,
                 userId: a.studentProfile.userId,
                 studentName: a.studentProfile.user.name,
@@ -598,7 +624,7 @@ export class SchoolAdminAttendanceService {
         const session = await this.prisma.attendanceSession.findFirst({
             where: {
                 id: sessionId,
-                schoolId: user.schoolId
+                schoolId: user.schoolId as number
             }
         });
 
@@ -668,11 +694,11 @@ export class SchoolAdminAttendanceService {
 
         return records.map(r => ({
             studentId: r.studentProfileId,
-            name: r?.studentProfile?.user.name,
-            photo: r?.studentProfile?.user.photo,
+            name: r?.studentProfile?.user?.name,
+            photo: r?.studentProfile?.user?.photo,
             rollNo: r.studentProfile.rollNo,
-            class: r.session?.class.name,
-            section: r.session?.section.name,
+            class: r.session?.class?.name,
+            section: r.session?.section?.name,
             lateReason: r.lateReason,
             lateMarkedAt: r.lateMarkedAt,
         }));
@@ -724,12 +750,12 @@ export class SchoolAdminAttendanceService {
 
             return {
                 studentId: r.studentProfileId,
-                userId: r?.studentProfile?.user.id,
-                name: r?.studentProfile?.user.name,
-                photo: r?.studentProfile?.user.photo,
+                userId: r?.studentProfile?.user?.id,
+                name: r?.studentProfile?.user?.name,
+                photo: r?.studentProfile?.user?.photo,
                 rollNo: r.studentProfile.rollNo,
-                class: r.session?.class.name,
-                section: r.session?.section.name,
+                class: r.session?.class?.name,
+                section: r.session?.section?.name,
                 parentName,
                 parentPhone,
             };
@@ -780,10 +806,10 @@ export class SchoolAdminAttendanceService {
 
             if (!aggregation.has(key)) {
                 aggregation.set(key, {
-                    classId: session?.classId,
-                    sectionId: session?.sectionId,
-                    className: session?.class.name,
-                    sectionName: session?.section.name,
+                    classId: session?.classId as number,
+                    sectionId: session?.sectionId as number,
+                    className: session?.class?.name as string,
+                    sectionName: session?.section?.name as string,
                     totalStudents: 0,
                     presentCount: 0,
                     absentCount: 0,
@@ -931,10 +957,10 @@ export class SchoolAdminAttendanceService {
             const details = studentDetails.find(d => d.id === r.studentId);
             return {
                 studentId: r.studentId,
-                name: details?.user.name || 'Unknown',
-                photo: details?.user.photo,
-                className: details?.class.name,
-                sectionName: details?.section.name,
+                name: details?.user?.name || 'Unknown',
+                photo: details?.user?.photo,
+                className: details?.class?.name,
+                sectionName: details?.section?.name,
                 totalDays: r.total,
                 presentDays: r.present,
                 attendancePercentage: r.score.toFixed(2)
