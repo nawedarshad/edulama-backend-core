@@ -18,6 +18,45 @@ export class TeacherAttendanceService {
         return this.configService.getConfig(schoolId, academicYearId);
     }
 
+    async getSelfAttendance(userId: number, schoolId: number, month: number, year: number) {
+        // 1. Fetch Teacher Profile
+        const teacher = await this.prisma.teacherProfile.findUnique({
+            where: { userId },
+        });
+
+        if (!teacher) {
+            throw new NotFoundException('Teacher profile not found.');
+        }
+
+        // Calculate start and end dates for the month
+        const startDate = new Date(year, month - 1, 1);
+        const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+
+        // Fetch staff attendance records
+        const attendanceRecords = await this.prisma.staffAttendance.findMany({
+            where: {
+                schoolId: schoolId,
+                teacherId: teacher.id,
+                date: {
+                    gte: startDate,
+                    lte: endDate,
+                }
+            },
+            orderBy: {
+                date: 'asc'
+            }
+        });
+
+        return attendanceRecords.map(record => ({
+            date: record.date.toISOString(),
+            status: record.status,
+            checkInTime: record.checkInTime ? record.checkInTime.toISOString() : undefined,
+            checkOutTime: record.checkOutTime ? record.checkOutTime.toISOString() : undefined,
+            isLate: record.isLate,
+            remarks: record.remarks
+        }));
+    }
+
     async takeAttendance(teacherId: number, dto: TakeAttendanceDto) {
         // 1. Fetch Teacher Profile with School ID
         const teacher = await this.prisma.teacherProfile.findUnique({

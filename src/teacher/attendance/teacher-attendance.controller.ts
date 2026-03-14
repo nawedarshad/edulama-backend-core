@@ -23,6 +23,18 @@ export class TeacherAttendanceController {
         return this.service.takeAttendance(userId, dto);
     }
 
+    @Get('self')
+    @ApiOperation({ summary: 'Get Self Attendance', description: 'Get the teacher\'s own attendance for a specific month.' })
+    async getSelfAttendance(
+        @Request() req,
+        @Query('month', ParseIntPipe) month: number,
+        @Query('year', ParseIntPipe) year: number,
+    ) {
+        const userId = req.user.id;
+        const schoolId = req.user.schoolId;
+        return this.service.getSelfAttendance(userId, schoolId, month, year);
+    }
+
     @Get('session')
     @ApiOperation({ summary: 'Get Session Details', description: 'Get existing attendance session and records if available.' })
     getSession(
