@@ -16,6 +16,7 @@ export class TimetableEntryService {
 
     async createEntry(schoolId: number, academicYearId: number, dto: CreateTimetableEntryDto) {
         const { groupId, teacherId, roomId, subjectId, timeSlotId, day } = dto;
+        this.logger.debug(`Creating entry: schoolId=${schoolId}, yearId=${academicYearId}, groupId=${groupId}, slotId=${timeSlotId}`);
 
         // 1. Ownership & N+1 Optimization: Fetch related entities once
         const [group, teacher, room, subject, timeSlot] = await Promise.all([
