@@ -4,7 +4,7 @@ import { UpdateAttendanceConfigDto } from './dto/update-config.dto';
 import { PrincipalAuthGuard } from 'src/common/guards/principal.guard';
 import { AuthUserPayload } from 'src/common/decorators/get-user.decorator';
 
-@Controller('attendance-config')
+@Controller('principal/attendance-config')
 @UseGuards(PrincipalAuthGuard)
 export class AttendanceConfigController {
     private readonly logger = new Logger(AttendanceConfigController.name);
