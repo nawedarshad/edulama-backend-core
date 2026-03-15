@@ -77,6 +77,8 @@ export class StudentController {
         @Headers('x-academic-year-id') yearIdHeader?: string,
         @Query('classId') classId?: string,
         @Query('sectionId') sectionId?: string,
+        @Query('verifyStudents') verifyStudents?: string,
+        @Query('verifyParents') verifyParents?: string,
     ) {
         const yearId = await this.getActiveAcademicYear(req.user.schoolId, yearIdHeader);
         return this.studentService.generateCredentials(
@@ -84,6 +86,8 @@ export class StudentController {
             yearId,
             classId ? parseInt(classId) : undefined,
             sectionId ? parseInt(sectionId) : undefined,
+            verifyStudents === 'true',
+            verifyParents === 'true',
         );
     }
 

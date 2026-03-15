@@ -341,8 +341,10 @@ export class StudentService {
         academicYearId: number,
         classId?: number,
         sectionId?: number,
+        verifyStudents: boolean = true,
+        verifyParents: boolean = true,
     ) {
-        this.logger.log(`Bulk verification for school ${schoolId}, year ${academicYearId}`);
+        this.logger.log(`Bulk verification for school ${schoolId}, year ${academicYearId}. Target: Students=${verifyStudents}, Parents=${verifyParents}`);
 
         // 1. Fetch STUDENT/PARENT roles
         const [studentRole, parentRole] = await Promise.all([
@@ -391,7 +393,7 @@ export class StudentService {
         for (const student of students) {
             try {
                 // --- A. Process Student ---
-                if (!student.userId) {
+                if (verifyStudents && !student.userId) {
                     if (!student.dob) {
                         skipped++;
                         errors.push(`Student ${student.fullName} (${student.admissionNo}): skipped — no DOB set`);
@@ -432,23 +434,25 @@ export class StudentService {
                 }
 
                 // --- B. Process Parents ---
-                for (const studentParent of student.parents) {
-                    const parent = studentParent.parent;
-                    if (parent.user && !parent.user.isActive && !processedUserIds.has(parent.userId)) {
-                        await this.prisma.$transaction(async (tx) => {
-                            // Activate user
-                            await tx.user.update({
-                                where: { id: parent.userId },
-                                data: { isActive: true }
+                if (verifyParents) {
+                    for (const studentParent of student.parents) {
+                        const parent = studentParent.parent;
+                        if (parent.user && !parent.user.isActive && !processedUserIds.has(parent.userId)) {
+                            await this.prisma.$transaction(async (tx) => {
+                                // Activate user
+                                await tx.user.update({
+                                    where: { id: parent.userId },
+                                    data: { isActive: true }
+                                });
+                                // Verify all identities (EMAIL/PHONE)
+                                await tx.authIdentity.updateMany({
+                                    where: { userId: parent.userId },
+                                    data: { verified: true }
+                                });
                             });
-                            // Verify all identities (EMAIL/PHONE)
-                            await tx.authIdentity.updateMany({
-                                where: { userId: parent.userId },
-                                data: { verified: true }
-                            });
-                        });
-                        parentsActivated++;
-                        processedUserIds.add(parent.userId);
+                            parentsActivated++;
+                            processedUserIds.add(parent.userId);
+                        }
                     }
                 }
 
