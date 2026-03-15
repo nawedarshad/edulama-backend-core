@@ -149,8 +149,8 @@ export class StudentService {
         }
 
         // 4. Prepare student credentials
-        const firstName = dto.fullName.split(' ')[0].toLowerCase();
-        const studentUsername = `${firstName}${dto.admissionNo}`;
+        const firstName = dto.fullName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+        const studentUsername = `${firstName}${dto.admissionNo.toLowerCase().trim()}`;
         if (!dto.dob) throw new BadRequestException('Student DOB is required for password generation.');
 
         const dobDate = new Date(dto.dob);
@@ -405,7 +405,7 @@ export class StudentService {
                         errors.push(`Student ${student.fullName} (${student.admissionNo}): skipped — no DOB set`);
                     } else {
                         const firstName = student.fullName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const username = `${firstName}${student.admissionNo.toLowerCase()}`;
+                        const username = `${firstName}${student.admissionNo.toLowerCase().trim()}`;
 
                         const dobDate = new Date(student.dob);
                         const passwordRaw = [
