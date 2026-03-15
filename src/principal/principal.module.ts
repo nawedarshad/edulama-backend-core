@@ -32,6 +32,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { PrincipalLessonTrackerModule } from './lesson-tracker/lesson-tracker.module';
 import { InquiryModule } from './inquiry/inquiry.module';
 import { PrincipalHomeworkModule } from './homework/principal-homework.module';
+import { UserManagementModule } from './user-management/user-management.module';
 
 
 
@@ -68,6 +69,7 @@ import { PrincipalHomeworkModule } from './homework/principal-homework.module';
         PrincipalLessonTrackerModule,
         InquiryModule,
         PrincipalHomeworkModule,
+        UserManagementModule,
     ],
 })
 export class PrincipalModule { }
