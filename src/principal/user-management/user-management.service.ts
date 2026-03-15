@@ -145,7 +145,7 @@ export class UserManagementService {
 
     private async generateUsername(name: string, admissionNo: string): Promise<string> {
         const firstName = name.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-        return `${firstName}[${admissionNo.toLowerCase().trim()}]`;
+        return `${firstName}${admissionNo.toLowerCase().trim()}`;
     }
 
     async addIdentity(schoolId: number, userId: number, dto: ManageIdentityDto) {

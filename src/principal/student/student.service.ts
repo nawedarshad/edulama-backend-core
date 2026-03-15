@@ -392,7 +392,7 @@ export class StudentService {
                         errors.push(`Student ${student.fullName} (${student.admissionNo}): skipped — no DOB set`);
                     } else {
                         const firstName = student.fullName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const identityValue = `${firstName}[${student.admissionNo.toLowerCase().trim()}]`;
+                        const identityValue = `${firstName}${student.admissionNo.toLowerCase().trim()}`;
 
                         const dobDate = new Date(student.dob);
                         const passwordRaw = [
