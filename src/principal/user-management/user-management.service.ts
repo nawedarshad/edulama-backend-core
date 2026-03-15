@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { UserSearchQueryDto, ResetPasswordDto, ManageIdentityDto, UpdateUserStatusDto, UpdateProfileDto } from './dto/user-management.dto';
+import { UserSearchQueryDto, ResetPasswordDto, ManageIdentityDto, UpdateUserStatusDto, UpdateProfileDto, EnterpriseBulkDto } from './dto/user-management.dto';
 import * as argon2 from 'argon2';
 import { AuthType } from '@prisma/client';
 
@@ -130,8 +130,9 @@ export class UserManagementService {
             });
 
             // If student, also update username
-            if (isStudent) {
-                const newUsername = await this.generateUsername(dto.name, userId);
+            if (isStudent && user.studentProfile?.admissionNo) {
+                const school = await tx.school.findUnique({ where: { id: schoolId } });
+                const newUsername = await this.generateUsername(dto.name, user.studentProfile.admissionNo, school?.code || '');
                 await tx.authIdentity.updateMany({
                     where: { userId, type: AuthType.USERNAME },
                     data: { value: newUsername }
@@ -142,9 +143,10 @@ export class UserManagementService {
         });
     }
 
-    private async generateUsername(name: string, userId: number): Promise<string> {
-        const cleanName = name.toLowerCase().replace(/[^a-z0-9]/g, '.');
-        return `${cleanName}.${userId}`;
+    private async generateUsername(name: string, admissionNo: string, schoolCode: string): Promise<string> {
+        const firstName = name.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+        const base = `${firstName}[${admissionNo.toLowerCase().trim()}]`;
+        return schoolCode ? `${base}@${schoolCode.toLowerCase()}` : base;
     }
 
     async addIdentity(schoolId: number, userId: number, dto: ManageIdentityDto) {
@@ -219,5 +221,111 @@ export class UserManagementService {
             where: { id: userId },
             data: { isActive: dto.isActive }
         });
+    }
+
+    async bulkProvision(schoolId: number, dto: EnterpriseBulkDto) {
+        this.logger.log(`Enterprise Bulk Provisioning for school ${schoolId}. Scope: ${dto.scope}`);
+        
+        const [studentRole, parentRole] = await Promise.all([
+            this.prisma.role.findUnique({ where: { name: 'STUDENT' } }),
+            this.prisma.role.findUnique({ where: { name: 'PARENT' } }),
+        ]);
+
+        if (!studentRole || !parentRole) throw new BadRequestException("Required roles not found");
+
+        const school = await this.prisma.school.findUnique({ where: { id: schoolId } });
+        if (!school) throw new BadRequestException("School not found");
+        const schoolCode = school.code.toLowerCase();
+
+        const results = { studentsProcessed: 0, parentsProcessed: 0, skipped: 0, errors: [] as string[] };
+
+        const studentWhere: any = { schoolId, isActive: true };
+        if (dto.classId) studentWhere.classId = dto.classId;
+        if (dto.sectionId) studentWhere.sectionId = dto.sectionId;
+
+        const students = await this.prisma.studentProfile.findMany({
+            where: studentWhere,
+            include: {
+                user: { include: { authIdentities: true } },
+                parents: { include: { parent: { include: { user: { include: { authIdentities: true } } } } } }
+            }
+        });
+
+        for (const student of students) {
+            try {
+                if (dto.scope === 'ALL' || dto.scope === 'STUDENTS') {
+                    await this.processStudentBulk(student, schoolCode, studentRole.id, dto, results);
+                }
+                if (dto.scope === 'ALL' || dto.scope === 'PARENTS') {
+                    for (const ps of student.parents) {
+                        await this.processParentBulk(ps.parent, parentRole.id, dto, results);
+                    }
+                }
+            } catch (err: any) {
+                results.errors.push(`${student.fullName}: ${err.message}`);
+                results.skipped++;
+            }
+        }
+
+        return {
+            ...results,
+            message: `Registry synchronized: ${results.studentsProcessed} students and ${results.parentsProcessed} parents updated.`
+        };
+    }
+
+    private async processStudentBulk(student: any, schoolCode: string, roleId: number, dto: EnterpriseBulkDto, results: any) {
+        const hasUser = !!student.userId;
+        if (hasUser && !dto.resetExisting && !dto.syncUsernames) return;
+        if (!hasUser && !dto.provisionMissing) return;
+
+        if (!student.dob) {
+            results.errors.push(`${student.fullName}: Skipped (Missing DOB)`);
+            results.skipped++;
+            return;
+        }
+
+        const dobDate = new Date(student.dob);
+        const passwordRaw = [
+            String(dobDate.getDate()).padStart(2, '0'),
+            String(dobDate.getMonth() + 1).padStart(2, '0'),
+            dobDate.getFullYear(),
+        ].join('');
+        const passwordHash = await argon2.hash(passwordRaw);
+
+        const identityValue = await this.generateUsername(student.fullName, student.admissionNo, schoolCode);
+
+        await this.prisma.$transaction(async (tx) => {
+            let userId = student.userId;
+            if (!userId) {
+                const user = await tx.user.create({ data: { name: student.fullName, isActive: true } });
+                userId = user.id;
+                await tx.userSchool.create({ data: { userId, schoolId: student.schoolId, primaryRoleId: roleId, isActive: true } });
+                await tx.studentProfile.update({ where: { id: student.id }, data: { userId } });
+            }
+
+            if (dto.syncUsernames || !hasUser) {
+                await tx.authIdentity.upsert({
+                    where: { type_value: { type: AuthType.USERNAME, value: identityValue } },
+                    create: { userId, type: AuthType.USERNAME, value: identityValue, secret: passwordHash, verified: true, schoolId: student.schoolId },
+                    update: { value: identityValue, ...(dto.resetExisting && { secret: passwordHash }) }
+                });
+            } else if (dto.resetExisting) {
+                await tx.authIdentity.updateMany({
+                    where: { userId, type: AuthType.USERNAME },
+                    data: { secret: passwordHash }
+                });
+            }
+        });
+        results.studentsProcessed++;
+    }
+
+    private async processParentBulk(parent: any, roleId: number, dto: EnterpriseBulkDto, results: any) {
+        if (!parent.user || (parent.user.isActive && !dto.resetExisting)) return;
+
+        await this.prisma.$transaction(async (tx) => {
+            await tx.user.update({ where: { id: parent.userId }, data: { isActive: true } });
+            await tx.authIdentity.updateMany({ where: { userId: parent.userId }, data: { verified: true } });
+        });
+        results.parentsProcessed++;
     }
 }

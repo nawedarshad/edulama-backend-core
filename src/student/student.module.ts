@@ -5,6 +5,8 @@ import { CalendarModule } from 'src/principal/calendar/calendar.module';
 import { StudentCalendarController } from './calendar/student-calendar.controller';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
+import { StudentProfileController } from './profile/student-profile.controller';
+import { StudentProfileService } from './profile/student-profile.service';
 
 @Module({
     imports: [
@@ -14,6 +16,7 @@ import { ConfigModule } from '@nestjs/config';
         HttpModule,
         ConfigModule,
     ],
-    controllers: [StudentCalendarController],
+    controllers: [StudentCalendarController, StudentProfileController],
+    providers: [StudentProfileService],
 })
 export class StudentModule { }

@@ -18,6 +18,13 @@ export class ParentController {
         return this.parentService.getChildren(schoolId, parentUserId);
     }
 
+    @ApiOperation({ summary: 'Get all children across ALL schools' })
+    @Get('all-children')
+    getAllChildren(@Request() req) {
+        const parentUserId = req.user.id;
+        return this.parentService.getAllChildren(parentUserId);
+    }
+
     @ApiOperation({ summary: 'Get all children (Alias)' })
     @Get('students')
     getStudents(@Request() req) {

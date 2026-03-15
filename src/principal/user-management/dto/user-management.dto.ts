@@ -53,3 +53,26 @@ export class UpdateProfileDto {
     @IsString()
     name: string;
 }
+
+export class EnterpriseBulkDto {
+    @IsNotEmpty()
+    @IsString()
+    scope: 'ALL' | 'STUDENTS' | 'PARENTS';
+
+    @IsOptional()
+    @IsInt()
+    classId?: number;
+
+    @IsOptional()
+    @IsInt()
+    sectionId?: number;
+
+    @IsOptional()
+    provisionMissing?: boolean;
+
+    @IsOptional()
+    resetExisting?: boolean;
+
+    @IsOptional()
+    syncUsernames?: boolean;
+}
