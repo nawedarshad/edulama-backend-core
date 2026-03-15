@@ -86,7 +86,7 @@ export class UserManagementService {
                 authIdentities: true,
                 studentProfile: { include: { class: true, section: true } },
                 teacherProfile: true,
-                parentProfile: { include: { children: { include: { student: true } } } }
+                parentProfile: { include: { parentStudents: { include: { student: true } } } }
             }
         });
 
