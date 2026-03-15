@@ -356,6 +356,12 @@ export class StudentService {
             throw new BadRequestException("Roles 'STUDENT' and/or 'PARENT' not found.");
         }
 
+        const school = await this.prisma.school.findUnique({ where: { id: schoolId } });
+        if (!school) {
+            throw new BadRequestException("School not found");
+        }
+        const schoolCode = school.code.toLowerCase();
+
         // 2. Find students and their families
         const where: any = {
             schoolId,
@@ -413,10 +419,11 @@ export class StudentService {
                             const user = await tx.user.create({
                                 data: { name: student.fullName, isActive: true },
                             });
+                            const identityValue = `${username}@${schoolCode}`;
                             await tx.authIdentity.upsert({
-                                where: { type_value: { type: 'USERNAME', value: username } },
-                                create: { userId: user.id, type: 'USERNAME', value: username, secret: passwordHash, verified: true },
-                                update: {},
+                                where: { type_value: { type: 'USERNAME', value: identityValue } },
+                                create: { userId: user.id, type: 'USERNAME', value: identityValue, secret: passwordHash, verified: true, schoolId },
+                                update: { schoolId },
                             });
                             const membership = await tx.userSchool.create({
                                 data: { userId: user.id, schoolId, primaryRoleId: studentRole.id, isActive: true },

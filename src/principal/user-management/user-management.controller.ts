@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, ParseIntPipe, UseGuards } from '@nestjs/common';
 import { UserManagementService } from './user-management.service';
-import { UserSearchQueryDto, ResetPasswordDto, ManageIdentityDto, UpdateUserStatusDto } from './dto/user-management.dto';
+import { UserSearchQueryDto, ResetPasswordDto, ManageIdentityDto, UpdateUserStatusDto, UpdateProfileDto } from './dto/user-management.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthType } from '@prisma/client';
@@ -22,6 +22,12 @@ export class UserManagementController {
     findOne(@Req() req, @Param('id', ParseIntPipe) id: number) {
         const schoolId = req.user.schoolId;
         return this.userManagementService.getUserDetails(schoolId, id);
+    }
+
+    @Patch(':id/profile')
+    updateProfile(@Req() req, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateProfileDto) {
+        const schoolId = req.user.schoolId;
+        return this.userManagementService.updateProfile(schoolId, id, dto);
     }
 
     @Post(':id/reset-password')

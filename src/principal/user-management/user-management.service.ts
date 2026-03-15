@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { UserSearchQueryDto, ResetPasswordDto, ManageIdentityDto, UpdateUserStatusDto } from './dto/user-management.dto';
+import { UserSearchQueryDto, ResetPasswordDto, ManageIdentityDto, UpdateUserStatusDto, UpdateProfileDto } from './dto/user-management.dto';
 import * as argon2 from 'argon2';
 import { AuthType } from '@prisma/client';
 
@@ -106,7 +106,7 @@ export class UserManagementService {
         // Update all identities with secret
         await this.prisma.$transaction([
             this.prisma.authIdentity.updateMany({
-                where: { userId, type: { in: ['EMAIL', 'USERNAME', 'PHONE'] } },
+                where: { userId },
                 data: { secret: hashedPassword }
             }),
             this.prisma.user.update({
@@ -118,20 +118,58 @@ export class UserManagementService {
         return { message: 'Password reset successfully' };
     }
 
-    async addIdentity(schoolId: number, userId: number, dto: ManageIdentityDto) {
-        await this.getUserDetails(schoolId, userId);
+    async updateProfile(schoolId: number, userId: number, dto: UpdateProfileDto) {
+        const user = await this.getUserDetails(schoolId, userId);
+        
+        const isStudent = !!user.studentProfile;
+        
+        return await this.prisma.$transaction(async (tx) => {
+            const updatedUser = await tx.user.update({
+                where: { id: userId },
+                data: { name: dto.name }
+            });
 
-        // Check if global uniqueness
-        const existing = await this.prisma.authIdentity.findUnique({
-            where: { type_value: { type: dto.type, value: dto.value } }
+            // If student, also update username
+            if (isStudent) {
+                const newUsername = await this.generateUsername(dto.name, userId);
+                await tx.authIdentity.updateMany({
+                    where: { userId, type: AuthType.USERNAME },
+                    data: { value: newUsername }
+                });
+            }
+
+            return updatedUser;
+        });
+    }
+
+    private async generateUsername(name: string, userId: number): Promise<string> {
+        const cleanName = name.toLowerCase().replace(/[^a-z0-9]/g, '.');
+        return `${cleanName}.${userId}`;
+    }
+
+    async addIdentity(schoolId: number, userId: number, dto: ManageIdentityDto) {
+        const user = await this.getUserDetails(schoolId, userId);
+
+        if (user.studentProfile) {
+            throw new BadRequestException('Student identities are managed automatically and cannot be changed manually');
+        }
+
+        // Rule: Only one auth identity at a time.
+        // We will replace any existing identity of any type for non-students, 
+        // OR simply enforce that they only have one at any given moment.
+        
+        const existingIdentities = await this.prisma.authIdentity.findMany({ where: { userId } });
+        
+        // Check uniqueness if value changes
+        const conflict = await this.prisma.authIdentity.findFirst({
+            where: { type: dto.type, value: dto.value, NOT: { userId } }
         });
 
-        if (existing) {
-            throw new BadRequestException(`Identity ${dto.value} of type ${dto.type} already exists`);
+        if (conflict) {
+            throw new BadRequestException(`Identity ${dto.value} is already in use by another user`);
         }
 
         const data: any = {
-            userId,
             type: dto.type,
             value: dto.value,
             verified: dto.verified || false
@@ -141,11 +179,25 @@ export class UserManagementService {
             data.secret = await argon2.hash(dto.secret);
         }
 
-        return this.prisma.authIdentity.create({ data });
+        return await this.prisma.$transaction(async (tx) => {
+            // Delete all existing identities (enforcing "only one")
+            await tx.authIdentity.deleteMany({ where: { userId } });
+            
+            return tx.authIdentity.create({
+                data: {
+                    ...data,
+                    userId
+                }
+            });
+        });
     }
 
     async removeIdentity(schoolId: number, userId: number, type: AuthType, value: string) {
-        await this.getUserDetails(schoolId, userId);
+        const user = await this.getUserDetails(schoolId, userId);
+
+        if (user.studentProfile) {
+            throw new BadRequestException('Student identities cannot be removed manually');
+        }
 
         const identities = await this.prisma.authIdentity.findMany({ where: { userId } });
         if (identities.length <= 1) {

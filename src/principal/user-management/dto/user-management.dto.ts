@@ -47,3 +47,9 @@ export class UpdateUserStatusDto {
     @IsNotEmpty()
     isActive: boolean;
 }
+
+export class UpdateProfileDto {
+    @IsNotEmpty()
+    @IsString()
+    name: string;
+}
