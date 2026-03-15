@@ -630,34 +630,109 @@ export class StudentService {
     }
 
     async remove(id: number, schoolId: number) {
-        this.logger.log(`Deleting student ${id} in school ${schoolId}`);
-        const student = await this.findOne(id, schoolId);
+        this.logger.log(`Performing full cascading removal for student ${id} in school ${schoolId}`);
 
-        // Soft delete: Set isActive false on Profile and UserSchool membership
+        // 1. Fetch student with parents and user info for identifying what else to delete
+        const student = await this.prisma.studentProfile.findUnique({
+            where: { id },
+            include: {
+                parents: {
+                    include: {
+                        parent: true
+                    }
+                }
+            }
+        });
+
+        if (!student || student.schoolId !== schoolId) {
+            throw new NotFoundException('Student not found');
+        }
+
         try {
             await this.prisma.$transaction(async (tx) => {
-                await tx.studentProfile.update({
-                    where: { id },
-                    data: { isActive: false },
+                // 2. Identify parents to potentially delete
+                const parentUserIdsToDelete: number[] = [];
+
+                if (student.parents && student.parents.length > 0) {
+                    for (const ps of student.parents) {
+                        const parentId = ps.parentId;
+
+                        // Check if this parent is linked to ANY other students in the entire system
+                        const otherChildrenCount = await tx.parentStudent.count({
+                            where: {
+                                parentId: parentId,
+                                studentId: { not: id }
+                            }
+                        });
+
+                        if (otherChildrenCount === 0) {
+                            // This parent has no other children, mark their User for deletion if they have one
+                            if (ps.parent.userId) {
+                                parentUserIdsToDelete.push(ps.parent.userId);
+                            }
+                        }
+                    }
+                }
+
+                // 3. Delete non-cascading records for the student
+                // AttendanceSummary: explicitly remove all records for this student profile
+                await tx.attendanceSummary.deleteMany({
+                    where: { studentId: id }
                 });
 
+                // AnnouncementAudience: explicitly remove targeting for this student
+                await tx.announcementAudience.deleteMany({
+                    where: { studentId: id }
+                });
+
+                // 4. Delete the student's User account or Profile
+                // Deleting the User will cascade to ALL linked StudentProfiles and their related data
                 if (student.userId) {
-                    await tx.userSchool.update({
-                        where: {
-                            userId_schoolId: {
-                                userId: student.userId,
-                                schoolId,
-                            }
-                        },
-                        data: { isActive: false },
+                    // Find all student profiles associated with this user to clean up their non-cascading summaries
+                    const allProfiles = await tx.studentProfile.findMany({
+                        where: { userId: student.userId },
+                        select: { id: true }
+                    });
+
+                    const profileIds = allProfiles.map(p => p.id);
+
+                    await tx.attendanceSummary.deleteMany({
+                        where: { studentId: { in: profileIds } }
+                    });
+
+                    await tx.announcementAudience.deleteMany({
+                        where: { studentId: { in: profileIds } }
+                    });
+
+                    // Now delete the top-level user
+                    await tx.user.delete({
+                        where: { id: student.userId }
+                    });
+                } else {
+                    // No user account, just delete this specific profile (cascades to some, we handled others)
+                    await tx.studentProfile.delete({
+                        where: { id: id }
                     });
                 }
+
+                // 5. Delete Parent User accounts (only if they have no other children anywhere)
+                for (const pUserId of parentUserIdsToDelete) {
+                    const userExists = await tx.user.findUnique({
+                        where: { id: pUserId }
+                    });
+                    if (userExists) {
+                        await tx.user.delete({
+                            where: { id: pUserId }
+                        });
+                    }
+                }
             });
-            this.logger.log(`Student soft-deleted: ${id}`);
-            return { message: 'Student deleted successfully' };
+
+            this.logger.log(`Student ${id} and all associated records fully removed.`);
+            return { message: 'Student and associated records fully removed from system' };
         } catch (error) {
-            this.logger.error(`Failed to delete student ${id}`, error.stack);
-            throw new BadRequestException('Cannot delete student');
+            this.logger.error(`Failed to remove student ${id} records`, error.stack);
+            throw new BadRequestException('Failed to remove student records: ' + (error.message || 'Unknown error'));
         }
     }
 

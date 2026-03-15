@@ -60,7 +60,7 @@ export class GrievanceController {
         @Body() dto: CreateGrievanceDto,
         @Headers('x-academic-year-id') yearIdHeader?: string,
     ) {
-        console.log('Grievance Create Request User:', req.user);
+
         const yearId = await this.getActiveAcademicYear(req.user.schoolId, yearIdHeader);
         return this.grievanceService.create(req.user.schoolId, yearId, req.user.id, req.user.role, dto);
     }
@@ -73,7 +73,7 @@ export class GrievanceController {
         @Body() dto: CreateBulkGrievanceDto,
         @Headers('x-academic-year-id') yearIdHeader?: string,
     ) {
-        console.log('Grievance Bulk Create Request User:', req.user);
+
         const yearId = await this.getActiveAcademicYear(req.user.schoolId, yearIdHeader);
         return this.grievanceService.createBulk(req.user.schoolId, yearId, req.user.id, req.user.role, dto);
     }
