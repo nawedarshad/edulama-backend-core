@@ -205,11 +205,7 @@ export class StudentService {
                 const queries: any[] = [];
                 if (normalizedPrimaryEmail) queries.push({ type: 'EMAIL', value: normalizedPrimaryEmail });
 
-                for (const guardian of dto.guardians ?? []) {
-                    if (guardian.phone) {
-                        queries.push({ type: 'PHONE', value: guardian.phone });
-                    }
-                }
+                // (Note: Phone query removed as parent auth is email-only)
 
                 if (queries.length > 0) {
                     const existingIdentity = await tx.authIdentity.findFirst({
@@ -232,22 +228,13 @@ export class StudentService {
                     // Add primary email identity
                     if (normalizedPrimaryEmail) {
                         await tx.authIdentity.upsert({
-                            where: { type_value: { type: 'EMAIL', value: normalizedPrimaryEmail } },
+                            where: { userId: familyUserId! } as any,
                             create: { userId: familyUserId!, type: 'EMAIL', value: normalizedPrimaryEmail, verified: true },
-                            update: {}
+                            update: { type: 'EMAIL', value: normalizedPrimaryEmail }
                         });
                     }
 
-                    // Add phone identities
-                    for (const guardian of dto.guardians ?? []) {
-                        if (guardian.phone) {
-                            await tx.authIdentity.upsert({
-                                where: { type_value: { type: 'PHONE', value: guardian.phone } },
-                                create: { userId: familyUserId!, type: 'PHONE', value: guardian.phone, verified: true },
-                                update: {}
-                            });
-                        }
-                    }
+                    // (Note: Phone identity creation removed as parent auth is email-only)
                 } else {
                     parentUser = await tx.user.findUnique({ where: { id: familyUserId } });
                 }
@@ -405,7 +392,7 @@ export class StudentService {
                         errors.push(`Student ${student.fullName} (${student.admissionNo}): skipped — no DOB set`);
                     } else {
                         const firstName = student.fullName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const username = `${firstName}${student.admissionNo.toLowerCase().trim()}`;
+                        const identityValue = `${firstName}[${student.admissionNo.toLowerCase().trim()}]`;
 
                         const dobDate = new Date(student.dob);
                         const passwordRaw = [
@@ -419,11 +406,8 @@ export class StudentService {
                             const user = await tx.user.create({
                                 data: { name: student.fullName, isActive: true },
                             });
-                            const identityValue = `${username}@${schoolCode}`;
-                            await tx.authIdentity.upsert({
-                                where: { type_value: { type: 'USERNAME', value: identityValue } },
-                                create: { userId: user.id, type: 'USERNAME', value: identityValue, secret: passwordHash, verified: true, schoolId },
-                                update: { schoolId },
+                            await tx.authIdentity.create({
+                                data: { userId: user.id, type: 'USERNAME', value: identityValue, secret: passwordHash, verified: true, schoolId },
                             });
                             const membership = await tx.userSchool.create({
                                 data: { userId: user.id, schoolId, primaryRoleId: studentRole.id, isActive: true },

@@ -237,8 +237,8 @@ export class PrincipalProfileService {
 
     async updateEmail(userId: number, dto: UpdateEmailDto) {
         const normalized = dto.newEmail.toLowerCase().trim();
-        const existing = await this.prisma.authIdentity.findUnique({
-            where: { type_value: { type: AuthType.EMAIL, value: normalized } },
+        const existing = await this.prisma.authIdentity.findFirst({
+            where: { type: AuthType.EMAIL, value: normalized },
         });
 
         if (existing && existing.userId !== userId) {
@@ -290,8 +290,8 @@ export class PrincipalProfileService {
 
     async updateUsername(userId: number, dto: UpdateUsernameDto) {
         const normalized = dto.newUsername.toLowerCase().trim();
-        const existing = await this.prisma.authIdentity.findUnique({
-            where: { type_value: { type: AuthType.USERNAME, value: normalized } },
+        const existing = await this.prisma.authIdentity.findFirst({
+            where: { type: AuthType.USERNAME, value: normalized },
         });
 
         if (existing && existing.userId !== userId) {

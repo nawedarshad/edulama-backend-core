@@ -155,6 +155,10 @@ export class UserManagementService {
             throw new BadRequestException('Student identities are managed automatically and cannot be changed manually');
         }
 
+        if (user.parentProfile && dto.type === AuthType.PHONE) {
+            throw new BadRequestException('Phone authentication is not allowed for parents. Use email only.');
+        }
+
         // Rule: Only one auth identity at a time.
         // We will replace any existing identity of any type for non-students, 
         // OR simply enforce that they only have one at any given moment.
