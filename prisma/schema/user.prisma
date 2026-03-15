@@ -280,7 +280,7 @@ model PrincipalMemo {
 
 model AuthIdentity {
   id       Int      @id @default(autoincrement())
-  userId   Int
+  userId   Int      @unique
   type     AuthType
   value    String
   secret   String?
@@ -292,8 +292,8 @@ model AuthIdentity {
   school   School? @relation(fields: [schoolId], references: [id])
   schoolId Int?
 
-  @@unique([type, value])
-  @@index([type, value])
+  @@unique([schoolId, type, value])
+  @@index([schoolId, type, value])
 }
 
 // ==========================

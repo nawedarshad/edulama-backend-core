@@ -132,7 +132,7 @@ export class UserManagementService {
             // If student, also update username
             if (isStudent && user.studentProfile?.admissionNo) {
                 const school = await tx.school.findUnique({ where: { id: schoolId } });
-                const newUsername = await this.generateUsername(dto.name, user.studentProfile.admissionNo, school?.code || '');
+                const newUsername = await this.generateUsername(dto.name, user.studentProfile.admissionNo);
                 await tx.authIdentity.updateMany({
                     where: { userId, type: AuthType.USERNAME },
                     data: { value: newUsername }
@@ -143,10 +143,9 @@ export class UserManagementService {
         });
     }
 
-    private async generateUsername(name: string, admissionNo: string, schoolCode: string): Promise<string> {
+    private async generateUsername(name: string, admissionNo: string): Promise<string> {
         const firstName = name.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-        const base = `${firstName}[${admissionNo.toLowerCase().trim()}]`;
-        return schoolCode ? `${base}@${schoolCode.toLowerCase()}` : base;
+        return `${firstName}[${admissionNo.toLowerCase().trim()}]`;
     }
 
     async addIdentity(schoolId: number, userId: number, dto: ManageIdentityDto) {
@@ -188,7 +187,8 @@ export class UserManagementService {
             return tx.authIdentity.create({
                 data: {
                     ...data,
-                    userId
+                    userId,
+                    schoolId
                 }
             });
         });
@@ -292,7 +292,7 @@ export class UserManagementService {
         ].join('');
         const passwordHash = await argon2.hash(passwordRaw);
 
-        const identityValue = await this.generateUsername(student.fullName, student.admissionNo, schoolCode);
+        const identityValue = await this.generateUsername(student.fullName, student.admissionNo);
 
         await this.prisma.$transaction(async (tx) => {
             let userId = student.userId;
@@ -305,9 +305,14 @@ export class UserManagementService {
 
             if (dto.syncUsernames || !hasUser) {
                 await tx.authIdentity.upsert({
-                    where: { type_value: { type: AuthType.USERNAME, value: identityValue } },
+                    where: { userId } as any,
                     create: { userId, type: AuthType.USERNAME, value: identityValue, secret: passwordHash, verified: true, schoolId: student.schoolId },
-                    update: { value: identityValue, ...(dto.resetExisting && { secret: passwordHash }) }
+                    update: { 
+                        type: AuthType.USERNAME,
+                        value: identityValue, 
+                        schoolId: student.schoolId,
+                        ...(dto.resetExisting && { secret: passwordHash }) 
+                    }
                 });
             } else if (dto.resetExisting) {
                 await tx.authIdentity.updateMany({
