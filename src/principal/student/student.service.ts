@@ -342,104 +342,129 @@ export class StudentService {
         classId?: number,
         sectionId?: number,
     ) {
-        this.logger.log(`Generating credentials for school ${schoolId}, year ${academicYearId}`);
+        this.logger.log(`Bulk verification for school ${schoolId}, year ${academicYearId}`);
 
-        // 1. Fetch STUDENT role
-        const studentRole = await this.prisma.role.findUnique({ where: { name: 'STUDENT' } });
-        if (!studentRole) {
-            throw new BadRequestException("Role 'STUDENT' not found. Please seed the database.");
+        // 1. Fetch STUDENT/PARENT roles
+        const [studentRole, parentRole] = await Promise.all([
+            this.prisma.role.findUnique({ where: { name: 'STUDENT' } }),
+            this.prisma.role.findUnique({ where: { name: 'PARENT' } }),
+        ]);
+
+        if (!studentRole || !parentRole) {
+            throw new BadRequestException("Roles 'STUDENT' and/or 'PARENT' not found.");
         }
 
-        // 2. Find all students missing a userId
+        // 2. Find students and their families
         const where: any = {
             schoolId,
             academicYearId,
             isActive: true,
-            userId: null,
         };
         if (classId) where.classId = classId;
         if (sectionId) where.sectionId = sectionId;
 
         const students = await this.prisma.studentProfile.findMany({
             where,
-            select: {
-                id: true,
-                fullName: true,
-                admissionNo: true,
-                dob: true,
-            },
+            include: {
+                parents: {
+                    include: {
+                        parent: {
+                            include: {
+                                user: true
+                            }
+                        }
+                    }
+                }
+            }
         });
 
-        this.logger.log(`Found ${students.length} students missing credentials`);
+        this.logger.log(`Filtering for verification in class scope: found ${students.length} students`);
 
-        let provisioned = 0;
+        let studentsProvisioned = 0;
+        let parentsActivated = 0;
         let skipped = 0;
         const errors: string[] = [];
 
+        // Track processed user IDs to avoid duplicate processing in the same call
+        const processedUserIds = new Set<number>();
+
         for (const student of students) {
             try {
-                if (!student.dob) {
-                    skipped++;
-                    errors.push(`${student.fullName} (${student.admissionNo}): skipped — no DOB set`);
-                    continue;
+                // --- A. Process Student ---
+                if (!student.userId) {
+                    if (!student.dob) {
+                        skipped++;
+                        errors.push(`Student ${student.fullName} (${student.admissionNo}): skipped — no DOB set`);
+                    } else {
+                        const firstName = student.fullName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const username = `${firstName}${student.admissionNo.toLowerCase()}`;
+
+                        const dobDate = new Date(student.dob);
+                        const passwordRaw = [
+                            String(dobDate.getDate()).padStart(2, '0'),
+                            String(dobDate.getMonth() + 1).padStart(2, '0'),
+                            dobDate.getFullYear(),
+                        ].join('');
+                        const passwordHash = await argon2.hash(passwordRaw);
+
+                        await this.prisma.$transaction(async (tx) => {
+                            const user = await tx.user.create({
+                                data: { name: student.fullName, isActive: true },
+                            });
+                            await tx.authIdentity.upsert({
+                                where: { type_value: { type: 'USERNAME', value: username } },
+                                create: { userId: user.id, type: 'USERNAME', value: username, secret: passwordHash, verified: true },
+                                update: {},
+                            });
+                            const membership = await tx.userSchool.create({
+                                data: { userId: user.id, schoolId, primaryRoleId: studentRole.id, isActive: true },
+                            });
+                            await tx.userSchoolRole.create({
+                                data: { userSchoolId: membership.id, roleId: studentRole.id },
+                            });
+                            await tx.studentProfile.update({
+                                where: { id: student.id },
+                                data: { userId: user.id },
+                            });
+                        });
+                        studentsProvisioned++;
+                    }
                 }
 
-                const firstName = student.fullName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-                const username = `${firstName}${student.admissionNo.toLowerCase()}`;
+                // --- B. Process Parents ---
+                for (const studentParent of student.parents) {
+                    const parent = studentParent.parent;
+                    if (parent.user && !parent.user.isActive && !processedUserIds.has(parent.userId)) {
+                        await this.prisma.$transaction(async (tx) => {
+                            // Activate user
+                            await tx.user.update({
+                                where: { id: parent.userId },
+                                data: { isActive: true }
+                            });
+                            // Verify all identities (EMAIL/PHONE)
+                            await tx.authIdentity.updateMany({
+                                where: { userId: parent.userId },
+                                data: { verified: true }
+                            });
+                        });
+                        parentsActivated++;
+                        processedUserIds.add(parent.userId);
+                    }
+                }
 
-                const dobDate = new Date(student.dob);
-                const passwordRaw = [
-                    String(dobDate.getDate()).padStart(2, '0'),
-                    String(dobDate.getMonth() + 1).padStart(2, '0'),
-                    dobDate.getFullYear(),
-                ].join('');
-                const passwordHash = await argon2.hash(passwordRaw);
-
-                await this.prisma.$transaction(async (tx) => {
-                    // Create User
-                    const user = await tx.user.create({
-                        data: {
-                            name: student.fullName,
-                            isActive: true,
-                        },
-                    });
-
-                    // Create AuthIdentity (USERNAME) — password stored in secret field
-                    await tx.authIdentity.upsert({
-                        where: { type_value: { type: 'USERNAME', value: username } },
-                        create: { userId: user.id, type: 'USERNAME', value: username, secret: passwordHash, verified: true },
-                        update: {},
-                    });
-
-                    // Create UserSchool membership
-                    const membership = await tx.userSchool.create({
-                        data: { userId: user.id, schoolId, primaryRoleId: studentRole.id, isActive: true },
-                    });
-                    await tx.userSchoolRole.create({
-                        data: { userSchoolId: membership.id, roleId: studentRole.id },
-                    });
-
-                    // Link user to StudentProfile
-                    await tx.studentProfile.update({
-                        where: { id: student.id },
-                        data: { userId: user.id },
-                    });
-                });
-
-                provisioned++;
-                this.logger.log(`Credentials generated for student ${student.admissionNo} — username: ${username}`);
             } catch (err: any) {
-                this.logger.error(`Failed for student ${student.admissionNo}: ${err.message}`);
+                this.logger.error(`Error processing ${student.admissionNo}: ${err.message}`);
                 errors.push(`${student.fullName} (${student.admissionNo}): ${err.message}`);
             }
         }
 
         return {
             total: students.length,
-            provisioned,
+            provisioned: studentsProvisioned,
+            parentsActivated,
             skipped,
             errors,
-            message: `${provisioned} credential(s) generated, ${skipped} skipped.`,
+            message: `${studentsProvisioned} student account(s) created, ${parentsActivated} parent account(s) activated, ${skipped} skipped.`,
         };
     }
 
