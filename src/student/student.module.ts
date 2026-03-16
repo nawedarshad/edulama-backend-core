@@ -8,12 +8,14 @@ import { ConfigModule } from '@nestjs/config';
 import { StudentProfileController } from './profile/student-profile.controller';
 import { StudentProfileService } from './profile/student-profile.service';
 import { StudentAnnouncementModule } from './announcement/student-announcement.module';
+import { StudentSubjectModule } from './subject/student-subject.module';
 
 @Module({
     imports: [
         StudentTimetableModule,
         StudentNoticeModule,
         StudentAnnouncementModule,
+        StudentSubjectModule,
         CalendarModule,
         HttpModule,
         ConfigModule,
