@@ -10,6 +10,7 @@ import { HttpModule } from '@nestjs/axios';
 import { CalendarModule } from 'src/principal/calendar/calendar.module';
 import { ParentCalendarController } from './calendar/parent-calendar.controller';
 import { ConfigModule } from '@nestjs/config';
+import { ParentAnnouncementModule } from './announcement/parent-announcement.module';
 
 @Module({
     imports: [
@@ -20,6 +21,7 @@ import { ConfigModule } from '@nestjs/config';
         ParentTimetableModule,
         ParentClassDiaryModule,
         ParentNoticeModule,
+        ParentAnnouncementModule,
         CalendarModule,
     ],
     controllers: [ParentController, ParentCalendarController],

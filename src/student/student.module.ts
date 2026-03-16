@@ -7,11 +7,13 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { StudentProfileController } from './profile/student-profile.controller';
 import { StudentProfileService } from './profile/student-profile.service';
+import { StudentAnnouncementModule } from './announcement/student-announcement.module';
 
 @Module({
     imports: [
         StudentTimetableModule,
         StudentNoticeModule,
+        StudentAnnouncementModule,
         CalendarModule,
         HttpModule,
         ConfigModule,
