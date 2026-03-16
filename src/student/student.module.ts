@@ -9,6 +9,7 @@ import { StudentProfileController } from './profile/student-profile.controller';
 import { StudentProfileService } from './profile/student-profile.service';
 import { StudentAnnouncementModule } from './announcement/student-announcement.module';
 import { StudentSubjectModule } from './subject/student-subject.module';
+import { StudentHomeworkModule } from './homework/student-homework.module';
 
 @Module({
     imports: [
@@ -16,6 +17,7 @@ import { StudentSubjectModule } from './subject/student-subject.module';
         StudentNoticeModule,
         StudentAnnouncementModule,
         StudentSubjectModule,
+        StudentHomeworkModule,
         CalendarModule,
         HttpModule,
         ConfigModule,

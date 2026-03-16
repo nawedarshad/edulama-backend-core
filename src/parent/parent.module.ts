@@ -12,6 +12,7 @@ import { ParentCalendarController } from './calendar/parent-calendar.controller'
 import { ConfigModule } from '@nestjs/config';
 import { ParentAnnouncementModule } from './announcement/parent-announcement.module';
 import { ParentSubjectModule } from './subject/parent-subject.module';
+import { ParentHomeworkModule } from './homework/parent-homework.module';
 
 @Module({
     imports: [
@@ -24,6 +25,7 @@ import { ParentSubjectModule } from './subject/parent-subject.module';
         ParentNoticeModule,
         ParentAnnouncementModule,
         ParentSubjectModule,
+        ParentHomeworkModule,
         CalendarModule,
     ],
     controllers: [ParentController, ParentCalendarController],

@@ -126,7 +126,18 @@ export class StudentSubjectService {
                 subjectId: assignment.subjectId,
                 academicYearId: assignment.academicYearId
             },
-            orderBy: { createdAt: 'desc' }
+        });
+
+        // Fetch recent diaries
+        const recentDiaries = await this.prisma.classDiary.findMany({
+            where: {
+                schoolId,
+                groupId: assignment.groupId as any,
+                subjectId: assignment.subjectId,
+                academicYearId: assignment.academicYearId
+            },
+            take: 5,
+            orderBy: { lessonDate: 'desc' }
         });
 
         return {
@@ -137,6 +148,7 @@ export class StudentSubjectService {
                 periodsPerWeek: assignment.periodsPerWeek
             },
             syllabi,
+            recentDiaries,
             studentCount: 0 
         };
     }
