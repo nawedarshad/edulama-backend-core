@@ -62,6 +62,17 @@ export class UserAuthGuard implements CanActivate {
 
             // No role check — any authenticated user is allowed
             request.user = user;
+
+            // Inject context from headers — header always wins (user's active session context)
+            const headerAcademicYearId = request.headers['x-academic-year-id'];
+            const headerSchoolId = request.headers['x-school-id'];
+            if (headerAcademicYearId) {
+                request.user.academicYearId = parseInt(headerAcademicYearId as string);
+            }
+            if (headerSchoolId) {
+                request.user.schoolId = parseInt(headerSchoolId as string);
+            }
+
             return true;
         } catch (error) {
             this.logger.error('Token verification failed', error.message);
