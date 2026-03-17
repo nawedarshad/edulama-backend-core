@@ -123,9 +123,12 @@ export class ParentSubjectService {
         const syllabi = await this.prisma.syllabus.findMany({
             where: {
                 schoolId,
-                groupId: assignment.groupId,
                 subjectId: assignment.subjectId,
-                academicYearId: assignment.academicYearId
+                academicYearId: assignment.academicYearId,
+                ...(assignment.groupId ? { groupId: assignment.groupId } : {
+                    classId: assignment.classId,
+                    sectionId: assignment.sectionId
+                }),
             },
         });
         
@@ -133,9 +136,12 @@ export class ParentSubjectService {
         const recentDiaries = await this.prisma.classDiary.findMany({
             where: {
                 schoolId,
-                groupId: assignment.groupId as any,
                 subjectId: assignment.subjectId,
-                academicYearId: assignment.academicYearId
+                academicYearId: assignment.academicYearId,
+                ...(assignment.groupId ? { groupId: assignment.groupId } : {
+                    classId: assignment.classId,
+                    sectionId: assignment.sectionId
+                }),
             },
             take: 5,
             orderBy: { lessonDate: 'desc' }

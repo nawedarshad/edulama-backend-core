@@ -1,5 +1,5 @@
 import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
-import { StudentAttendanceService } from './student-attendance.service';
+import { StudentAttendanceService } from './student-attendance.service.js';
 import { UserAuthGuard } from '../../common/guards/user.guard';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 

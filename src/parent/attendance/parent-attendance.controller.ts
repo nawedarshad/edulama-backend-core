@@ -1,8 +1,8 @@
 import { Controller, Get, Query, UseGuards, Request, Param, ParseIntPipe, UnauthorizedException } from '@nestjs/common';
-import { ParentAttendanceService } from './parent-attendance.service';
+import { ParentAttendanceService } from './parent-attendance.service.js';
 import { UserAuthGuard } from '../../common/guards/user.guard';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service.js';
 
 @ApiTags('Parent - Attendance')
 @ApiBearerAuth()
