@@ -68,21 +68,21 @@ export class ParentSubjectService {
             const totalTopics = await this.prisma.syllabus.count({
                 where: {
                     schoolId,
-                    groupId: a.groupId,
                     subjectId: a.subjectId,
                     academicYearId: a.academicYearId,
-                    type: 'TOPIC'
+                    type: 'TOPIC',
+                    ...(a.groupId ? { groupId: a.groupId } : { classId: a.classId })
                 }
             });
 
             const completedTopics = await this.prisma.syllabus.count({
                 where: {
                     schoolId,
-                    groupId: a.groupId,
                     subjectId: a.subjectId,
                     academicYearId: a.academicYearId,
                     type: 'TOPIC',
-                    status: 'COMPLETED'
+                    status: 'COMPLETED',
+                    ...(a.groupId ? { groupId: a.groupId } : { classId: a.classId })
                 }
             });
 
@@ -126,8 +126,7 @@ export class ParentSubjectService {
                 subjectId: assignment.subjectId,
                 academicYearId: assignment.academicYearId,
                 ...(assignment.groupId ? { groupId: assignment.groupId } : {
-                    classId: assignment.classId,
-                    sectionId: assignment.sectionId
+                    classId: assignment.classId
                 }),
             },
         });
