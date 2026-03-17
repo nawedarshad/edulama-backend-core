@@ -12,8 +12,8 @@ import { Prisma } from '@prisma/client';
 export class ParentNoticeService {
     constructor(private readonly prisma: PrismaService) { }
 
-    async findAll(schoolId: number, parentUserId: number, query: ParentNoticeQueryDto) {
-        const { studentId, page = 1, limit = 10, search, type, subjectId } = query;
+    async findAll(schoolId: number, parentUserId: number, studentId: number, query: Omit<ParentNoticeQueryDto, 'studentId'>) {
+        const { page = 1, limit = 10, search, type, subjectId } = query;
         const skip = (page - 1) * limit;
 
         // 1. Verify Parent-Student Relation

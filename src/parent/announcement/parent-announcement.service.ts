@@ -6,8 +6,8 @@ import { AnnouncementStatus, AudienceType, AckType } from '@prisma/client';
 export class ParentAnnouncementService {
     constructor(private readonly prisma: PrismaService) { }
 
-    async findAll(schoolId: number, userId: number, query: any) {
-        const { page = 1, limit = 10, search, type, viewMode = 'PARENT', childId } = query;
+    async findAll(schoolId: number, userId: number, studentId: number, query: any) {
+        const { page = 1, limit = 10, search, type, viewMode = 'PARENT' } = query;
         const skip = (page - 1) * limit;
 
         const where: any = {
@@ -17,14 +17,14 @@ export class ParentAnnouncementService {
         };
 
         if (viewMode === 'STUDENT') {
-            if (!childId) {
-                throw new Error('childId is required for student viewMode');
+            if (!studentId) {
+                throw new Error('studentId is required for student viewMode');
             }
 
             // Verify parent-student relationship
             const relationship = await this.prisma.parentStudent.findFirst({
                 where: {
-                    studentId: +childId,
+                    studentId: studentId,
                     parent: { userId: userId },
                     student: { schoolId: schoolId }
                 },

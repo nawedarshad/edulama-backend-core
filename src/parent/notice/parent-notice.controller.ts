@@ -19,25 +19,29 @@ import { ParentNoticeQueryDto } from './dto/parent-notice-query.dto';
 export class ParentNoticeController {
     constructor(private readonly noticeService: ParentNoticeService) { }
 
-    @Get()
-    findAll(@GetUser() user: AuthUserPayload, @Query() query: ParentNoticeQueryDto) {
-        return this.noticeService.findAll(user.schoolId, user.id, query);
+    @Get(':studentId')
+    findAll(
+        @GetUser() user: AuthUserPayload, 
+        @Param('studentId', ParseIntPipe) studentId: number,
+        @Query() query: Omit<ParentNoticeQueryDto, 'studentId'>
+    ) {
+        return this.noticeService.findAll(user.schoolId, user.id, studentId, query);
     }
 
-    @Get(':id')
+    @Get(':studentId/:id')
     findOne(
         @GetUser() user: AuthUserPayload,
+        @Param('studentId', ParseIntPipe) studentId: number,
         @Param('id', ParseIntPipe) id: number,
-        @Query('studentId', ParseIntPipe) studentId: number
     ) {
         return this.noticeService.findOne(user.schoolId, user.id, id, studentId);
     }
 
-    @Post(':id/acknowledge')
+    @Post(':studentId/:id/acknowledge')
     acknowledge(
         @GetUser() user: AuthUserPayload,
+        @Param('studentId', ParseIntPipe) studentId: number,
         @Param('id', ParseIntPipe) id: number,
-        @Body('studentId', ParseIntPipe) studentId: number
     ) {
         return this.noticeService.acknowledge(user.schoolId, user.id, id, studentId);
     }

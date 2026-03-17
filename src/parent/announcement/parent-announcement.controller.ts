@@ -11,10 +11,14 @@ import { AnnouncementQueryDto } from '../../principal/announcement/dto/announcem
 export class ParentAnnouncementController {
     constructor(private readonly announcementService: ParentAnnouncementService) { }
 
-    @Get()
+    @Get(':studentId')
     @ApiOperation({ summary: 'Get announcements targeted at parents' })
-    findAll(@Request() req, @Query() query: AnnouncementQueryDto & { viewMode?: string, childId?: string }) {
-        return this.announcementService.findAll(req.user.schoolId, req.user.id, query);
+    findAll(
+        @Request() req, 
+        @Param('studentId', ParseIntPipe) studentId: number,
+        @Query() query: AnnouncementQueryDto & { viewMode?: string }
+    ) {
+        return this.announcementService.findAll(req.user.schoolId, req.user.id, studentId, query);
     }
 
     @Get(':id')
