@@ -10,6 +10,8 @@ import { StudentProfileService } from './profile/student-profile.service';
 import { StudentAnnouncementModule } from './announcement/student-announcement.module';
 import { StudentSubjectModule } from './subject/student-subject.module';
 import { StudentHomeworkModule } from './homework/student-homework.module';
+import { StudentAttendanceController } from './attendance/student-attendance.controller';
+import { StudentAttendanceService } from './attendance/student-attendance.service';
 
 @Module({
     imports: [
@@ -22,7 +24,7 @@ import { StudentHomeworkModule } from './homework/student-homework.module';
         HttpModule,
         ConfigModule,
     ],
-    controllers: [StudentCalendarController, StudentProfileController],
-    providers: [StudentProfileService],
+    controllers: [StudentCalendarController, StudentProfileController, StudentAttendanceController],
+    providers: [StudentProfileService, StudentAttendanceService],
 })
 export class StudentModule { }

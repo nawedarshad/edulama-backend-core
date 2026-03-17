@@ -29,4 +29,12 @@ export class StudentCalendarController {
 
         return this.calendarService.generateCalendar(user.schoolId, dto.startDate, dto.endDate, student.classId, user.academicYearId);
     }
+
+    @Get('validate-date')
+    async validateDate(
+        @GetUser() user: any,
+        @Query('date') date: string,
+    ) {
+        return this.calendarService.validateDate(user.schoolId, new Date(date));
+    }
 }

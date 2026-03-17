@@ -5,20 +5,29 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class ParentClassDiaryService {
     constructor(private readonly prisma: PrismaService) { }
 
-    private async validateAndGetStudentSection(schoolId: number, parentUserId: number, studentId: number) {
-        // Verify Parent-Child Link and get Class/Section
-        const studentProfile = await this.prisma.studentProfile.findFirst({
-            where: {
-                id: studentId,
-                schoolId,
-                parents: {
-                    some: {
-                        parent: {
-                            userId: parentUserId
-                        }
+    private async validateAndGetStudentSection(schoolId: number, currentUserId: number, role: string, studentId: number) {
+        // If it's a student, they can only view their own profile. 
+        // studentId should match their own profile id.
+        const whereClause: any = {
+            id: studentId,
+            schoolId,
+        };
+
+        if (role === 'STUDENT') {
+            whereClause.userId = currentUserId;
+        } else {
+            // PARENT role: Verify Parent-Child Link
+            whereClause.parents = {
+                some: {
+                    parent: {
+                        userId: currentUserId
                     }
                 }
-            },
+            };
+        }
+
+        const studentProfile = await this.prisma.studentProfile.findFirst({
+            where: whereClause,
             select: {
                 id: true,
                 classId: true,
@@ -27,14 +36,18 @@ export class ParentClassDiaryService {
         });
 
         if (!studentProfile) {
-            throw new ForbiddenException('You can only view diaries for your own children.');
+            throw new ForbiddenException(
+                role === 'STUDENT' 
+                    ? 'You can only view your own diary.' 
+                    : 'You can only view diaries for your own children.'
+            );
         }
 
         return studentProfile;
     }
 
-    async getDailyDiaryLogs(schoolId: number, parentUserId: number, studentId: number, academicYearId: number, date: string) {
-        const student = await this.validateAndGetStudentSection(schoolId, parentUserId, studentId);
+    async getDailyDiaryLogs(schoolId: number, currentUserId: number, role: string, studentId: number, academicYearId: number, date: string) {
+        const student = await this.validateAndGetStudentSection(schoolId, currentUserId, role, studentId);
         const targetDate = new Date(date);
 
         const logs = await this.prisma.classDiary.findMany({
@@ -71,8 +84,8 @@ export class ParentClassDiaryService {
         return logs;
     }
 
-    async getSubjectDiaryLogs(schoolId: number, parentUserId: number, studentId: number, subjectId: number, academicYearId: number, page: number = 1, limit: number = 20) {
-        const student = await this.validateAndGetStudentSection(schoolId, parentUserId, studentId);
+    async getSubjectDiaryLogs(schoolId: number, currentUserId: number, role: string, studentId: number, subjectId: number, academicYearId: number, page: number = 1, limit: number = 20) {
+        const student = await this.validateAndGetStudentSection(schoolId, currentUserId, role, studentId);
         const skip = (page - 1) * limit;
 
         const [logs, total] = await this.prisma.$transaction([
@@ -117,9 +130,9 @@ export class ParentClassDiaryService {
         };
     }
 
-    async getDiaryEntryDetails(schoolId: number, parentUserId: number, studentId: number, diaryId: number) {
+    async getDiaryEntryDetails(schoolId: number, currentUserId: number, role: string, studentId: number, diaryId: number) {
         // 1. Verify specific student ownership first (security check)
-        const student = await this.validateAndGetStudentSection(schoolId, parentUserId, studentId);
+        const student = await this.validateAndGetStudentSection(schoolId, currentUserId, role, studentId);
 
         // 2. Fetch Entry ensuring it belongs to student's class/section
         const entry = await this.prisma.classDiary.findFirst({

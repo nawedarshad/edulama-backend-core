@@ -18,14 +18,16 @@ export class ParentClassDiaryController {
         @Query('date') date: string
     ) {
         const schoolId = req.user.schoolId;
-        const parentUserId = req.user.id;
+        const userId = req.user.id;
+        const role = req.user.role;
         const academicYearId = req.user.academicYearId;
 
         const targetDate = date || new Date().toISOString().split('T')[0];
 
         return this.diaryService.getDailyDiaryLogs(
             schoolId,
-            parentUserId,
+            userId,
+            role,
             studentId,
             academicYearId,
             targetDate
@@ -44,11 +46,13 @@ export class ParentClassDiaryController {
         @Query('limit') limit?: number
     ) {
         const schoolId = req.user.schoolId;
-        const parentUserId = req.user.id;
+        const userId = req.user.id;
+        const role = req.user.role;
         const academicYearId = req.user.academicYearId;
         return this.diaryService.getSubjectDiaryLogs(
             schoolId,
-            parentUserId,
+            userId,
+            role,
             studentId,
             subjectId,
             academicYearId,
@@ -65,7 +69,8 @@ export class ParentClassDiaryController {
         @Param('diaryId', ParseIntPipe) diaryId: number
     ) {
         const schoolId = req.user.schoolId;
-        const parentUserId = req.user.id;
-        return this.diaryService.getDiaryEntryDetails(schoolId, parentUserId, studentId, diaryId);
+        const userId = req.user.id;
+        const role = req.user.role;
+        return this.diaryService.getDiaryEntryDetails(schoolId, userId, role, studentId, diaryId);
     }
 }
