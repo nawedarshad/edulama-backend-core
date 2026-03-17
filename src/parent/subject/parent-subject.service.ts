@@ -23,22 +23,25 @@ export class ParentSubjectService {
 
         const student = await this.prisma.studentProfile.findUnique({
             where: { id: studentId },
-            select: { sectionId: true, classId: true }
+            include: { academicGroups: { select: { id: true } } }
         });
 
         if (!student) throw new NotFoundException('Student not found');
 
-        const group = await this.prisma.academicGroup.findFirst({
-            where: { schoolId, classId: student.classId, sectionId: student.sectionId }
-        });
-
-        if (!group) throw new NotFoundException('Academic group not found for student');
+        const groupIds = student.academicGroups.map(g => g.id);
 
         const assignments = await this.prisma.subjectAssignment.findMany({
             where: {
                 schoolId,
-                groupId: group.id,
-                isActive: true
+                isActive: true,
+                academicYearId: student.academicYearId,
+                OR: [
+                    { groupId: { in: groupIds } },
+                    { 
+                        classId: student.classId,
+                        sectionId: student.sectionId
+                    }
+                ]
             },
             include: {
                 subject: {
@@ -55,7 +58,9 @@ export class ParentSubjectService {
                         id: true,
                         user: { select: { name: true } }
                     }
-                }
+                },
+                class: { select: { id: true, name: true } },
+                section: { select: { id: true, name: true } }
             }
         });
 
@@ -85,6 +90,8 @@ export class ParentSubjectService {
                 assignmentId: a.id,
                 subject: a.subject,
                 teacher: a.teacher,
+                class: a.class,
+                section: a.section,
                 periodsPerWeek: a.periodsPerWeek,
                 syllabusProgress: {
                     total: totalTopics,
