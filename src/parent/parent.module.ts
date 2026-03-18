@@ -14,8 +14,7 @@ import { ParentAnnouncementModule } from './announcement/parent-announcement.mod
 import { ParentSubjectModule } from './subject/parent-subject.module';
 import { ParentHomeworkModule } from './homework/parent-homework.module';
 import { ParentDashboardModule } from './dashboard/parent-dashboard.module';
-import { ParentAttendanceController } from './attendance/parent-attendance.controller';
-import { ParentAttendanceService } from './attendance/parent-attendance.service';
+import { ParentAttendanceModule } from './attendance/parent-attendance.module';
 
 @Module({
     imports: [
@@ -31,8 +30,9 @@ import { ParentAttendanceService } from './attendance/parent-attendance.service'
         ParentHomeworkModule,
         ParentDashboardModule,
         CalendarModule,
+        ParentAttendanceModule,
     ],
-    controllers: [ParentController, ParentCalendarController, ParentAttendanceController],
-    providers: [ParentService, ParentAttendanceService],
+    controllers: [ParentController, ParentCalendarController],
+    providers: [ParentService],
 })
 export class ParentModule { }
