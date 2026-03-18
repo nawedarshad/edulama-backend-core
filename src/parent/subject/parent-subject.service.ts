@@ -158,4 +158,21 @@ export class ParentSubjectService {
             studentCount: 0 // Not relevant for parents in this view
         };
     }
+
+    async getSyllabusFiles(schoolId: number, parentUserId: number, studentId: number, assignmentId: number) {
+        await this.validateParentChildLink(schoolId, parentUserId, studentId);
+
+        const assignment = await this.prisma.subjectAssignment.findUnique({
+            where: { id: assignmentId }
+        });
+
+        if (!assignment || assignment.schoolId !== schoolId) {
+            throw new NotFoundException('Subject assignment not found');
+        }
+
+        return this.prisma.syllabusFile.findMany({
+            where: { schoolId, subjectAssignmentId: assignmentId },
+            orderBy: { uploadedAt: 'desc' }
+        });
+    }
 }

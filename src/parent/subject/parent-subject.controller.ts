@@ -32,4 +32,16 @@ export class ParentSubjectController {
         const parentUserId = req.user.id;
         return this.subjectService.findOne(schoolId, parentUserId, studentId, assignmentId);
     }
+
+    @ApiOperation({ summary: 'Get syllabus files for a subject assignment' })
+    @Get(':studentId/:assignmentId/syllabus-files')
+    getSyllabusFiles(
+        @Request() req,
+        @Param('studentId', ParseIntPipe) studentId: number,
+        @Param('assignmentId', ParseIntPipe) assignmentId: number
+    ) {
+        const schoolId = req.user.schoolId;
+        const parentUserId = req.user.id;
+        return this.subjectService.getSyllabusFiles(schoolId, parentUserId, studentId, assignmentId);
+    }
 }

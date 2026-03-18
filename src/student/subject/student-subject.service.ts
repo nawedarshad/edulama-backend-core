@@ -152,4 +152,49 @@ export class StudentSubjectService {
             studentCount: 0 
         };
     }
+
+    async getSyllabusFiles(schoolId: number, studentUserId: number, assignmentId: number) {
+        const student = await this.prisma.studentProfile.findUnique({
+            where: { userId: studentUserId },
+            select: { id: true }
+        });
+
+        if (!student) throw new NotFoundException('Student profile not found');
+
+        const assignment = await this.prisma.subjectAssignment.findUnique({
+            where: { id: assignmentId }
+        });
+
+        if (!assignment || assignment.schoolId !== schoolId) {
+            throw new NotFoundException('Subject assignment not found');
+        }
+
+        // Verify that this student belongs to the group of this assignment
+        const groupLink = await this.prisma.academicGroup.findFirst({
+            where: {
+                id: assignment.groupId,
+                schoolId,
+                students: { some: { id: student.id } }
+            }
+        });
+
+        // Optional: allow access if student's class/section matches the group's class/section
+        if (!groupLink && assignment.groupId) {
+             const studentFull = await this.prisma.studentProfile.findUnique({ where: { id: student.id } });
+             const targetGroup = await this.prisma.academicGroup.findUnique({ where: { id: assignment.groupId } });
+             
+             if (!studentFull || !targetGroup) {
+                 throw new ForbiddenException('You do not have access to this subject material');
+             }
+
+             if (studentFull.classId !== targetGroup.classId || (targetGroup.sectionId && studentFull.sectionId !== targetGroup.sectionId)) {
+                throw new ForbiddenException('You do not have access to this subject material');
+             }
+        }
+
+        return this.prisma.syllabusFile.findMany({
+            where: { schoolId, subjectAssignmentId: assignmentId },
+            orderBy: { uploadedAt: 'desc' }
+        });
+    }
 }

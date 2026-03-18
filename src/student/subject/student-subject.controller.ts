@@ -28,4 +28,15 @@ export class StudentSubjectController {
         const studentUserId = req.user.id;
         return this.subjectService.findOne(schoolId, studentUserId, assignmentId);
     }
+
+    @ApiOperation({ summary: 'Get syllabus files for a subject assignment' })
+    @Get(':assignmentId/syllabus-files')
+    getSyllabusFiles(
+        @Request() req,
+        @Param('assignmentId', ParseIntPipe) assignmentId: number
+    ) {
+        const schoolId = req.user.schoolId;
+        const studentUserId = req.user.id;
+        return this.subjectService.getSyllabusFiles(schoolId, studentUserId, assignmentId);
+    }
 }
