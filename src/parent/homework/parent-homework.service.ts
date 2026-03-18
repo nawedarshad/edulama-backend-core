@@ -44,7 +44,7 @@ export class ParentHomeworkService {
                 subject: { select: { id: true, name: true, code: true } },
                 submissions: {
                     where: { studentId: student.id },
-                    select: { status: true, submittedAt: true }
+                    select: { studentId: true, status: true, submittedAt: true }
                 }
             },
             orderBy: { dueDate: 'desc' }
