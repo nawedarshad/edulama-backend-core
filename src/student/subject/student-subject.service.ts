@@ -156,7 +156,7 @@ export class StudentSubjectService {
     async getSyllabusFiles(schoolId: number, studentUserId: number, assignmentId: number) {
         const student = await this.prisma.studentProfile.findUnique({
             where: { userId: studentUserId },
-            select: { id: true }
+            select: { id: true, classId: true, sectionId: true }
         });
 
         if (!student) throw new NotFoundException('Student profile not found');
@@ -170,13 +170,13 @@ export class StudentSubjectService {
         }
 
         // Verify that this student belongs to the group of this assignment
-        const groupLink = await this.prisma.academicGroup.findFirst({
+        const groupLink = assignment.groupId ? await this.prisma.academicGroup.findFirst({
             where: {
                 id: assignment.groupId,
                 schoolId,
                 students: { some: { id: student.id } }
             }
-        });
+        }) : null;
 
         // Optional: allow access if student's class/section matches the group's class/section
         if (!groupLink && assignment.groupId) {
