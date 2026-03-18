@@ -172,7 +172,7 @@ export class StudentSubjectService {
         // Verify that this student belongs to the group of this assignment
         const groupLink = assignment.groupId ? await this.prisma.academicGroup.findFirst({
             where: {
-                id: assignment.groupId,
+                id: assignment.groupId as number,
                 schoolId,
                 students: { some: { id: student.id } }
             }
