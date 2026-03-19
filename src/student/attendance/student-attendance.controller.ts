@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Request, ParseIntPipe } from '@nestjs/common';
 import { StudentAttendanceService } from './student-attendance.service.js';
 import { UserAuthGuard } from '../../common/guards/user.guard';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -14,8 +14,8 @@ export class StudentAttendanceController {
     @Get('self')
     async getSelfAttendance(
         @Request() req,
-        @Query('month') month: number,
-        @Query('year') year: number,
+        @Query('month', ParseIntPipe) month: number,
+        @Query('year', ParseIntPipe) year: number,
     ) {
         return this.attendanceService.getStudentAttendance(req.user.id, req.user.schoolId, month, year);
     }

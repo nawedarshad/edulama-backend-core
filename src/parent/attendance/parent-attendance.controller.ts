@@ -19,8 +19,8 @@ export class ParentAttendanceController {
     async getChildAttendance(
         @Request() req,
         @Param('studentId', ParseIntPipe) studentId: number,
-        @Query('month') month: number,
-        @Query('year') year: number,
+        @Query('month', ParseIntPipe) month: number,
+        @Query('year', ParseIntPipe) year: number,
     ) {
         // Verify Parent-Student Link
         const link = await this.prisma.parentStudent.findFirst({
