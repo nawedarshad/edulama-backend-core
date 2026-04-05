@@ -1,60 +1,102 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, forwardRef, Inject } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SetWorkingPatternDto, CreateCalendarExceptionDto, UpdateCalendarExceptionDto, CalendarResponse, CalendarDay, CloneCalendarDto } from './dto/calendar.dto';
 import { DayOfWeek, DayType, AcademicYearStatus } from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { TimetableService } from '../timetable/timetable.service';
 import { CalendarEvents } from './calendar.constants';
 
 @Injectable()
 export class CalendarService {
     constructor(
         private prisma: PrismaService,
-        private eventEmitter: EventEmitter2
+        private eventEmitter: EventEmitter2,
+        @Inject(forwardRef(() => TimetableService))
+        private timetableService: TimetableService
     ) { }
 
     // 1. Working Patterns
-    async getWorkingPattern(schoolId: number, academicYearId: number) {
+    async getWorkingPattern(schoolId: number, academicYearId: number, classId?: number) {
         return this.prisma.workingPattern.findMany({
-            where: { schoolId, academicYearId },
+            where: { 
+                schoolId, 
+                academicYearId,
+                classId: classId || null
+            },
         });
     }
 
     async setWorkingPattern(schoolId: number, dto: SetWorkingPatternDto) {
-        const year = await this.prisma.academicYear.findUnique({
-            where: { id: dto.academicYearId },
+        const year = await this.prisma.academicYear.findFirst({
+            where: { id: dto.academicYearId, schoolId },
         });
         if (!year || year.schoolId !== schoolId) throw new NotFoundException('Academic year not found');
         if (year.status === AcademicYearStatus.CLOSED) throw new BadRequestException('Cannot modify patterns for a CLOSED academic year');
+        
+        // Safety Guard: Check if any day being marked as a holiday has active classes
+        const holidayRequests = dto.days.filter(d => !d.isWorking);
+        for (const req of holidayRequests) {
+            const { count } = await this.timetableService.countEntriesByDay(
+                schoolId,
+                dto.academicYearId,
+                req.dayOfWeek as any,
+                dto.classId
+            );
+            if (count > 0) {
+                const scope = dto.classId ? 'this class' : 'the school';
+                throw new BadRequestException(
+                    `Cannot mark ${req.dayOfWeek} as a holiday for ${scope} because it has ${count} scheduled classes. Please clear the timetable for that day first.`
+                );
+            }
+        }
 
-        // Idempotent Upsert
-        const operations = dto.days.map((day) =>
-            this.prisma.workingPattern.upsert({
-                where: {
-                    schoolId_academicYearId_dayOfWeek: {
+        // Validate Class Ownership
+        if (dto.classId) {
+            const classExists = await this.prisma.class.findFirst({
+                where: { id: dto.classId, schoolId },
+            });
+            if (!classExists) throw new NotFoundException('Class not found or does not belong to this school');
+        }
+
+        // Use a transaction for the entire set of operations
+        await this.prisma.$transaction(async (tx) => {
+            for (const day of dto.days) {
+                const existing = await tx.workingPattern.findFirst({
+                    where: {
                         schoolId,
                         academicYearId: dto.academicYearId,
                         dayOfWeek: day.dayOfWeek,
-                    },
-                },
-                update: { isWorking: day.isWorking },
-                create: {
-                    schoolId,
-                    academicYearId: dto.academicYearId,
-                    dayOfWeek: day.dayOfWeek,
-                    isWorking: day.isWorking,
-                },
-            }),
-        );
+                        classId: dto.classId || null
+                    }
+                });
 
-        await this.prisma.$transaction(operations);
+                if (existing) {
+                    await tx.workingPattern.update({
+                        where: { id: existing.id },
+                        data: { isWorking: day.isWorking }
+                    });
+                } else {
+                    await tx.workingPattern.create({
+                        data: {
+                            schoolId,
+                            academicYearId: dto.academicYearId,
+                            dayOfWeek: day.dayOfWeek,
+                            isWorking: day.isWorking,
+                            classId: dto.classId || null
+                        }
+                    });
+                }
+            }
+        });
 
         this.eventEmitter.emit(CalendarEvents.WORKING_PATTERN_UPDATED, {
             schoolId,
             academicYearId: dto.academicYearId,
+            classId: dto.classId,
             patterns: dto.days
         });
 
-        return this.getWorkingPattern(schoolId, dto.academicYearId);
+        return this.getWorkingPattern(schoolId, dto.academicYearId, dto.classId);
     }
 
     // 2. Exceptions
@@ -66,8 +108,8 @@ export class CalendarService {
     }
 
     async addException(schoolId: number, dto: CreateCalendarExceptionDto) {
-        const year = await this.prisma.academicYear.findUnique({
-            where: { id: dto.academicYearId },
+        const year = await this.prisma.academicYear.findFirst({
+            where: { id: dto.academicYearId, schoolId },
         });
         if (!year || year.schoolId !== schoolId) throw new NotFoundException('Academic year not found');
         if (year.status === AcademicYearStatus.CLOSED) throw new BadRequestException('Cannot add exceptions to a CLOSED academic year');
@@ -89,6 +131,34 @@ export class CalendarService {
         });
         if (existing) throw new BadRequestException('Exception already exists for this date and scope');
 
+        // Safety Guard for Holidays
+        if (dto.type === 'HOLIDAY') {
+            const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+            const dayOfWeek = dayNames[date.getUTCDay()] as DayOfWeek;
+            
+            const { count } = await this.timetableService.countEntriesByDay(
+                schoolId,
+                dto.academicYearId,
+                dayOfWeek,
+                dto.classId
+            );
+
+            if (count > 0) {
+                const scope = dto.classId ? 'this class' : 'the school';
+                throw new BadRequestException(
+                    `Cannot mark this date as a holiday for ${scope} because it has ${count} scheduled classes. Please clear the timetable for this day first.`
+                );
+            }
+        }
+
+        // Validate Class Ownership
+        if (dto.classId) {
+            const classExists = await this.prisma.class.findFirst({
+                where: { id: dto.classId, schoolId },
+            });
+            if (!classExists) throw new NotFoundException('Class not found or does not belong to this school');
+        }
+
         const exception = await this.prisma.calendarException.create({
             data: {
                 schoolId,
@@ -106,8 +176,8 @@ export class CalendarService {
     }
 
     async updateException(schoolId: number, id: number, dto: UpdateCalendarExceptionDto) {
-        const check = await this.prisma.calendarException.findUnique({
-            where: { id },
+        const check = await this.prisma.calendarException.findFirst({
+            where: { id, schoolId },
             include: { academicYear: true }
         });
         if (!check || check.schoolId !== schoolId) throw new NotFoundException('Exception not found');
@@ -134,12 +204,35 @@ export class CalendarService {
             },
         });
 
+        // Safety Guard for Holidays if date or scope changed
+        if (exception.type === 'HOLIDAY') {
+            const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+            const dayOfWeek = dayNames[exception.date.getUTCDay()] as DayOfWeek;
+
+            const { count } = await this.timetableService.countEntriesByDay(
+                schoolId,
+                check.academicYearId,
+                dayOfWeek,
+                exception.classId || undefined
+            );
+
+            if (count > 0) {
+                const scope = exception.classId ? 'this class' : 'the school';
+                throw new BadRequestException(
+                    `Cannot mark this date as a holiday for ${scope} because it has ${count} scheduled classes. Please clear the timetable for this day first.`
+                );
+            }
+        }
+
         this.eventEmitter.emit(CalendarEvents.EXCEPTION_UPDATED, { schoolId, exception });
         return exception;
     }
 
     async deleteException(schoolId: number, id: number) {
-        const check = await this.prisma.calendarException.findUnique({ where: { id }, include: { academicYear: true } });
+        const check = await this.prisma.calendarException.findFirst({ 
+            where: { id, schoolId }, 
+            include: { academicYear: true } 
+        });
         if (!check || check.schoolId !== schoolId) throw new NotFoundException('Exception not found');
         if (check.academicYear.status === AcademicYearStatus.CLOSED) {
             throw new BadRequestException('Cannot delete exceptions of a CLOSED academic year');
@@ -151,28 +244,40 @@ export class CalendarService {
     }
 
     async cloneCalendar(schoolId: number, dto: CloneCalendarDto) {
-        const sourceYear = await this.prisma.academicYear.findUnique({ where: { id: dto.sourceYearId } });
-        const targetYear = await this.prisma.academicYear.findUnique({ where: { id: dto.targetYearId } });
+        const sourceYear = await this.prisma.academicYear.findFirst({ where: { id: dto.sourceYearId, schoolId } });
+        const targetYear = await this.prisma.academicYear.findFirst({ where: { id: dto.targetYearId, schoolId } });
 
         if (!sourceYear || sourceYear.schoolId !== schoolId) throw new NotFoundException('Source year not found');
         if (!targetYear || targetYear.schoolId !== schoolId) throw new NotFoundException('Target year not found');
+        if (targetYear.status === AcademicYearStatus.CLOSED) {
+            throw new BadRequestException('Cannot clone calendar to a CLOSED academic year');
+        }
 
         const operations: any[] = [];
 
         // 1. Copy Patterns
         if (dto.copyPatterns !== false) {
-            const patterns = await this.prisma.workingPattern.findMany({ where: { academicYearId: dto.sourceYearId } });
+            const patterns = await this.prisma.workingPattern.findMany({ 
+                where: { schoolId, academicYearId: dto.sourceYearId } 
+            });
             patterns.forEach(p => {
                 operations.push(this.prisma.workingPattern.upsert({
                     where: {
-                        schoolId_academicYearId_dayOfWeek: {
+                        schoolId_academicYearId_dayOfWeek_classId: {
                             schoolId,
                             academicYearId: dto.targetYearId,
-                            dayOfWeek: p.dayOfWeek
+                            dayOfWeek: p.dayOfWeek,
+                            classId: (p.classId ?? null) as any
                         }
                     },
                     update: { isWorking: p.isWorking },
-                    create: { schoolId, academicYearId: dto.targetYearId, dayOfWeek: p.dayOfWeek, isWorking: p.isWorking }
+                    create: { 
+                        schoolId, 
+                        academicYearId: dto.targetYearId, 
+                        dayOfWeek: p.dayOfWeek, 
+                        isWorking: p.isWorking,
+                        classId: (p.classId ?? null) as any
+                    }
                 }));
             });
         }
@@ -180,7 +285,7 @@ export class CalendarService {
         // 2. Copy Exceptions (Global only)
         if (dto.copyExceptions !== false) {
             const exceptions = await this.prisma.calendarException.findMany({
-                where: { academicYearId: dto.sourceYearId, classId: null }
+                where: { schoolId, academicYearId: dto.sourceYearId, classId: null }
             });
 
             const targetExisting = await this.prisma.calendarException.findMany({
@@ -255,7 +360,14 @@ export class CalendarService {
 
         const yearIds = academicYears.map(y => y.id);
         const allPatterns = yearIds.length ? await this.prisma.workingPattern.findMany({
-            where: { schoolId, academicYearId: { in: yearIds } }
+            where: { 
+                schoolId, 
+                academicYearId: { in: yearIds },
+                OR: [
+                    { classId: null },
+                    ...(classId ? [{ classId }] : [])
+                ]
+            }
         }) : [];
         const allExceptions = yearIds.length ? await this.prisma.calendarException.findMany({
             where: {
@@ -290,7 +402,21 @@ export class CalendarService {
             }
 
             const yearPatterns = allPatterns.filter(p => p.academicYearId === activeYear.id);
-            const patternMap = new Map(yearPatterns.map(p => [this.mapDayOfWeekToJs(p.dayOfWeek), p.isWorking]));
+            
+            // Build pattern map: Start with school-wide, then override with class-specific
+            const patternMap = new Map<number, boolean>();
+            
+            // 1. Apply School-wide patterns
+            yearPatterns.filter(p => p.classId === null).forEach(p => {
+                patternMap.set(this.mapDayOfWeekToJs(p.dayOfWeek), p.isWorking);
+            });
+            
+            // 2. Override with Class-specific patterns if applicable
+            if (classId) {
+                yearPatterns.filter(p => p.classId === classId).forEach(p => {
+                    patternMap.set(this.mapDayOfWeekToJs(p.dayOfWeek), p.isWorking);
+                });
+            }
 
             let type: DayType = DayType.WORKING;
             let isWorking = patternMap.has(dayOfWeek) ? patternMap.get(dayOfWeek)! : false;
@@ -361,7 +487,7 @@ export class CalendarService {
     }
 
     async validateDate(schoolId: number, date: Date, classId?: number) {
-        const academicYear = await this.prisma.academicYear.findFirst({
+        const activeYear = await this.prisma.academicYear.findFirst({
             where: {
                 schoolId,
                 startDate: { lte: date },
@@ -369,11 +495,27 @@ export class CalendarService {
             }
         });
 
-        if (!academicYear) return { isValid: false, reason: 'Outside Academic Year' };
+        if (!activeYear) return { isValid: false, reason: 'Outside Academic Year' };
 
-        const pattern = await this.prisma.workingPattern.findFirst({
-            where: { schoolId, academicYearId: academicYear.id, dayOfWeek: this.mapJsToPrisma(date.getDay()) }
+        const dayName = this.mapJsToPrisma(date.getUTCDay());
+        
+        // Fetch patterns (school and class)
+        const patterns = await this.prisma.workingPattern.findMany({
+            where: {
+                schoolId,
+                academicYearId: activeYear.id,
+                dayOfWeek: dayName,
+                OR: [
+                    { classId: null },
+                    ...(classId ? [{ classId }] : [])
+                ]
+            }
         });
+
+        // Resolve pattern: class override school
+        const classPattern = patterns.find(p => p.classId !== null);
+        const schoolPattern = patterns.find(p => p.classId === null);
+        const isWorkingByPattern = (classPattern || schoolPattern)?.isWorking ?? false;
 
         const exception = await this.prisma.calendarException.findFirst({
             where: {
@@ -388,7 +530,7 @@ export class CalendarService {
         });
 
         let type: DayType = DayType.WORKING;
-        let isWorking = pattern?.isWorking ?? false;
+        let isWorking = isWorkingByPattern;
 
         if (!isWorking) type = DayType.HOLIDAY;
 
@@ -397,7 +539,7 @@ export class CalendarService {
             isWorking = (type === DayType.WORKING || type === DayType.SPECIAL_WORKING);
         }
 
-        return { isValid: true, type, isWorking, academicYearId: academicYear.id };
+        return { isValid: true, type, isWorking, academicYearId: activeYear.id };
     }
 
     // --- Enterprise Grade Date Helpers ---

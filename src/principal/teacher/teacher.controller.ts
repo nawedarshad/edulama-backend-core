@@ -24,6 +24,12 @@ export class TeacherController {
         return this.teacherService.bulkCreate(req.user.schoolId, bulkDto);
     }
 
+    @Get('check-email')
+    checkEmail(@Req() req, @Query('email') email: string) {
+        if (!email) throw new BadRequestException('Email is required');
+        return this.teacherService.checkEmail(req.user.schoolId, email);
+    }
+
     @Get()
     findAll(@Req() req, @Query() query: TeacherFilterDto) {
         return this.teacherService.findAll(req.user.schoolId, query);

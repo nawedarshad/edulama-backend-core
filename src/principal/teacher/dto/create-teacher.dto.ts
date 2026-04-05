@@ -36,8 +36,8 @@ export class CreateTeacherDto {
     joinDate?: string;
 
     @IsString()
-    @IsOptional()
-    employmentType?: string;
+    @IsNotEmpty()
+    employmentType: string;
 
     @IsString()
     @IsOptional()
@@ -165,8 +165,8 @@ export class CreateTeacherDto {
     appraisals?: CreateAppraisalDto[];
 
     @IsString()
-    @IsOptional()
-    empCode?: string;
+    @IsNotEmpty()
+    empCode: string;
 
     @IsOptional()
     @ValidateNested({ each: true })

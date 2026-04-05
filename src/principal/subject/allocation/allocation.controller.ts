@@ -16,7 +16,7 @@ export class AllocationController {
         @Req() req,
         @Body() dto: CreateAllocationDto,
     ) {
-        return this.allocationService.assignTeacher(req.user.schoolId, dto);
+        return this.allocationService.assignTeacher(req.user.schoolId, dto, req.user.id);
     }
 
     @Get()
@@ -35,7 +35,7 @@ export class AllocationController {
         @Param('id', ParseIntPipe) assignmentId: number,
         @Body() dto: UpdateAllocationDto,
     ) {
-        return this.allocationService.updateAssignment(req.user.schoolId, assignmentId, dto);
+        return this.allocationService.updateAssignment(req.user.schoolId, assignmentId, dto, req.user.id);
     }
 
     @Delete(':id')
@@ -44,7 +44,7 @@ export class AllocationController {
         @Req() req,
         @Param('id', ParseIntPipe) assignmentId: number,
     ) {
-        return this.allocationService.removeAssignment(req.user.schoolId, assignmentId);
+        return this.allocationService.removeAssignment(req.user.schoolId, assignmentId, req.user.id);
     }
 
     @Get('suggestions')

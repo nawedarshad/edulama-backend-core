@@ -19,6 +19,7 @@ export class ParentAttendanceController {
     async getChildAttendance(
         @Request() req,
         @Param('studentId', ParseIntPipe) studentId: number,
+        @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('month', ParseIntPipe) month: number,
         @Query('year', ParseIntPipe) year: number,
     ) {
@@ -34,6 +35,6 @@ export class ParentAttendanceController {
             throw new UnauthorizedException('Student not found or not linked to this parent');
         }
 
-        return this.attendanceService.getStudentAttendance(studentId, req.user.schoolId, month, year);
+        return this.attendanceService.getStudentAttendance(studentId, req.user.schoolId, academicYearId, month, year);
     }
 }

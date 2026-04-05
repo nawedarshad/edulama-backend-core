@@ -8,20 +8,27 @@ import { AcademicYearStatus } from '@prisma/client';
 import { BulkCreateClassDto } from './dto/bulk-create-class.dto';
 import { CreateClassWithSectionsDto } from './dto/create-class-with-sections.dto';
 
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AuditLogEvent } from '../../common/audit/audit.event';
+
 @Injectable()
 export class ClassService {
     private readonly logger = new Logger(ClassService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly eventEmitter: EventEmitter2
+    ) { }
 
     async findAll(schoolId: number, page: number = 1, limit: number = 10, academicYearId?: number) {
         this.logger.log(`Fetching classes for school ${schoolId} (Page: ${page}, Limit: ${limit}, Year: ${academicYearId})`);
         const skip = (page - 1) * limit;
 
         const where: any = { schoolId };
-        if (academicYearId) {
-            where.academicYearId = academicYearId;
-        }
+        // Classes are global, not filtered by academicYearId
+        // if (academicYearId) {
+        //     where.academicYearId = academicYearId;
+        // }
 
         const [classes, total] = await Promise.all([
             this.prisma.class.findMany({
@@ -299,7 +306,7 @@ export class ClassService {
         };
     }
 
-    async create(schoolId: number, dto: CreateClassDto) {
+    async create(schoolId: number, dto: CreateClassDto, userId: number) {
         this.logger.log(`Creating class '${dto.name}' for school ${schoolId}`);
 
         try {
@@ -315,6 +322,11 @@ export class ClassService {
                     // academicYearId removed - Classes are global 
                 },
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'CLASS', 'CREATE', newClass.id, newClass
+            ));
+
             this.logger.log(`Class created: ${newClass.id}`);
             return newClass;
         } catch (error) {
@@ -327,7 +339,7 @@ export class ClassService {
         }
     }
 
-    async createWithSections(schoolId: number, dto: CreateClassWithSectionsDto) {
+    async createWithSections(schoolId: number, dto: CreateClassWithSectionsDto, userId: number) {
         this.logger.log(`Creating class '${dto.name}' with ${dto.sections.length} sections for school ${schoolId}`);
 
         // 1. Fetch school type for validation
@@ -395,6 +407,10 @@ export class ClassService {
                     this.logger.log(`Created ${result.count} sections for class ${newClass.id}`);
                 }
 
+                this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                    schoolId, userId, 'CLASS', 'CREATE_WITH_SECTIONS', newClass.id, { class: newClass, sectionCount: dto.sections.length }
+                ));
+
                 return newClass;
             });
         } catch (error) {
@@ -406,7 +422,7 @@ export class ClassService {
         }
     }
 
-    async update(schoolId: number, id: number, dto: any) {
+    async update(schoolId: number, id: number, dto: any, userId: number) {
         this.logger.log(`Updating class ${id} in school ${schoolId}`);
         // Fetch class with sections to validate capacity
         const cls = await this.prisma.class.findFirst({
@@ -441,6 +457,11 @@ export class ClassService {
                 where: { id },
                 data: dto,
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'CLASS', 'UPDATE', id, updated
+            ));
+
             this.logger.log(`Class updated: ${updated.id}`);
             return updated;
         } catch (error) {
@@ -452,7 +473,7 @@ export class ClassService {
         }
     }
 
-    async remove(schoolId: number, id: number) {
+    async remove(schoolId: number, id: number, userId: number) {
         this.logger.log(`Deleting class ${id} in school ${schoolId}`);
         const cls = await this.prisma.class.findFirst({
             where: { id, schoolId },
@@ -488,6 +509,11 @@ export class ClassService {
             await this.prisma.class.delete({
                 where: { id },
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'CLASS', 'DELETE', id, { id }
+            ));
+
             this.logger.log(`Class deleted: ${id}`);
             return { message: 'Class deleted successfully' };
         } catch (error) {
@@ -496,7 +522,7 @@ export class ClassService {
         }
     }
 
-    async assignClassTeacher(schoolId: number, dto: AssignClassTeacherDto) {
+    async assignClassTeacher(schoolId: number, dto: AssignClassTeacherDto, userId: number) {
         this.logger.log(`Assigning teacher ${dto.teacherId} to section ${dto.sectionId}`);
         // 1. Fetch Section and Class to validate school type
         const section = await this.prisma.section.findUnique({
@@ -586,10 +612,14 @@ export class ClassService {
             }
         });
 
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId, userId, 'SECTION', 'ASSIGN_CLASS_TEACHER', dto.sectionId, { teacherId: dto.teacherId }
+        ));
+
         return legacy;
     }
 
-    async assignHeadTeacher(schoolId: number, classId: number, dto: AssignHeadTeacherDto) {
+    async assignHeadTeacher(schoolId: number, classId: number, dto: AssignHeadTeacherDto, userId: number) {
         this.logger.log(`Assigning head teacher ${dto.teacherId} to class ${classId}`);
         // 1. Validate Class exists and belongs to school
         const cls = await this.prisma.class.findUnique({
@@ -669,10 +699,14 @@ export class ClassService {
             }
         });
 
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId, userId, 'CLASS', 'ASSIGN_HEAD_TEACHER', classId, { teacherId: dto.teacherId }
+        ));
+
         return legacy;
     }
 
-    async removeHeadTeacher(schoolId: number, classId: number) {
+    async removeHeadTeacher(schoolId: number, classId: number, userId: number) {
         const cls = await this.prisma.class.findUnique({
             where: { id: classId },
             include: { school: true },
@@ -695,6 +729,11 @@ export class ClassService {
                     where: { classId, sectionId: null, role: 'HEAD_TEACHER' }
                 })
             ]);
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'CLASS', 'REMOVE_HEAD_TEACHER', classId
+            ));
+
             return { message: 'Head teacher removed successfully' };
         } catch (error) {
             if (error.code === 'P2025') {
@@ -704,7 +743,7 @@ export class ClassService {
         }
     }
 
-    async removeSectionTeacher(schoolId: number, sectionId: number) {
+    async removeSectionTeacher(schoolId: number, sectionId: number, userId: number) {
         const section = await this.prisma.section.findUnique({
             where: { id: sectionId },
             include: { class: { include: { school: true } } },
@@ -727,6 +766,11 @@ export class ClassService {
                     where: { sectionId, role: 'CLASS_TEACHER' }
                 })
             ]);
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'SECTION', 'REMOVE_CLASS_TEACHER', sectionId
+            ));
+
             return { message: 'Section teacher removed successfully' };
         } catch (error) {
             if (error.code === 'P2025') {
@@ -736,7 +780,7 @@ export class ClassService {
         }
     }
 
-    async createBulk(schoolId: number, dto: BulkCreateClassDto) {
+    async createBulk(schoolId: number, dto: BulkCreateClassDto, userId: number) {
         this.logger.log(`Bulk creating ${dto.classes.length} classes`);
         // No need for Academic Year check for Class Creation anymore
 
@@ -756,6 +800,11 @@ export class ClassService {
                     });
                 }
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'CLASS', 'BULK_CREATE', 0, { count: dto.classes.length }
+            ));
+
             return { message: `Successfully created ${dto.classes.length} classes` };
         } catch (error) {
             this.logger.error('Bulk create class error', error.stack);

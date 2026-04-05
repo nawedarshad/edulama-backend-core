@@ -29,6 +29,7 @@ model TeacherProfile {
   subjectAssignments    SubjectAssignment[]
   timetableEntries      TimetableEntry[]
   timetableOverrides    TimetableOverride[]
+  timetableEntryTeachers TimetableEntryTeacher[]
 
   // New relations
   personalInfo   TeacherPersonalInfo?

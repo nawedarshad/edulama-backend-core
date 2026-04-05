@@ -12,8 +12,10 @@ export class AcademicYearService {
             throw new BadRequestException('End date must be after start date');
         }
 
+        // Overlap Check [Enterprise Readiness]
+        await this.checkOverlap(schoolId, new Date(dto.startDate), new Date(dto.endDate));
+
         // If making this active, deactivate others (or check logic)
-        // For now, let's just allow creating. "One active year" rule enforced on status update.
         if (dto.status === AcademicYearStatus.ACTIVE) {
             await this.deactivateOtherYears(schoolId);
         }
@@ -70,6 +72,8 @@ export class AcademicYearService {
             if (end <= start) {
                 throw new BadRequestException('End date must be after start date');
             }
+            // Overlap Check
+            await this.checkOverlap(schoolId, start, end, id);
         }
 
         if (dto.status === AcademicYearStatus.ACTIVE && year.status !== AcademicYearStatus.ACTIVE) {
@@ -77,7 +81,7 @@ export class AcademicYearService {
         }
 
         return this.prisma.academicYear.update({
-            where: { id },
+            where: { id, schoolId },
             data: {
                 name: dto.name,
                 startDate: dto.startDate ? new Date(dto.startDate) : undefined,
@@ -96,5 +100,25 @@ export class AcademicYearService {
             },
             data: { status: AcademicYearStatus.CLOSED }, // Or PLANNED? CLOSED is safer for history.
         });
+    }
+
+    private async checkOverlap(schoolId: number, startDate: Date, endDate: Date, excludeId?: number) {
+        const overlapping = await this.prisma.academicYear.findFirst({
+            where: {
+                schoolId,
+                id: excludeId ? { not: excludeId } : undefined,
+                OR: [
+                    { startDate: { lte: startDate }, endDate: { gte: startDate } },
+                    { startDate: { lte: endDate }, endDate: { gte: endDate } },
+                    { startDate: { gte: startDate }, endDate: { lte: endDate } },
+                ],
+            },
+        });
+
+        if (overlapping) {
+            throw new BadRequestException(
+                `Date range overlaps with existing academic year: ${overlapping.name} (${overlapping.startDate.toISOString().split('T')[0]} to ${overlapping.endDate.toISOString().split('T')[0]})`
+            );
+        }
     }
 }

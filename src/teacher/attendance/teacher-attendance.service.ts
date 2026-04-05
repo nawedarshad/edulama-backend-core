@@ -394,7 +394,20 @@ export class TeacherAttendanceService {
             );
         }
 
-        // 4. Check if attendance session exists for this class/section/date
+        // 4. Resolve Academic Group to get correct groupId
+        const group = await this.prisma.academicGroup.findFirst({
+            where: {
+                schoolId,
+                classId: dto.classId,
+                sectionId: dto.sectionId,
+            }
+        });
+
+        if (!group) {
+            throw new BadRequestException('Academic Group not found for the specified class and section.');
+        }
+
+        // 5. Check if attendance session exists for this class/section/date
         const attendanceDate = new Date(dto.date);
 
         // Find or create attendance session for daily attendance
@@ -402,7 +415,7 @@ export class TeacherAttendanceService {
             where: {
                 schoolId,
                 academicYearId: dto.academicYearId,
-                groupId: 0, classId: dto.classId,
+                classId: dto.classId,
                 sectionId: dto.sectionId,
                 date: attendanceDate,
                 subjectId: undefined, // Daily attendance
@@ -416,7 +429,8 @@ export class TeacherAttendanceService {
                 data: {
                     schoolId,
                     academicYearId: dto.academicYearId,
-                    groupId: 0, classId: dto.classId,
+                    groupId: group.id,
+                    classId: dto.classId,
                     sectionId: dto.sectionId,
                     date: attendanceDate,
                     markedById: teacherId,
@@ -468,6 +482,7 @@ export class TeacherAttendanceService {
 
     async getSession(
         schoolId: number,
+        academicYearId: number,
         classId: number,
         sectionId: number,
         date: Date,
@@ -477,6 +492,7 @@ export class TeacherAttendanceService {
         const session = await this.prisma.attendanceSession.findFirst({
             where: {
                 schoolId,
+                academicYearId,
                 classId,
                 sectionId,
                 date,
@@ -527,6 +543,7 @@ export class TeacherAttendanceService {
 
     async getMonthlyAttendance(
         schoolId: number,
+        academicYearId: number,
         classId: number,
         sectionId: number,
         year: number,
@@ -535,13 +552,14 @@ export class TeacherAttendanceService {
     ) {
         // Calculate start and end dates for the month
         const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0);
+        const endDate = new Date(year, month, 0, 23, 59, 59, 999);
 
-        console.log(`[getMonthlyAttendance Debug] Finding sessions for schoolId=${schoolId}, classId=${classId}, sectionId=${sectionId}, subjectId=${subjectId}, startDate=${startDate.toISOString()}, endDate=${endDate.toISOString()}`);
+        console.log(`[getMonthlyAttendance Debug] Finding sessions for schoolId=${schoolId}, academicYearId=${academicYearId}, classId=${classId}, sectionId=${sectionId}, subjectId=${subjectId}, startDate=${startDate.toISOString()}, endDate=${endDate.toISOString()}`);
 
         const sessions = await this.prisma.attendanceSession.findMany({
             where: {
                 schoolId,
+                academicYearId,
                 classId,
                 sectionId,
                 subjectId: subjectId || undefined,
@@ -706,11 +724,12 @@ export class TeacherAttendanceService {
 
     async getLateStudentsForAttendance(
         schoolId: number,
+        academicYearId: number,
         classId: number,
         sectionId: number,
         date: Date
     ) {
-        console.log(`[getLateStudents] Inputs: School=${schoolId}, Class=${classId}, Section=${sectionId}, Date=${date}`);
+        console.log(`[getLateStudents] Inputs: School=${schoolId}, Year=${academicYearId}, Class=${classId}, Section=${sectionId}, Date=${date}`);
 
         const startOfDay = new Date(date);
         startOfDay.setUTCHours(0, 0, 0, 0);
@@ -721,6 +740,7 @@ export class TeacherAttendanceService {
         const session = await this.prisma.attendanceSession.findFirst({
             where: {
                 schoolId,
+                academicYearId,
                 classId,
                 sectionId,
                 date: {

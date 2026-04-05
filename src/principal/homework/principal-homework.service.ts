@@ -131,11 +131,20 @@ export class PrincipalHomeworkService {
         if (query.sectionId) where.sectionId = query.sectionId;
         if (query.subjectId) where.subjectId = query.subjectId;
         if (query.startDate && query.endDate) {
-            where.dueDate = { gte: new Date(query.startDate), lte: new Date(query.endDate) };
+            const start = new Date(query.startDate);
+            const end = new Date(query.endDate);
+            const sDate = new Date(start); sDate.setUTCHours(0, 0, 0, 0);
+            const eDate = new Date(end); eDate.setUTCHours(23, 59, 59, 999);
+            where.dueDate = { gte: sDate, lte: eDate };
         }
+
+        const { page = 1, limit = 10 } = query;
+        const skip = (page - 1) * limit;
 
         const homeworks = await this.prisma.homework.findMany({
             where,
+            skip,
+            take: limit,
             include: {
                 teacher: {
                     select: {
@@ -145,25 +154,41 @@ export class PrincipalHomeworkService {
                 },
                 group: { select: { id: true, name: true } },
                 class: { select: { id: true, name: true } },
-                section: { select: { id: true, name: true } },
+                section: { select: { id: true, name: true, classId: true } },
                 subject: { select: { id: true, name: true, code: true } },
                 _count: { select: { submissions: true } },
             },
             orderBy: { dueDate: 'desc' },
         });
 
+        const total = await this.prisma.homework.count({ where });
+
         // Attach submission stats
-        return Promise.all(
+        const data = await Promise.all(
             homeworks.map(async (hw) => {
-                const [total, submitted] = await Promise.all([
+                const [totalSubmissions, submitted] = await Promise.all([
                     this.prisma.homeworkSubmission.count({ where: { homeworkId: hw.id } }),
                     this.prisma.homeworkSubmission.count({
                         where: { homeworkId: hw.id, status: HomeworkStatus.SUBMITTED },
                     }),
                 ]);
-                return { ...hw, submissionStats: { total, submitted, notSubmitted: total - submitted } };
+                return { 
+                    ...hw, 
+                    classId: hw.classId || (hw.section as any)?.classId,
+                    submissionStats: { total: totalSubmissions, submitted, notSubmitted: totalSubmissions - submitted } 
+                };
             }),
         );
+
+        return {
+            data,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        };
     }
 
     // ─────────────────────────────────────────────

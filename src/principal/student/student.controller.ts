@@ -21,6 +21,8 @@ import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { MarkStudentLeftDto } from './dto/mark-student-left.dto';
 import { StudentFilterDto } from './dto/student-filter.dto';
+import { StudentBulkActionDto } from './dto/bulk-action.dto';
+import { BulkStudentUploadDto } from './dto/bulk-upload-student.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @ApiTags('Principal - Students')
@@ -65,30 +67,33 @@ export class StudentController {
         @Headers('x-academic-year-id') yearIdHeader?: string,
     ) {
         const yearId = await this.getActiveAcademicYear(req.user.schoolId, yearIdHeader);
-        return this.studentService.create(req.user.schoolId, yearId, dto);
+        return this.studentService.create(req.user.schoolId, yearId, dto, req.user.id);
     }
 
-    @Post('generate-credentials')
+    @Post('bulk-upload')
     @UseGuards(PrincipalAuthGuard)
-    @ApiOperation({ summary: 'Generate login credentials for all students missing a user account' })
-    @ApiResponse({ status: 200, description: 'Summary of credentials generated.' })
-    async generateCredentials(
+    @ApiOperation({ summary: 'Bulk upload students' })
+    @ApiResponse({ status: 201, description: 'Bulk upload completed.' })
+    async bulkUpload(
         @Request() req,
+        @Body() dto: BulkStudentUploadDto,
         @Headers('x-academic-year-id') yearIdHeader?: string,
-        @Query('classId') classId?: string,
-        @Query('sectionId') sectionId?: string,
-        @Query('verifyStudents') verifyStudents?: string,
-        @Query('verifyParents') verifyParents?: string,
     ) {
         const yearId = await this.getActiveAcademicYear(req.user.schoolId, yearIdHeader);
-        return this.studentService.generateCredentials(
-            req.user.schoolId,
-            yearId,
-            classId ? parseInt(classId) : undefined,
-            sectionId ? parseInt(sectionId) : undefined,
-            verifyStudents === 'true',
-            verifyParents === 'true',
-        );
+        return this.studentService.bulkUpload(req.user.schoolId, yearId, dto, req.user.id);
+    }
+
+    @Post('validate-bulk')
+    @UseGuards(PrincipalAuthGuard)
+    @ApiOperation({ summary: 'Pre-validate bulk student upload data' })
+    @ApiResponse({ status: 200, description: 'Validation results.' })
+    async validateBulk(
+        @Request() req,
+        @Body() dto: BulkStudentUploadDto,
+        @Headers('x-academic-year-id') yearIdHeader?: string,
+    ) {
+        const yearId = await this.getActiveAcademicYear(req.user.schoolId, yearIdHeader);
+        return this.studentService.validateBulk(req.user.schoolId, yearId, dto);
     }
 
 
@@ -130,13 +135,23 @@ export class StudentController {
     }
 
     @Get(':id')
-    @UseGuards(PrincipalAuthGuard) // Write: Principal Only (Details restricted)
-    @ApiOperation({ summary: 'Get a student by ID' })
-    @ApiResponse({ status: 200, description: 'The student found.', type: CreateStudentDto })
-    @ApiResponse({ status: 404, description: 'Student not found.' })
+    @UseGuards(PrincipalOrTeacherGuard)
+    @ApiOperation({ summary: 'Get student details' })
+    @ApiResponse({ status: 200, description: 'Student details.' })
     findOne(@Request() req, @Param('id', ParseIntPipe) id: number) {
-        // We don't strictly need yearId to FIND by ID, but contextually ensures security
         return this.studentService.findOne(id, req.user.schoolId);
+    }
+
+    @Patch('bulk-actions')
+    @UseGuards(PrincipalAuthGuard)
+    @ApiOperation({ summary: 'Perform bulk actions on students (Promote, Deactivate, Set House)' })
+    @ApiResponse({ status: 200, description: 'Bulk action performed successfully.' })
+    bulkActions(
+        @Request() req,
+        @Body() dto: StudentBulkActionDto,
+        @Headers('x-academic-year-id') yearIdHeader?: string,
+    ) {
+        return this.studentService.bulkActions(req.user.schoolId, dto, req.user.id);
     }
 
     @Patch(':id')
@@ -149,7 +164,7 @@ export class StudentController {
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: UpdateStudentDto,
     ) {
-        return this.studentService.update(id, req.user.schoolId, dto);
+        return this.studentService.update(id, req.user.schoolId, dto, req.user.id);
     }
 
     @Patch(':id/leave')
@@ -163,7 +178,7 @@ export class StudentController {
         @Body() dto: MarkStudentLeftDto,
     ) {
         const schoolId = req.user.schoolId;
-        return this.studentService.markAsLeft(schoolId, id, dto);
+        return this.studentService.markAsLeft(schoolId, id, dto, req.user.id);
     }
 
     @Delete(':id')
@@ -172,6 +187,43 @@ export class StudentController {
     @ApiResponse({ status: 200, description: 'The student has been successfully deleted.' })
     @ApiResponse({ status: 404, description: 'Student not found.' })
     remove(@Request() req, @Param('id', ParseIntPipe) id: number) {
-        return this.studentService.remove(id, req.user.schoolId);
+        return this.studentService.remove(id, req.user.schoolId, req.user.id);
+    }
+
+    // ==========================
+    // DOCUMENTS
+    // ==========================
+    
+    @Post(':id/documents/presign')
+    @UseGuards(PrincipalAuthGuard)
+    @ApiOperation({ summary: 'Generate a presigned upload URL for a student document' })
+    async generatePresignedUrl(
+        @Request() req,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: { fileName: string; fileType: string }
+    ) {
+        return this.studentService.generateDocumentPresignedUrl(req.user.schoolId, id, body.fileName, body.fileType);
+    }
+
+    @Post(':id/documents')
+    @UseGuards(PrincipalAuthGuard)
+    @ApiOperation({ summary: 'Save student document metadata after upload' })
+    async saveDocument(
+        @Request() req,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: { name: string; type: string; size: number; customKey: string }
+    ) {
+        return this.studentService.saveDocument(req.user.schoolId, id, body.name, body.type, body.size, body.customKey, req.user.id);
+    }
+
+    @Delete(':id/documents/:docId')
+    @UseGuards(PrincipalAuthGuard)
+    @ApiOperation({ summary: 'Delete a student document' })
+    async deleteDocument(
+        @Request() req,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('docId', ParseIntPipe) docId: number
+    ) {
+        return this.studentService.deleteDocument(req.user.schoolId, id, docId, req.user.id);
     }
 }

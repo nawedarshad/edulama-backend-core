@@ -15,6 +15,10 @@ export class SetWorkingPatternDto {
     @IsNotEmpty()
     academicYearId: number;
 
+    @IsInt()
+    @IsOptional()
+    classId?: number;
+
     @IsArray()
     @ArrayMinSize(7, { message: 'All 7 days must be configured.' })
     @ArrayMaxSize(7, { message: 'All 7 days must be configured.' })

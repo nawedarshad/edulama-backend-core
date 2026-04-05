@@ -14,9 +14,10 @@ export class StudentAttendanceController {
     @Get('self')
     async getSelfAttendance(
         @Request() req,
+        @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('month', ParseIntPipe) month: number,
         @Query('year', ParseIntPipe) year: number,
     ) {
-        return this.attendanceService.getStudentAttendance(req.user.id, req.user.schoolId, month, year);
+        return this.attendanceService.getStudentAttendance(req.user.id, req.user.schoolId, academicYearId, month, year);
     }
 }

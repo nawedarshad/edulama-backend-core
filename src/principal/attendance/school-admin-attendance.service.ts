@@ -514,6 +514,7 @@ export class SchoolAdminAttendanceService {
 
     async getClassSession(
         userId: number,
+        academicYearId: number,
         classId: number,
         sectionId: number,
         date: Date,
@@ -527,6 +528,7 @@ export class SchoolAdminAttendanceService {
         const session = await this.prisma.attendanceSession.findFirst({
             where: {
                 schoolId,
+                academicYearId,
                 classId,
                 sectionId,
                 date,

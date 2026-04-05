@@ -1,5 +1,5 @@
 import { IsString, IsNotEmpty, IsOptional, IsInt, IsEnum, IsBoolean, IsNumber, IsHexColor, Matches } from 'class-validator';
-import { SubjectType } from '@prisma/client';
+import { SubjectType, AssessmentType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateSubjectDto {
@@ -103,6 +103,16 @@ export class CreateClassSubjectDto {
     @IsOptional()
     hasLab?: boolean;
 
+    @ApiPropertyOptional({ description: 'Is the subject graded?', example: true })
+    @IsBoolean()
+    @IsOptional()
+    isGraded?: boolean;
+
+    @ApiPropertyOptional({ description: 'Assessment type', enum: AssessmentType, example: 'MARKS' })
+    @IsEnum(AssessmentType)
+    @IsOptional()
+    assessmentType?: AssessmentType;
+
     @ApiPropertyOptional({ description: 'Exclude from GPA calculation?', example: false })
     @IsBoolean()
     @IsOptional()
@@ -151,6 +161,14 @@ export class UpdateClassSubjectDto {
     @IsBoolean()
     @IsOptional()
     hasLab?: boolean;
+
+    @IsBoolean()
+    @IsOptional()
+    isGraded?: boolean;
+
+    @IsEnum(AssessmentType)
+    @IsOptional()
+    assessmentType?: AssessmentType;
 
     @IsBoolean()
     @IsOptional()

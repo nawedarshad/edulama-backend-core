@@ -6,11 +6,17 @@ import { Prisma, AcademicYearStatus } from '@prisma/client';
 
 import { BulkCreateSectionDto } from './dto/bulk-create-section.dto';
 
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AuditLogEvent } from '../../common/audit/audit.event';
+
 @Injectable()
 export class SectionService {
     private readonly logger = new Logger(SectionService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly eventEmitter: EventEmitter2
+    ) { }
 
     async findAll(schoolId: number, classId?: number, page: number = 1, limit: number = 10) {
         this.logger.log(`Fetching sections for school ${schoolId} (Class: ${classId}, Page: ${page})`);
@@ -85,7 +91,7 @@ export class SectionService {
         };
     }
 
-    async create(schoolId: number, dto: CreateSectionDto) {
+    async create(schoolId: number, dto: CreateSectionDto, userId: number) {
         this.logger.log(`Creating section ${dto.name} for class ${dto.classId}`);
         // Validate Class
         const cls = await this.prisma.class.findFirst({
@@ -120,6 +126,11 @@ export class SectionService {
                     // academicYearId removed
                 },
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'SECTION', 'CREATE', section.id, section
+            ));
+
             this.logger.log(`Section created: ${section.id}`);
             return section;
         } catch (error) {
@@ -186,7 +197,11 @@ export class SectionService {
                                         }
                                     }
                                 },
-                                timeSlot: true
+                                timeSlot: {
+                                    include: {
+                                        period: true
+                                    }
+                                }
                             }
                         }
                     }
@@ -230,6 +245,7 @@ export class SectionService {
                 id: s.id,
                 name: s.user?.name || s.fullName,
                 photo: s.user?.photo,
+                rollNo: s.rollNo,
             })) || [],
             timetable: section.academicGroups?.[0]?.timetableEntries?.map(t => ({
                 id: t.id,
@@ -239,12 +255,15 @@ export class SectionService {
                     code: t.subject?.code || 'N/A'
                 },
                 teacher: t.teacher?.user?.name,
-                timeSlot: t.timeSlot
+                period: {
+                    ...t.timeSlot,
+                    name: (t.timeSlot as any).period?.name || `P-${t.timeSlot.id}`
+                }
             })) || []
         };
     }
 
-    async update(schoolId: number, id: number, dto: UpdateSectionDto) {
+    async update(schoolId: number, id: number, dto: UpdateSectionDto, userId: number) {
         this.logger.log(`Updating section ${id}`);
         const section = await this.prisma.section.findFirst({
             where: { id, schoolId },
@@ -286,6 +305,11 @@ export class SectionService {
                     stream: dto.stream,
                 },
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'SECTION', 'UPDATE', id, updated
+            ));
+
             this.logger.log(`Section updated: ${updated.id}`);
             return updated;
         } catch (error) {
@@ -297,7 +321,7 @@ export class SectionService {
         }
     }
 
-    async remove(schoolId: number, id: number) {
+    async remove(schoolId: number, id: number, userId: number) {
         this.logger.log(`Deleting section ${id}`);
         const section = await this.prisma.section.findFirst({
             where: { id, schoolId },
@@ -328,6 +352,11 @@ export class SectionService {
             await this.prisma.section.delete({
                 where: { id },
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'SECTION', 'DELETE', id, { id }
+            ));
+
             this.logger.log(`Section deleted: ${id}`);
             return { message: 'Section deleted successfully' };
         } catch (error) {
@@ -336,7 +365,7 @@ export class SectionService {
         }
     }
 
-    async createBulk(schoolId: number, dto: BulkCreateSectionDto) {
+    async createBulk(schoolId: number, dto: BulkCreateSectionDto, userId: number) {
         this.logger.log(`Bulk creating ${dto.sections.length} sections`);
 
         // Validate all classIds belong to school 
@@ -392,6 +421,11 @@ export class SectionService {
                     });
                 }
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'SECTION', 'BULK_CREATE', 0, { count: dto.sections.length }
+            ));
+
             return { message: `Successfully created ${dto.sections.length} sections` };
         } catch (error) {
             this.logger.error('Bulk create section error', error.stack);

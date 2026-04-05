@@ -89,8 +89,8 @@ export class TeacherClassDiaryService {
 
         // Check for existing entry for this specific date
         const diaryDate = new Date(dto.lessonDate);
-        const startOfDay = new Date(diaryDate); startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(diaryDate); endOfDay.setHours(23, 59, 59, 999);
+        const startOfDay = new Date(diaryDate); startOfDay.setUTCHours(0, 0, 0, 0);
+        const endOfDay = new Date(diaryDate); endOfDay.setUTCHours(23, 59, 59, 999);
 
         const existing = await this.prisma.classDiary.findFirst({
             where: {
@@ -214,9 +214,13 @@ export class TeacherClassDiaryService {
                 lte: endOfDay
             };
         } else if (query.startDate && query.endDate) {
+            const start = new Date(query.startDate);
+            const end = new Date(query.endDate);
+            const sDate = new Date(start); sDate.setUTCHours(0, 0, 0, 0);
+            const eDate = new Date(end); eDate.setUTCHours(23, 59, 59, 999);
             where.lessonDate = {
-                gte: new Date(query.startDate),
-                lte: new Date(query.endDate),
+                gte: sDate,
+                lte: eDate,
             };
         }
 

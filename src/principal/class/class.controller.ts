@@ -60,7 +60,8 @@ export class ClassController {
     @ApiResponse({ status: 201, description: 'The class has been successfully created.' })
     async create(@Req() req, @Body() createClassDto: CreateClassDto) {
         const schoolId = req.user.schoolId;
-        return this.classService.create(schoolId, createClassDto);
+        const userId = req.user.id;
+        return this.classService.create(schoolId, createClassDto, userId);
     }
 
     @Post('with-sections')
@@ -68,7 +69,8 @@ export class ClassController {
     @ApiResponse({ status: 201, description: 'The class and sections have been successfully created.' })
     async createWithSections(@Req() req, @Body() dto: CreateClassWithSectionsDto) {
         const schoolId = req.user.schoolId;
-        return this.classService.createWithSections(schoolId, dto);
+        const userId = req.user.id;
+        return this.classService.createWithSections(schoolId, dto, userId);
     }
 
     @Post('bulk')
@@ -76,7 +78,8 @@ export class ClassController {
     @ApiResponse({ status: 201, description: 'Classes have been successfully created.' })
     async createBulk(@Req() req, @Body() dto: BulkCreateClassDto) {
         const schoolId = req.user.schoolId;
-        return this.classService.createBulk(schoolId, dto);
+        const userId = req.user.id;
+        return this.classService.createBulk(schoolId, dto, userId);
     }
 
     @Patch(':id')
@@ -88,7 +91,8 @@ export class ClassController {
         @Body() updateClassDto: UpdateClassDto,
     ) {
         const schoolId = req.user.schoolId;
-        return this.classService.update(schoolId, id, updateClassDto);
+        const userId = req.user.id;
+        return this.classService.update(schoolId, id, updateClassDto, userId);
     }
 
     @Delete(':id')
@@ -96,7 +100,8 @@ export class ClassController {
     @ApiResponse({ status: 200, description: 'The class has been successfully deleted.' })
     async remove(@Req() req, @Param('id', ParseIntPipe) id: number) {
         const schoolId = req.user.schoolId;
-        return this.classService.remove(schoolId, id);
+        const userId = req.user.id;
+        return this.classService.remove(schoolId, id, userId);
     }
 
     @Post('assign-teacher')
@@ -104,7 +109,8 @@ export class ClassController {
     @ApiResponse({ status: 201, description: 'Teacher assigned to section.' })
     async assignTeacher(@Req() req, @Body() dto: AssignClassTeacherDto) {
         const schoolId = req.user.schoolId;
-        return this.classService.assignClassTeacher(schoolId, dto);
+        const userId = req.user.id;
+        return this.classService.assignClassTeacher(schoolId, dto, userId);
     }
 
     @Post(':id/head-teacher')
@@ -116,9 +122,10 @@ export class ClassController {
         @Body() dto: AssignHeadTeacherDto
     ) {
         const schoolId = req.user.schoolId;
+        const userId = req.user.id;
         // Ensure the ID in URL matches the logic if needed, but DTO is standard. 
         // Service expects classId. The Endpoint is /:id/head-teacher, so 'id' is classId.
-        return this.classService.assignHeadTeacher(schoolId, id, dto);
+        return this.classService.assignHeadTeacher(schoolId, id, dto, userId);
     }
 
     @Delete(':id/head-teacher')
@@ -126,7 +133,8 @@ export class ClassController {
     @ApiResponse({ status: 200, description: 'Head teacher removed.' })
     async removeHeadTeacher(@Req() req, @Param('id', ParseIntPipe) id: number) {
         const schoolId = req.user.schoolId;
-        return this.classService.removeHeadTeacher(schoolId, id);
+        const userId = req.user.id;
+        return this.classService.removeHeadTeacher(schoolId, id, userId);
     }
 
     @Delete('sections/:sectionId/teacher')
@@ -134,6 +142,7 @@ export class ClassController {
     @ApiResponse({ status: 200, description: 'Class teacher removed from section.' })
     async removeSectionTeacher(@Req() req, @Param('sectionId', ParseIntPipe) sectionId: number) {
         const schoolId = req.user.schoolId;
-        return this.classService.removeSectionTeacher(schoolId, sectionId);
+        const userId = req.user.id;
+        return this.classService.removeSectionTeacher(schoolId, sectionId, userId);
     }
 }

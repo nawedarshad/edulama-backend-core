@@ -10,14 +10,24 @@ import { CreateStudentDto, CreateGuardianDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { StudentFilterDto } from './dto/student-filter.dto';
 import { MarkStudentLeftDto } from './dto/mark-student-left.dto';
-import { Prisma, Religion, BloodGroup, Caste, StudentCategory } from '@prisma/client';
+import { Prisma, Religion, BloodGroup, Caste, StudentCategory, AuditAction } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { AuditLogService } from '../../common/audit/audit-log.service';
+import { AuditLogEvent } from '../../common/audit/audit.event';
+import { S3StorageService } from '../../common/file-upload/s3-storage.service';
+import { StudentBulkActionDto, StudentBulkActionType } from './dto/bulk-action.dto';
+import { BulkStudentUploadDto } from './dto/bulk-upload-student.dto';
+import { GuardianRelation } from './dto/create-student.dto';
 
 @Injectable()
 export class StudentService {
     private readonly logger = new Logger(StudentService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly auditLog: AuditLogService,
+        private readonly storageService: S3StorageService
+    ) { }
 
     // ==========================
     // PARENT LOOKUP
@@ -74,6 +84,7 @@ export class StudentService {
         schoolId: number,
         academicYearId: number,
         dto: CreateStudentDto,
+        requestedById: number // Explicitly pass the user ID for logging
     ) {
         this.logger.log(`Creating student for school ${schoolId}, year ${academicYearId}: ${dto.fullName}`);
 
@@ -83,6 +94,16 @@ export class StudentService {
         });
         if (existingStudent) {
             throw new BadRequestException(`Student with Admission No ${dto.admissionNo} already exists for this academic year.`);
+        }
+
+        // 1b. Check roll number uniqueness per section (not globally)
+        if (dto.rollNo && dto.sectionId) {
+            const existingRollNo = await this.prisma.studentProfile.findFirst({
+                where: { sectionId: dto.sectionId, academicYearId, rollNo: dto.rollNo },
+            });
+            if (existingRollNo) {
+                throw new BadRequestException(`Roll No ${dto.rollNo} is already assigned to another student in this section.`);
+            }
         }
 
         // 2. Valiation Checks
@@ -227,11 +248,21 @@ export class StudentService {
 
                     // Add primary email identity
                     if (normalizedPrimaryEmail) {
-                        await tx.authIdentity.upsert({
-                            where: { userId: familyUserId! } as any,
-                            create: { userId: familyUserId!, type: 'EMAIL', value: normalizedPrimaryEmail, verified: true },
-                            update: { type: 'EMAIL', value: normalizedPrimaryEmail }
-                        });
+                        try {
+                            await tx.authIdentity.create({
+                                data: {
+                                    userId: familyUserId!,
+                                    type: 'EMAIL',
+                                    value: normalizedPrimaryEmail,
+                                    verified: true,
+                                    schoolId: schoolId // Link it to current school if possible
+                                }
+                            });
+                        } catch (err) {
+                            // If it already exists despite the lookup (race condition or different school context), 
+                            // we ignore it as long as the user is linked correctly.
+                            this.logger.warn(`AuthIdentity for ${normalizedPrimaryEmail} already exists, skipping creation.`);
+                        }
                     }
 
                     // (Note: Phone identity creation removed as parent auth is email-only)
@@ -312,6 +343,13 @@ export class StudentService {
             });
 
             this.logger.log(`Student created: ${result.studentId}, familyId: ${result.parentProfileId}`);
+
+            // 6. Audit Log
+            await this.auditLog.createLog(new AuditLogEvent(
+                schoolId, requestedById, 'Student', 'CREATE', result.studentId, 
+                { fullName: dto.fullName, admissionNo: dto.admissionNo }
+            ));
+
             return result;
         } catch (error) {
             this.logger.error(`Failed to create student in school ${schoolId}`, error.stack);
@@ -319,149 +357,289 @@ export class StudentService {
         }
     }
 
-    // ==========================
-    // GENERATE CREDENTIALS
-    // ==========================
-
-    async generateCredentials(
+    async validateBulk(
         schoolId: number,
         academicYearId: number,
-        classId?: number,
-        sectionId?: number,
-        verifyStudents: boolean = true,
-        verifyParents: boolean = true,
+        dto: BulkStudentUploadDto
     ) {
-        this.logger.log(`Bulk verification for school ${schoolId}, year ${academicYearId}. Target: Students=${verifyStudents}, Parents=${verifyParents}`);
+        this.logger.log(`Validating ${dto.students.length} students for school ${schoolId}, year ${academicYearId}`);
 
-        // 1. Fetch STUDENT/PARENT roles
-        const [studentRole, parentRole] = await Promise.all([
-            this.prisma.role.findUnique({ where: { name: 'STUDENT' } }),
-            this.prisma.role.findUnique({ where: { name: 'PARENT' } }),
-        ]);
-
-        if (!studentRole || !parentRole) {
-            throw new BadRequestException("Roles 'STUDENT' and/or 'PARENT' not found.");
-        }
-
-        const school = await this.prisma.school.findUnique({ where: { id: schoolId } });
-        if (!school) {
-            throw new BadRequestException("School not found");
-        }
-        const schoolCode = school.code.toLowerCase();
-
-        // 2. Find students and their families
-        const where: any = {
-            schoolId,
-            academicYearId,
-            isActive: true,
+        const results = {
+            total: dto.students.length,
+            valid: 0,
+            invalid: 0,
+            alreadyExists: 0,
+            details: [] as { 
+                index: number; 
+                admissionNo: string; 
+                status: 'VALID' | 'INVALID' | 'EXISTS';
+                errors: string[];
+                conflictField?: string;
+                isInactive?: boolean;
+                fullName?: string;
+            }[],
         };
-        if (classId) where.classId = classId;
-        if (sectionId) where.sectionId = sectionId;
 
-        const students = await this.prisma.studentProfile.findMany({
-            where,
+        // Fetch existing students with more details for clone detection
+        const existingStudents = await this.prisma.studentProfile.findMany({
+            where: { schoolId, academicYearId },
             include: {
                 parents: {
-                    include: {
-                        parent: {
-                            include: {
-                                user: true
-                            }
-                        }
-                    }
+                    include: { parent: true }
                 }
             }
         });
 
-        this.logger.log(`Filtering for verification in class scope: found ${students.length} students`);
+        const existingAdmissionNos = new Map(existingStudents.map(s => [s.admissionNo.toLowerCase().trim(), s]));
+        const batchAdmissionNos = new Set<string>();
+        const batchSectionRollNos = new Map<number, Set<string>>(); // SectionID -> Set of RollNos
 
-        let studentsProvisioned = 0;
-        let parentsActivated = 0;
-        let skipped = 0;
-        const errors: string[] = [];
+        for (let i = 0; i < dto.students.length; i++) {
+            const item = dto.students[i];
+            const errors: string[] = [];
+            let status: 'VALID' | 'INVALID' | 'EXISTS' = 'VALID';
+            let conflictField: string | undefined;
+            let isInactive = false;
 
-        // Track processed user IDs to avoid duplicate processing in the same call
-        const processedUserIds = new Set<number>();
+            const admNo = item.admissionNo?.toString().toLowerCase().trim();
+            const rollNo = item.rollNo?.toString().trim();
 
-        for (const student of students) {
-            try {
-                // --- A. Process Student ---
-                if (verifyStudents && !student.userId) {
-                    if (!student.dob) {
-                        skipped++;
-                        errors.push(`Student ${student.fullName} (${student.admissionNo}): skipped — no DOB set`);
+            // 1. Check for duplicate Admission No in system
+            const existing = admNo ? existingAdmissionNos.get(admNo) : null;
+            if (existing) {
+                status = 'EXISTS';
+                conflictField = 'admissionNo';
+                isInactive = !existing.isActive;
+                if (isInactive) {
+                    errors.push(`Student with Admission No ${item.admissionNo} exists but is marked as INACTIVE/LEFT.`);
+                } else {
+                    errors.push(`Admission No ${item.admissionNo} already exists in the system.`);
+                }
+            }
+
+            // 2. Intra-file Admission No check
+            if (admNo && batchAdmissionNos.has(admNo)) {
+                status = 'INVALID';
+                conflictField = 'admissionNo';
+                errors.push(`Duplicate Admission No ${item.admissionNo} found within this file.`);
+            }
+            if (admNo) batchAdmissionNos.add(admNo);
+
+            // 3. Intra-file Roll No check (scoping to section)
+            if (rollNo && item.sectionId) {
+                if (!batchSectionRollNos.has(item.sectionId)) batchSectionRollNos.set(item.sectionId, new Set());
+                const sectionRolls = batchSectionRollNos.get(item.sectionId)!;
+                if (sectionRolls.has(rollNo)) {
+                    status = 'INVALID';
+                    conflictField = 'rollNo';
+                    errors.push(`Duplicate Roll No ${rollNo} for the same section found in this file.`);
+                }
+                sectionRolls.add(rollNo);
+            }
+
+            // 4. Name + DOB + Father check (identifying clones with different Admission Nos)
+            if (item.fullName && item.dob && item.fatherPhone && !existing) {
+                const itemDobStr = new Date(item.dob).toDateString();
+                const potentialClone = existingStudents.find(s => 
+                    s.fullName.toLowerCase() === item.fullName.toLowerCase() &&
+                    s.dob?.toDateString() === itemDobStr &&
+                    s.parents.some(p => p.parent.fatherContact?.includes(item.fatherPhone!))
+                );
+                
+                if (potentialClone) {
+                    status = 'EXISTS';
+                    conflictField = 'fullName';
+                    isInactive = !potentialClone.isActive;
+                    if (isInactive) {
+                        errors.push(`Clone found: ${potentialClone.fullName} (INACTIVE, Adm No: ${potentialClone.admissionNo}).`);
                     } else {
-                        const firstName = student.fullName.split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const identityValue = `${firstName}${student.admissionNo.toLowerCase().trim()}`;
-
-                        const dobDate = new Date(student.dob);
-                        const passwordRaw = [
-                            String(dobDate.getDate()).padStart(2, '0'),
-                            String(dobDate.getMonth() + 1).padStart(2, '0'),
-                            dobDate.getFullYear(),
-                        ].join('');
-                        const passwordHash = await argon2.hash(passwordRaw);
-
-                        await this.prisma.$transaction(async (tx) => {
-                            const user = await tx.user.create({
-                                data: { name: student.fullName, isActive: true },
-                            });
-                            await tx.authIdentity.create({
-                                data: { userId: user.id, type: 'USERNAME', value: identityValue, secret: passwordHash, verified: true, schoolId },
-                            });
-                            const membership = await tx.userSchool.create({
-                                data: { userId: user.id, schoolId, primaryRoleId: studentRole.id, isActive: true },
-                            });
-                            await tx.userSchoolRole.create({
-                                data: { userSchoolId: membership.id, roleId: studentRole.id },
-                            });
-                            await tx.studentProfile.update({
-                                where: { id: student.id },
-                                data: { userId: user.id },
-                            });
-                        });
-                        studentsProvisioned++;
+                        errors.push(`A student with same name, DOB, and father's phone already exists (Adm No: ${potentialClone.admissionNo}).`);
                     }
                 }
+            }
 
-                // --- B. Process Parents ---
-                if (verifyParents) {
-                    for (const studentParent of student.parents) {
-                        const parent = studentParent.parent;
-                        if (parent.user && !parent.user.isActive && !processedUserIds.has(parent.userId)) {
-                            await this.prisma.$transaction(async (tx) => {
-                                // Activate user
-                                await tx.user.update({
-                                    where: { id: parent.userId },
-                                    data: { isActive: true }
-                                });
-                                // Verify all identities (EMAIL/PHONE)
-                                await tx.authIdentity.updateMany({
-                                    where: { userId: parent.userId },
-                                    data: { verified: true }
-                                });
-                            });
-                            parentsActivated++;
-                            processedUserIds.add(parent.userId);
+        // 5. Format / Mandatory checks (always run, only block if status is still VALID or EXISTS_INACTIVE)
+            if (!item.fullName) errors.push('Full Name is required.');
+            if (!item.admissionNo) errors.push('Admission No is required.');
+            if (!item.dob) errors.push('Date of Birth is required.');
+            if (!item.gender) errors.push('Gender is required.');
+            if (!item.classId) errors.push('Class is required.');
+            if (!item.sectionId) errors.push('Section is required.');
+            if (!item.primaryEmail) errors.push('Primary Email is required.');
+
+            // 6. Date logic checks
+            if (item.dob) {
+                const dob = new Date(item.dob);
+                const today = new Date();
+                if (isNaN(dob.getTime())) {
+                    errors.push('Invalid DOB format. Use YYYY-MM-DD.');
+                } else {
+                    let age = today.getFullYear() - dob.getFullYear();
+                    const m = today.getMonth() - dob.getMonth();
+                    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+                    
+                    if (age < 2 || age > 25) errors.push('Student age must be between 2 and 25 years.');
+                    if (dob > today) errors.push('DOB cannot be in the future.');
+
+                    if (item.admissionDate) {
+                        const admissionDate = new Date(item.admissionDate);
+                        if (!isNaN(admissionDate.getTime())) {
+                            if (admissionDate < dob) errors.push('Admission date cannot be before DOB.');
                         }
                     }
                 }
+            }
 
-            } catch (err: any) {
-                this.logger.error(`Error processing ${student.admissionNo}: ${err.message}`);
-                errors.push(`${student.fullName} (${student.admissionNo}): ${err.message}`);
+            // 7. Final status resolution (errors override previous status when NOT a reactivatable case)
+            const hasErrors = errors.length > 0;
+            if (status === 'EXISTS' && isInactive) {
+                // Special case: student exists but is left/inactive — can be reactivated
+                // Only flag as INVALID if there are also actual format errors beyond the existence check
+                const nonExistenceErrors = errors.filter(e => !e.includes('exists') && !e.includes('INACTIVE') && !e.includes('Clone'));
+                if (nonExistenceErrors.length > 0) {
+                    status = 'INVALID';
+                }
+            } else if (status === 'EXISTS' && !isInactive) {
+                // Student is active in system — this is always a blocker, keep status=EXISTS
+            } else if (hasErrors) {
+                status = 'INVALID';
+            }
+
+            if (status === 'VALID') results.valid++;
+            else if (status === 'EXISTS') results.alreadyExists++;
+            else results.invalid++;
+
+            results.details.push({
+                index: i,
+                admissionNo: item.admissionNo,
+                fullName: item.fullName,
+                status,
+                errors,
+                conflictField,
+                isInactive
+            });
+        }
+
+        return results;
+    }
+
+    async bulkUpload(
+        schoolId: number,
+        academicYearId: number,
+        dto: BulkStudentUploadDto,
+        requestedById: number
+    ) {
+        this.logger.log(`Bulk uploading ${dto.students.length} students for school ${schoolId}, year ${academicYearId}`);
+
+        const results = {
+            total: dto.students.length,
+            success: 0,
+            failed: 0,
+            errors: [] as { index: number; admissionNo: string; error: string }[],
+        };
+
+        for (let i = 0; i < dto.students.length; i++) {
+            const item = dto.students[i];
+            try {
+                // Transform bulk item to CreateStudentDto
+                const createDto: CreateStudentDto = {
+                    fullName: item.fullName,
+                    admissionNo: item.admissionNo,
+                    rollNo: item.rollNo,
+                    dob: item.dob,
+                    admissionDate: item.admissionDate,
+                    classId: item.classId,
+                    sectionId: item.sectionId,
+                    personalInfo: {
+                        gender: item.gender,
+                        bloodGroup: item.bloodGroup,
+                        religion: item.religion,
+                        caste: item.caste,
+                        category: item.category,
+                        studentEmail: item.studentEmail,
+                        nationality: item.nationality || 'Indian',
+                        currentAddress: item.residentialAddress,
+                        permanentAddress: item.residentialAddress,
+                        city: item.city || 'N/A',
+                        state: item.state || 'N/A',
+                        pincode: item.pincode || '000000',
+                    },
+                    guardians: [
+                        ...(item.fatherName || item.fatherPhone ? [{
+                            name: item.fatherName || 'Father',
+                            phone: item.fatherPhone,
+                            relation: GuardianRelation.FATHER,
+                            occupation: item.fatherOccupation,
+                        }] : []),
+                        ...(item.motherName || item.motherPhone ? [{
+                            name: item.motherName || 'Mother',
+                            phone: item.motherPhone,
+                            relation: GuardianRelation.MOTHER,
+                            occupation: item.motherOccupation,
+                        }] : []),
+                    ],
+                    primaryEmail: item.primaryEmail,
+                };
+
+                if (item.shouldActivate) {
+                    // Update existing student: mark active and update details
+                    await this.prisma.studentProfile.update({
+                        where: { schoolId_academicYearId_admissionNo: { 
+                            schoolId, 
+                            academicYearId, 
+                            admissionNo: item.admissionNo 
+                        } },
+                        data: {
+                            isActive: true,
+                            leftDate: null,
+                            leavingReason: null,
+                            fullName: item.fullName,
+                            rollNo: item.rollNo,
+                            dob: item.dob ? new Date(item.dob) : undefined,
+                            classId: item.classId,
+                            sectionId: item.sectionId,
+                            personalInfo: {
+                                upsert: {
+                                    create: {
+                                        gender: item.gender,
+                                        city: item.city,
+                                        state: item.state,
+                                        pincode: item.pincode,
+                                    },
+                                    update: {
+                                        gender: item.gender,
+                                        city: item.city,
+                                        state: item.state,
+                                        pincode: item.pincode,
+                                    }
+                                }
+                            }
+                        }
+                    });
+                } else {
+                    await this.create(schoolId, academicYearId, createDto, requestedById);
+                }
+                results.success++;
+            } catch (error: any) {
+                this.logger.error(`Bulk upload item ${i} failed: ${item.admissionNo}`, error.stack);
+                results.failed++;
+                results.errors.push({
+                    index: i,
+                    admissionNo: item.admissionNo,
+                    error: error.message || 'Unknown error',
+                });
             }
         }
 
-        return {
-            total: students.length,
-            provisioned: studentsProvisioned,
-            parentsActivated,
-            skipped,
-            errors,
-            message: `${studentsProvisioned} student account(s) created, ${parentsActivated} parent account(s) activated, ${skipped} skipped.`,
-        };
+        // Audit log for bulk upload
+        await this.auditLog.createLog(new AuditLogEvent(
+            schoolId, requestedById, 'Student', 'BULK_CREATE' as any, undefined, 
+            { total: results.total, success: results.success, failed: results.failed }
+        ));
+
+        return results;
     }
+
 
     async findAll(
         schoolId: number,
@@ -573,7 +751,7 @@ export class StudentService {
         return student;
     }
 
-    async update(id: number, schoolId: number, dto: UpdateStudentDto) {
+    async update(id: number, schoolId: number, dto: UpdateStudentDto, requestedById: number) {
         this.logger.log(`Updating student ${id} in school ${schoolId}`);
         // Check existence
         await this.findOne(id, schoolId);
@@ -642,6 +820,13 @@ export class StudentService {
                 },
             });
             this.logger.log(`Student updated successfully: ${id}`);
+
+            // Audit Log
+            await this.auditLog.createLog(new AuditLogEvent(
+                schoolId, requestedById, 'Student', 'UPDATE', id, 
+                { fullName: dto.fullName, admissionNo: dto.admissionNo }
+            ));
+
             return updated;
         } catch (error) {
             this.logger.error(`Failed to update student ${id}`, error.stack);
@@ -649,7 +834,7 @@ export class StudentService {
         }
     }
 
-    async remove(id: number, schoolId: number) {
+    async remove(id: number, schoolId: number, requestedById: number) {
         this.logger.log(`Performing full cascading removal for student ${id} in school ${schoolId}`);
 
         // 1. Fetch student with parents and user info for identifying what else to delete
@@ -749,6 +934,13 @@ export class StudentService {
             });
 
             this.logger.log(`Student ${id} and all associated records fully removed.`);
+
+            // Audit Log
+            await this.auditLog.createLog(new AuditLogEvent(
+                schoolId, requestedById, 'Student', 'DELETE', id, 
+                { fullName: student.fullName, admissionNo: student.admissionNo }
+            ));
+
             return { message: 'Student and associated records fully removed from system' };
         } catch (error) {
             this.logger.error(`Failed to remove student ${id} records`, error.stack);
@@ -759,7 +951,7 @@ export class StudentService {
     // ---------------------------------------------------
     // ANALYTICS
     // ---------------------------------------------------
-    async markAsLeft(schoolId: number, id: number, dto: MarkStudentLeftDto) {
+    async markAsLeft(schoolId: number, id: number, dto: MarkStudentLeftDto, requestedById: number) {
         this.logger.log(`Marking student ${id} as left in school ${schoolId}`);
 
         const student = await this.prisma.studentProfile.findFirst({
@@ -826,6 +1018,13 @@ export class StudentService {
             });
 
             this.logger.log(`Student ${id} marked as left successfully`);
+
+            // Audit Log
+            await this.auditLog.createLog(new AuditLogEvent(
+                schoolId, requestedById, 'Student', 'UPDATE_STATUS', id, 
+                { status: 'LEFT', reason: dto.reason, leftDate: leftDate }
+            ));
+
             return { message: 'Student marked as left and deactivated successfully' };
 
         } catch (error) {
@@ -918,7 +1117,7 @@ export class StudentService {
         const admissionsByMonth = {};
         admissions.forEach(curr => {
             if (!curr.admissionDate) return;
-            const month = curr.admissionDate.toLocaleString('default', { month: 'short' });
+            const month = curr.admissionDate.toLocaleString('en-US', { month: 'short' });
             admissionsByMonth[month] = (admissionsByMonth[month] || 0) + 1;
         });
 
@@ -932,5 +1131,118 @@ export class StudentService {
             religionDistribution,
             admissionsByMonth
         };
+    }
+
+    async bulkActions(schoolId: number, dto: StudentBulkActionDto, requestedById: number) {
+        this.logger.log(`Performing bulk action ${dto.action} for ${dto.studentIds.length} students in school ${schoolId}`);
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            let affectedCount = 0;
+
+            if (dto.action === StudentBulkActionType.DEACTIVATE) {
+                const update = await tx.studentProfile.updateMany({
+                    where: { id: { in: dto.studentIds }, schoolId },
+                    data: { isActive: false },
+                });
+                affectedCount = update.count;
+            } else if (dto.action === StudentBulkActionType.ACTIVATE) {
+                const update = await tx.studentProfile.updateMany({
+                    where: { id: { in: dto.studentIds }, schoolId },
+                    data: { isActive: true },
+                });
+                affectedCount = update.count;
+            } else if (dto.action === StudentBulkActionType.SET_HOUSE) {
+                if (!dto.houseId) throw new BadRequestException('houseId is required for SET_HOUSE action');
+                const update = await tx.studentProfile.updateMany({
+                    where: { id: { in: dto.studentIds }, schoolId },
+                    data: { houseId: dto.houseId },
+                });
+                affectedCount = update.count;
+            } else if (dto.action === StudentBulkActionType.PROMOTE) {
+                if (!dto.targetClassId || !dto.targetSectionId) {
+                    throw new BadRequestException('targetClassId and targetSectionId are required for PROMOTE action');
+                }
+                const update = await tx.studentProfile.updateMany({
+                    where: { id: { in: dto.studentIds }, schoolId },
+                    data: { classId: dto.targetClassId, sectionId: dto.targetSectionId },
+                });
+                affectedCount = update.count;
+            }
+
+            return { affectedCount };
+        });
+
+        // Audit Log
+        await this.auditLog.createLog(new AuditLogEvent(
+            schoolId, requestedById, 'Student', `BULK_${dto.action}`, undefined, 
+            { studentCount: dto.studentIds.length, affectedCount: result.affectedCount, details: dto }
+        ));
+
+        return {
+            message: `Bulk action ${dto.action} completed successfully`,
+            ...result
+        };
+    }
+
+    // ==========================
+    // DOCUMENTS
+    // ==========================
+    
+    async generateDocumentPresignedUrl(schoolId: number, studentId: number, fileName: string, fileType: string) {
+        await this.findOne(studentId, schoolId);
+        
+        // Key format strictly as requested: tenantid/studentid/docs/
+        const customKey = `${schoolId}/${studentId}/docs/${Date.now()}_${fileName.replace(/[^a-z0-9.-]/gi, '_').toLowerCase()}`;
+        const presignedUrl = await this.storageService.getPresignedUrl(customKey, fileType, 3600);
+        
+        return { presignedUrl, customKey };
+    }
+
+    async saveDocument(schoolId: number, studentId: number, name: string, type: string, size: number, customKey: string, requestedById: number) {
+        const student = await this.findOne(studentId, schoolId);
+        const publicUrl = `${process.env.R2_PUBLIC_URL}/${customKey}`;
+
+        const document = await this.prisma.studentDocument.create({
+            data: {
+                studentId,
+                name,
+                type,
+                size,
+                url: publicUrl,
+                isVerified: false,
+            }
+        });
+
+        await this.auditLog.createLog(new AuditLogEvent(
+            schoolId, requestedById, 'Student', 'UPDATE', studentId, 
+            { action: 'DOCUMENT_UPLOAD', documentName: name }
+        ));
+
+        return document;
+    }
+
+    async deleteDocument(schoolId: number, studentId: number, docId: number, requestedById: number) {
+        const document = await this.prisma.studentDocument.findUnique({
+            where: { id: docId }
+        });
+
+        if (!document || document.studentId !== studentId) {
+            throw new NotFoundException('Document not found');
+        }
+        await this.findOne(studentId, schoolId);
+
+        const customKey = this.storageService.extractKeyFromUrl(document.url);
+        if (customKey) {
+            await this.storageService.deleteFile(customKey);
+        }
+
+        await this.prisma.studentDocument.delete({ where: { id: docId } });
+
+        await this.auditLog.createLog(new AuditLogEvent(
+            schoolId, requestedById, 'Student', 'UPDATE', studentId, 
+            { action: 'DOCUMENT_DELETE', documentName: document.name }
+        ));
+
+        return { message: 'Document deleted successfully' };
     }
 }

@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class StudentAttendanceService {
     constructor(private readonly prisma: PrismaService) { }
 
-    async getStudentAttendance(userId: number, schoolId: number, month: number, year: number) {
+    async getStudentAttendance(userId: number, schoolId: number, academicYearId: number, month: number, year: number) {
         const student = await this.prisma.studentProfile.findFirst({
             where: { userId, schoolId },
         });
@@ -22,6 +22,7 @@ export class StudentAttendanceService {
                 studentProfileId: student.id,
                 schoolId: schoolId,
                 session: {
+                    academicYearId: academicYearId,
                     date: {
                         gte: startDate,
                         lte: endDate,
@@ -42,7 +43,7 @@ export class StudentAttendanceService {
             },
         });
 
-        return attendanceRecords.map(record => ({
+        return attendanceRecords.map((record: any) => ({
             date: record.session.date.toISOString(),
             status: record.status,
             isLate: record.isLate,

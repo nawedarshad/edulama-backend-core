@@ -121,9 +121,13 @@ export class TeacherHomeworkService {
         if (query.subjectId) where.subjectId = query.subjectId;
 
         if (query.startDate && query.endDate) {
+            const start = new Date(query.startDate);
+            const end = new Date(query.endDate);
+            const sDate = new Date(start); sDate.setUTCHours(0, 0, 0, 0);
+            const eDate = new Date(end); eDate.setUTCHours(23, 59, 59, 999);
             where.dueDate = {
-                gte: new Date(query.startDate),
-                lte: new Date(query.endDate),
+                gte: sDate,
+                lte: eDate,
             };
         }
 

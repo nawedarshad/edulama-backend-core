@@ -7,8 +7,10 @@ import { AllocationService } from './allocation/allocation.service'; // Import
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 
+import { AuditLogModule } from '../../common/audit/audit-log.module';
+
 @Module({
-    imports: [HttpModule, ConfigModule],
+    imports: [HttpModule, ConfigModule, AuditLogModule],
     controllers: [SubjectController, AllocationController], // Register Controller
     providers: [SubjectService, AllocationService], // Register Service
     exports: [SubjectService],

@@ -29,4 +29,20 @@ export class TeacherFilterDto {
     @IsInt()
     @Min(1)
     limit?: number = 10;
+
+    @IsOptional()
+    @IsString()
+    joinedThisMonth?: string; // 'true'
+
+    @IsOptional()
+    @IsString()
+    department?: string;
+
+    @IsOptional()
+    @IsString()
+    startDate?: string;
+
+    @IsOptional()
+    @IsString()
+    endDate?: string;
 }

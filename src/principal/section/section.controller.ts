@@ -45,7 +45,8 @@ export class SectionController {
     @ApiResponse({ status: 201, description: 'The section has been successfully created.' })
     async create(@Req() req, @Body() createSectionDto: CreateSectionDto) {
         const schoolId = req.user.schoolId;
-        return this.sectionService.create(schoolId, createSectionDto);
+        const userId = req.user.id;
+        return this.sectionService.create(schoolId, createSectionDto, userId);
     }
 
     @Post('bulk')
@@ -53,7 +54,8 @@ export class SectionController {
     @ApiResponse({ status: 201, description: 'Sections have been successfully created.' })
     async createBulk(@Req() req, @Body() dto: BulkCreateSectionDto) {
         const schoolId = req.user.schoolId;
-        return this.sectionService.createBulk(schoolId, dto);
+        const userId = req.user.id;
+        return this.sectionService.createBulk(schoolId, dto, userId);
     }
 
     @Get(':id')
@@ -73,7 +75,8 @@ export class SectionController {
         @Body() updateSectionDto: UpdateSectionDto,
     ) {
         const schoolId = req.user.schoolId;
-        return this.sectionService.update(schoolId, id, updateSectionDto);
+        const userId = req.user.id;
+        return this.sectionService.update(schoolId, id, updateSectionDto, userId);
     }
 
     @Delete(':id')
@@ -81,6 +84,7 @@ export class SectionController {
     @ApiResponse({ status: 200, description: 'The section has been successfully deleted.' })
     async remove(@Req() req, @Param('id', ParseIntPipe) id: number) {
         const schoolId = req.user.schoolId;
-        return this.sectionService.remove(schoolId, id);
+        const userId = req.user.id;
+        return this.sectionService.remove(schoolId, id, userId);
     }
 }

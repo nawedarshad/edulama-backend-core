@@ -19,8 +19,9 @@ export class CalendarController {
     getWorkingPattern(
         @Req() req,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
+        @Query('classId') classId?: number,
     ) {
-        return this.service.getWorkingPattern(req.user.schoolId, academicYearId);
+        return this.service.getWorkingPattern(req.user.schoolId, academicYearId, classId ? Number(classId) : undefined);
     }
 
     @ApiOperation({ summary: 'Set Working Pattern', description: 'Define which days of the week are working days.' })

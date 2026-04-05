@@ -2,10 +2,15 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateAllocationDto, UpdateAllocationDto, AllocationFilterDto } from './dto/allocation.dto';
 import { AcademicYearStatus } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AuditLogEvent } from '../../../common/audit/audit.event';
 
 @Injectable()
 export class AllocationService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private eventEmitter: EventEmitter2
+    ) { }
 
     private async getActiveAcademicYear(schoolId: number) {
         const year = await this.prisma.academicYear.findFirst({
@@ -15,7 +20,7 @@ export class AllocationService {
         return year.id;
     }
 
-    async assignTeacher(schoolId: number, dto: CreateAllocationDto) {
+    async assignTeacher(schoolId: number, dto: CreateAllocationDto, userId: number) {
         const academicYearId = await this.getActiveAcademicYear(schoolId);
 
         // 1. Check if assignment already exists
@@ -35,7 +40,7 @@ export class AllocationService {
         }
 
         // 2. Create Assignment
-        return this.prisma.subjectAssignment.create({
+        const assignment = await this.prisma.subjectAssignment.create({
             data: {
                 schoolId,
                 academicYearId,
@@ -58,6 +63,17 @@ export class AllocationService {
                 section: true,
             },
         });
+
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId,
+            userId,
+            'SUBJECT_ALLOCATION',
+            'CREATE',
+            assignment.id,
+            dto
+        ));
+
+        return assignment;
     }
 
     async findAll(schoolId: number, filters: AllocationFilterDto) {
@@ -88,16 +104,17 @@ export class AllocationService {
         });
     }
 
-    async updateAssignment(schoolId: number, assignmentId: number, dto: UpdateAllocationDto) {
+    async updateAssignment(schoolId: number, assignmentId: number, dto: UpdateAllocationDto, userId: number) {
         const assignment = await this.prisma.subjectAssignment.findUnique({
             where: { id: assignmentId },
+            include: { subject: true, class: true }
         });
 
         if (!assignment || assignment.schoolId !== schoolId) {
             throw new NotFoundException('Assignment not found');
         }
 
-        return this.prisma.subjectAssignment.update({
+        const updated = await this.prisma.subjectAssignment.update({
             where: { id: assignmentId },
             data: {
                 teacherId: dto.teacherId,
@@ -112,11 +129,23 @@ export class AllocationService {
                 }
             }
         });
+
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId,
+            userId,
+            'SUBJECT_ALLOCATION',
+            'UPDATE',
+            assignmentId,
+            dto
+        ));
+
+        return updated;
     }
 
-    async removeAssignment(schoolId: number, assignmentId: number) {
+    async removeAssignment(schoolId: number, assignmentId: number, userId: number) {
         const assignment = await this.prisma.subjectAssignment.findUnique({
             where: { id: assignmentId },
+            include: { subject: true, class: true }
         });
 
         if (!assignment || assignment.schoolId !== schoolId) {
@@ -125,9 +154,19 @@ export class AllocationService {
 
         // Check if there are dependent records like Timetable entries (omitted for now, but good practice)
 
-        return this.prisma.subjectAssignment.delete({
+        const deleted = await this.prisma.subjectAssignment.delete({
             where: { id: assignmentId },
         });
+
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId,
+            userId,
+            'SUBJECT_ALLOCATION',
+            'DELETE',
+            assignmentId
+        ));
+
+        return deleted;
     }
 
     async getSmartSuggestions(schoolId: number, classId: number, subjectId: number, sectionId?: number) {

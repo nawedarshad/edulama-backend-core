@@ -1,5 +1,6 @@
 import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -59,6 +60,28 @@ export class S3StorageService {
         } catch (error) {
             this.logger.error(`Failed to upload file to R2: ${error.message}`, error.stack);
             throw new InternalServerErrorException('Failed to upload file to cloud storage');
+        }
+    }
+
+    /**
+     * Generates a pre-signed URL for direct client-side upload to R2
+     * @param customKey The full path/key in the R2 bucket (e.g. tenantid/studentid/docs/filename.pdf)
+     * @param mimeType The file content type
+     * @param expiresIn Expiration time in seconds (default 3600/1hr)
+     */
+    async getPresignedUrl(customKey: string, mimeType: string, expiresIn: number = 3600): Promise<string> {
+        try {
+            const command = new PutObjectCommand({
+                Bucket: this.bucketName,
+                Key: customKey,
+                ContentType: mimeType,
+            });
+
+            const presignedUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
+            return presignedUrl;
+        } catch (error) {
+            this.logger.error(`Failed to generate presigned URL: ${error.message}`, error.stack);
+            throw new InternalServerErrorException('Failed to generate upload URL');
         }
     }
 

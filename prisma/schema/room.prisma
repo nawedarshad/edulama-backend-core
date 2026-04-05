@@ -36,6 +36,7 @@ model Room {
   assignments            RoomAssignment[]
   timetableEntries       TimetableEntry[]
   timetableOverrides     TimetableOverride[]
+  timetableEntryRooms    TimetableEntryRoom[]
   examSchedules          ExamSchedule[]
   seatingArrangements    SeatingArrangement[]
   invigilatorAssignments InvigilatorAssignment[]

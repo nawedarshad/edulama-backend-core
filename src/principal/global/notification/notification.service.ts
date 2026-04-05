@@ -45,8 +45,13 @@ export class NotificationService {
                     createdAt: new Date(),
                 });
 
-                if (user.deviceToken && Expo.isExpoPushToken(user.deviceToken)) {
-                    pushTokens.push({ token: user.deviceToken, user });
+                if (user.deviceTokens) {
+                    const tokensMap = user.deviceTokens as Record<string, string>;
+                    for (const t of Object.values(tokensMap)) {
+                        if (Expo.isExpoPushToken(t)) {
+                            pushTokens.push({ token: t, user });
+                        }
+                    }
                 }
             }
 
@@ -67,7 +72,7 @@ export class NotificationService {
             while (true) {
                 const memberships = await this.prisma.userSchool.findMany({
                     where: { schoolId, isActive: true },
-                    select: { user: { select: { id: true, deviceToken: true } } },
+                    select: { user: { select: { id: true, deviceTokens: true } } },
                     skip,
                     take: limit,
                     orderBy: { id: 'asc' },
@@ -91,7 +96,7 @@ export class NotificationService {
                     userId: { in: dto.targetUserIds },
                     isActive: true
                 },
-                select: { user: { select: { id: true, deviceToken: true } } },
+                select: { user: { select: { id: true, deviceTokens: true } } },
             });
 
             const validUsers = memberships.map(m => m.user);
@@ -119,9 +124,14 @@ export class NotificationService {
                         createdAt: new Date(),
                     });
 
-                    // Collect Push Token
-                    if (user.deviceToken && Expo.isExpoPushToken(user.deviceToken)) {
-                        pushTokens.push({ token: user.deviceToken, user });
+                    // Collect Push Tokens
+                    if (user.deviceTokens) {
+                        const tokensMap = user.deviceTokens as Record<string, string>;
+                        for (const t of Object.values(tokensMap)) {
+                            if (Expo.isExpoPushToken(t)) {
+                                pushTokens.push({ token: t, user });
+                            }
+                        }
                     }
                 }
 
@@ -151,12 +161,15 @@ export class NotificationService {
                         { roles: { some: { roleId: { in: dto.targetRoleIds } } } }
                     ]
                 },
-                select: { user: { select: { id: true, deviceToken: true } } },
+                select: { user: { select: { id: true, deviceTokens: true } } },
             });
 
             const roleUsers = memberships.map(m => m.user);
             this.logger.log(`[NotificationService] Role-based: found ${roleUsers.length} users for roleIds=[${dto.targetRoleIds?.join(',')}]`);
-            const usersWithTokens = roleUsers.filter(u => u.deviceToken && Expo.isExpoPushToken(u.deviceToken));
+            const usersWithTokens = roleUsers.filter(u => {
+                if (!u.deviceTokens) return false;
+                return Object.values(u.deviceTokens as Record<string, string>).some(t => Expo.isExpoPushToken(t));
+            });
             this.logger.log(`[NotificationService] Role-based: ${usersWithTokens.length} users have valid Expo push tokens`);
 
             if (roleUsers.length > 0) {
@@ -183,8 +196,13 @@ export class NotificationService {
                             createdAt: new Date(),
                         });
 
-                        if (user.deviceToken && Expo.isExpoPushToken(user.deviceToken)) {
-                            pushTokens.push(user.deviceToken);
+                        if (user.deviceTokens) {
+                            const tokensMap = user.deviceTokens as Record<string, string>;
+                            for (const t of Object.values(tokensMap)) {
+                                if (Expo.isExpoPushToken(t)) {
+                                    pushTokens.push(t);
+                                }
+                            }
                         }
                     }
 

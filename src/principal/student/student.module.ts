@@ -5,9 +5,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
+import { AuditLogModule } from '../../common/audit/audit-log.module';
+import { FileUploadModule } from '../../common/file-upload/file-upload.module';
 
 @Module({
-    imports: [HttpModule, ConfigModule],
+    imports: [HttpModule, ConfigModule, AuditLogModule, FileUploadModule],
     controllers: [StudentController],
     providers: [StudentService, PrismaService],
 })

@@ -39,6 +39,7 @@ export class TeacherAttendanceController {
     @ApiOperation({ summary: 'Get Session Details', description: 'Get existing attendance session and records if available.' })
     getSession(
         @Request() req,
+        @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('classId', ParseIntPipe) classId: number,
         @Query('sectionId', ParseIntPipe) sectionId: number,
         @Query('date') date: string,
@@ -48,6 +49,7 @@ export class TeacherAttendanceController {
         const schoolId = req.user.schoolId;
         return this.service.getSession(
             schoolId,
+            academicYearId,
             classId,
             sectionId,
             new Date(date),
@@ -60,6 +62,7 @@ export class TeacherAttendanceController {
     @ApiOperation({ summary: 'Get Monthly Attendance', description: 'Get raw session data for a month.' })
     getMonthlyAttendance(
         @Request() req,
+        @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('classId', ParseIntPipe) classId: number,
         @Query('sectionId', ParseIntPipe) sectionId: number,
         @Query('year', ParseIntPipe) year: number,
@@ -69,6 +72,7 @@ export class TeacherAttendanceController {
         const schoolId = req.user.schoolId;
         return this.service.getMonthlyAttendance(
             schoolId,
+            academicYearId,
             classId,
             sectionId,
             year,
@@ -104,12 +108,14 @@ export class TeacherAttendanceController {
     @ApiOperation({ summary: 'Get Late Students for Attendance', description: 'Get list of students marked as late for the date.' })
     getLateStudents(
         @Request() req,
+        @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('classId', ParseIntPipe) classId: number,
         @Query('sectionId', ParseIntPipe) sectionId: number,
         @Query('date') date: string,
     ) {
         return this.service.getLateStudentsForAttendance(
             req.user.schoolId,
+            academicYearId,
             classId,
             sectionId,
             new Date(date)

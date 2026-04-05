@@ -34,7 +34,7 @@ export class TimetableAnalyticsService {
         });
 
         const teachers = await this.prisma.teacherProfile.findMany({
-            where: { id: { in: workload.map(w => w.teacherId as number) } },
+            where: { id: { in: workload.map(w => w.teacherId as number) }, schoolId },
             select: { id: true, user: { select: { name: true } } }
         });
 
@@ -57,7 +57,7 @@ export class TimetableAnalyticsService {
         });
 
         const subjects = await this.prisma.subject.findMany({
-            where: { id: { in: distribution.map(d => d.subjectId as number) } },
+            where: { id: { in: distribution.map(d => d.subjectId as number) }, schoolId },
             select: { id: true, name: true }
         });
 
@@ -128,19 +128,19 @@ export class TimetableAnalyticsService {
         // 3. Get metadata for entities
         const [teachers, subjects, rooms, groups] = await Promise.all([
             this.prisma.teacherProfile.findMany({
-                where: { id: { in: Array.from(teacherCounts.keys()) } },
+                where: { id: { in: Array.from(teacherCounts.keys()) }, schoolId },
                 select: { id: true, user: { select: { name: true } } }
             }),
             this.prisma.subject.findMany({
-                where: { id: { in: Array.from(subjectCounts.keys()) } },
+                where: { id: { in: Array.from(subjectCounts.keys()) }, schoolId },
                 select: { id: true, name: true }
             }),
             this.prisma.room.findMany({
-                where: { id: { in: Array.from(roomCounts.keys()) } },
+                where: { id: { in: Array.from(roomCounts.keys()) }, schoolId },
                 select: { id: true, name: true }
             }),
             this.prisma.academicGroup.findMany({
-                where: { id: { in: Array.from(groupCounts.keys()) } },
+                where: { id: { in: Array.from(groupCounts.keys()) }, schoolId },
                 select: { id: true, name: true }
             })
         ]);

@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class ParentAttendanceService {
     constructor(private readonly prisma: PrismaService) { }
 
-    async getStudentAttendance(studentId: number, schoolId: number, month: number, year: number) {
+    async getStudentAttendance(studentId: number, schoolId: number, academicYearId: number, month: number, year: number) {
         const startDate = new Date(year, month - 1, 1);
         const endDate = new Date(year, month, 0, 23, 59, 59, 999);
 
@@ -14,6 +14,7 @@ export class ParentAttendanceService {
                 studentProfileId: studentId,
                 schoolId: schoolId,
                 session: {
+                    academicYearId: academicYearId,
                     date: {
                         gte: startDate,
                         lte: endDate,
@@ -34,7 +35,7 @@ export class ParentAttendanceService {
             },
         });
 
-        return attendanceRecords.map(record => ({
+        return attendanceRecords.map((record: any) => ({
             date: record.session.date.toISOString(),
             status: record.status,
             isLate: record.isLate,

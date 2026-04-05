@@ -18,6 +18,8 @@ export class PrincipalAuditLogController {
         @Query('limit') limit?: number,
         @Query('entity') entity?: string,
         @Query('entityId') entityId?: number,
+        @Query('entities') entities?: string, // Comma separated entities
+        @Query('entityIds') entityIds?: string, // Comma separated IDs
         @Query('action') action?: string,
         @Query('userId') userId?: number,
     ) {
@@ -29,6 +31,8 @@ export class PrincipalAuditLogController {
             userId,
             entity,
             entityId,
+            entities: entities ? entities.split(',') : undefined,
+            entityIds: entityIds ? entityIds.split(',').map(id => Number(id)) : undefined,
             action,
         });
     }

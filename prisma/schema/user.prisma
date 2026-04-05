@@ -194,7 +194,7 @@ model User {
   photo        String?
   isActive     Boolean   @default(true)
   lastSeen     DateTime?
-  deviceToken  String?
+  deviceTokens Json?     // e.g. { "TEACHER": "token", "PARENT": "token" }
   tokenVersion Int       @default(1)
 
   twoFactorEnabled    Boolean   @default(false)

@@ -51,10 +51,9 @@ export class SubjectController {
     // CATEGORIES
     // ===================================================
 
-    @ApiOperation({ summary: 'Create a new subject category' })
     @Post('category')
     createCategory(@Request() req, @Body() dto: CreateCategoryDto) {
-        return this.subjectService.createCategory(req.user.schoolId, dto);
+        return this.subjectService.createCategory(req.user.schoolId, dto, req.user.id);
     }
 
     @ApiOperation({ summary: 'Get all subject categories' })
@@ -63,26 +62,23 @@ export class SubjectController {
         return this.subjectService.findAllCategories(req.user.schoolId);
     }
 
-    @ApiOperation({ summary: 'Update a subject category' })
     @Patch('category/:id')
     updateCategory(@Request() req, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
-        return this.subjectService.updateCategory(req.user.schoolId, id, dto);
+        return this.subjectService.updateCategory(req.user.schoolId, id, dto, req.user.id);
     }
 
-    @ApiOperation({ summary: 'Delete a subject category' })
     @Delete('category/:id')
     removeCategory(@Request() req, @Param('id', ParseIntPipe) id: number) {
-        return this.subjectService.removeCategory(req.user.schoolId, id);
+        return this.subjectService.removeCategory(req.user.schoolId, id, req.user.id);
     }
 
     // ===================================================
     // CLASS SUBJECTS (Specific)
     // ===================================================
 
-    @ApiOperation({ summary: 'Assign a subject to a class (and optionally section)' })
     @Post('class-assignment')
     assignToClass(@Request() req, @Body() dto: CreateClassSubjectDto) {
-        return this.subjectService.assignToClass(req.user.schoolId, dto);
+        return this.subjectService.assignToClass(req.user.schoolId, dto, req.user.id);
     }
 
     @ApiOperation({ summary: 'List subject assignments for a class/section' })
@@ -101,33 +97,30 @@ export class SubjectController {
         );
     }
 
-    @ApiOperation({ summary: 'Update a class subject assignment' })
     @Patch('class-assignment/:id')
     updateClassSubject(
         @Request() req,
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: UpdateClassSubjectDto
     ) {
-        return this.subjectService.updateClassSubject(req.user.schoolId, id, dto);
+        return this.subjectService.updateClassSubject(req.user.schoolId, id, dto, req.user.id);
     }
 
-    @ApiOperation({ summary: 'Remove a class subject assignment' })
     @Delete('class-assignment/:id')
     removeClassSubject(
         @Request() req,
         @Param('id', ParseIntPipe) id: number
     ) {
-        return this.subjectService.removeClassSubject(req.user.schoolId, id);
+        return this.subjectService.removeClassSubject(req.user.schoolId, id, req.user.id);
     }
 
     // ===================================================
     // GLOBAL SUBJECTS
     // ===================================================
 
-    @ApiOperation({ summary: 'Create a new global subject (School/Year scoped)' })
     @Post()
     create(@Request() req, @Body() dto: CreateSubjectDto) {
-        return this.subjectService.create(req.user.schoolId, dto);
+        return this.subjectService.create(req.user.schoolId, dto, req.user.id);
     }
 
     @ApiOperation({ summary: 'List all subjects for the current academic year' })
@@ -142,15 +135,13 @@ export class SubjectController {
         return this.subjectService.findOne(req.user.schoolId, id);
     }
 
-    @ApiOperation({ summary: 'Update a subject' })
     @Patch(':id')
     update(@Request() req, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateSubjectDto) {
-        return this.subjectService.update(req.user.schoolId, id, dto);
+        return this.subjectService.update(req.user.schoolId, id, dto, req.user.id);
     }
 
-    @ApiOperation({ summary: 'Delete a subject' })
     @Delete(':id')
     remove(@Request() req, @Param('id', ParseIntPipe) id: number) {
-        return this.subjectService.remove(req.user.schoolId, id);
+        return this.subjectService.remove(req.user.schoolId, id, req.user.id);
     }
 }

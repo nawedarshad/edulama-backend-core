@@ -146,6 +146,7 @@ model StudentDocument {
 
   name       String // e.g., "Birth Certificate"
   type       String // e.g., "PDF", "IMAGE"
+  size       Int?   // Size in bytes
   url        String
   isVerified Boolean  @default(false)
   uploadedAt DateTime @default(now())

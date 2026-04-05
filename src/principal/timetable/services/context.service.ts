@@ -13,9 +13,11 @@ export class TimetableContextService {
         return this.prisma.timetableEntry.findMany({
             where: { schoolId, academicYearId, groupId },
             include: {
-                subject: { select: { name: true, code: true } },
-                teacher: { select: { user: { select: { name: true } } } },
-                room: { select: { name: true } },
+                subject: { select: { name: true, code: true, color: true } },
+                teacher: { select: { id: true, empCode: true, personalInfo: { select: { fullName: true } }, user: { select: { name: true } } } },
+                teachers: { include: { teacher: { select: { id: true, empCode: true, personalInfo: { select: { fullName: true } }, user: { select: { name: true } } } } } },
+                room: { select: { id: true, name: true, code: true } },
+                rooms: { include: { room: { select: { id: true, name: true, code: true } } } },
                 timeSlot: true,
             },
         });
@@ -27,11 +29,19 @@ export class TimetableContextService {
         if (!room) throw new NotFoundException('Room not found or unauthorized');
 
         return this.prisma.timetableEntry.findMany({
-            where: { schoolId, academicYearId, roomId },
+            where: { 
+                schoolId, 
+                academicYearId, 
+                OR: [
+                    { roomId },
+                    { rooms: { some: { roomId } } }
+                ]
+            },
             include: {
-                subject: { select: { name: true, code: true } },
-                teacher: { select: { user: { select: { name: true } } } },
+                subject: { select: { name: true, code: true, color: true } },
                 group: { select: { name: true } },
+                teacher: { select: { id: true, empCode: true, personalInfo: { select: { fullName: true } }, user: { select: { name: true } } } },
+                teachers: { include: { teacher: { select: { id: true, empCode: true, personalInfo: { select: { fullName: true } }, user: { select: { name: true } } } } } },
                 timeSlot: true,
             },
         });
@@ -43,11 +53,19 @@ export class TimetableContextService {
         if (!teacher) throw new NotFoundException('Teacher not found or unauthorized');
 
         return this.prisma.timetableEntry.findMany({
-            where: { schoolId, academicYearId, teacherId },
+            where: {
+                schoolId,
+                academicYearId,
+                OR: [
+                    { teacherId },
+                    { teachers: { some: { teacherId } } }
+                ]
+            },
             include: {
-                subject: { select: { name: true, code: true } },
+                subject: { select: { name: true, code: true, color: true } },
                 group: { select: { name: true } },
-                room: { select: { name: true } },
+                room: { select: { id: true, name: true, code: true } },
+                rooms: { include: { room: { select: { id: true, name: true, code: true } } } },
                 timeSlot: true,
             },
         });
@@ -85,14 +103,16 @@ export class TimetableContextService {
             }),
             this.prisma.room.findMany({
                 where: { schoolId, status: 'ACTIVE' },
-                select: { id: true, name: true }
+                select: { id: true, name: true, code: true }
             }),
             this.prisma.timetableEntry.findMany({
                 where: { schoolId, academicYearId, groupId },
                 include: {
-                    subject: { select: { name: true, code: true } },
-                    teacher: { select: { user: { select: { name: true } } } },
-                    room: { select: { name: true } },
+                    subject: { select: { name: true, code: true, color: true } },
+                    teacher: { select: { id: true, empCode: true, personalInfo: { select: { fullName: true } }, user: { select: { name: true } } } },
+                    teachers: { include: { teacher: { select: { id: true, empCode: true, personalInfo: { select: { fullName: true } }, user: { select: { name: true } } } } } },
+                    room: { select: { id: true, name: true, code: true } },
+                    rooms: { include: { room: { select: { id: true, name: true, code: true } } } },
                     timeSlot: true,
                 },
             }),
@@ -108,7 +128,7 @@ export class TimetableContextService {
                 },
                 include: {
                     subject: { select: { id: true, name: true, code: true, color: true } },
-                    teacher: { select: { id: true, user: { select: { name: true } } } },
+                    teacher: { select: { id: true, empCode: true, personalInfo: { select: { fullName: true } }, user: { select: { name: true } } } },
                 }
             })
         ]);

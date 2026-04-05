@@ -43,9 +43,10 @@ export class TimetableController {
     copyFromYear(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
+        @GetUser('id') userId: number,
         @Body('fromYearId', ParseIntPipe) fromYearId: number,
     ) {
-        return this.timetableService.copyTimetableStructure(schoolId, fromYearId, academicYearId);
+        return this.timetableService.copyTimetableStructure(schoolId, fromYearId, academicYearId, userId);
     }
 
     // ----------------------------------------------------------------
@@ -100,6 +101,22 @@ export class TimetableController {
         return this.timetableService.deleteTimePeriod(schoolId, id);
     }
 
+    @Get('count-entries')
+    @ApiOperation({ summary: 'Count entries for a specific day', description: 'Returns the number of timetable entries for a given day and academic year.' })
+    @ApiQuery({ name: 'day', enum: DayOfWeek })
+    @ApiQuery({ name: 'academicYearId', required: false, type: Number })
+    countEntries(
+        @GetUser('schoolId') schoolId: number,
+        @GetUser('academicYearId') sessionYearId: number,
+        @Query('day') day: DayOfWeek,
+        @Query('academicYearId') queryYearId?: string,
+        @Query('classId') classId?: string,
+    ) {
+        const yearId = queryYearId ? parseInt(queryYearId) : sessionYearId;
+        const cId = classId ? parseInt(classId) : undefined;
+        return this.timetableService.countEntriesByDay(schoolId, yearId, day, cId);
+    }
+
     // ----------------------------------------------------------------
     // TIMETABLE ENTRIES
     // ----------------------------------------------------------------
@@ -112,9 +129,10 @@ export class TimetableController {
     createEntry(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
+        @GetUser('id') userId: number,
         @Body() dto: CreateTimetableEntryDto,
     ) {
-        return this.timetableService.createEntry(schoolId, academicYearId, dto);
+        return this.timetableService.createEntry(schoolId, academicYearId, dto, userId);
     }
 
     @Delete('entries/:id')
@@ -124,9 +142,10 @@ export class TimetableController {
     @ApiResponse({ status: 400, description: 'Cannot delete locked entry.' })
     deleteEntry(
         @GetUser('schoolId') schoolId: number,
+        @GetUser('id') userId: number,
         @Param('id', ParseIntPipe) id: number,
     ) {
-        return this.timetableService.deleteEntry(schoolId, id);
+        return this.timetableService.deleteEntry(schoolId, id, userId);
     }
 
     @Get('entries/group/:groupId')

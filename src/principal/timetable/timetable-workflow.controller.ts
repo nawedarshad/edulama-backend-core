@@ -29,9 +29,10 @@ export class TimetableWorkflowController {
     swapEntries(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
+        @GetUser('id') userId: number,
         @Body() dto: SwapEntriesDto,
     ) {
-        return this.workflowService.swapEntries(schoolId, academicYearId, dto);
+        return this.workflowService.swapEntries(schoolId, academicYearId, dto, userId);
     }
 
     @Post('move')
@@ -41,9 +42,10 @@ export class TimetableWorkflowController {
     moveEntry(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
+        @GetUser('id') userId: number,
         @Body() dto: MoveEntryDto,
     ) {
-        return this.workflowService.moveEntry(schoolId, academicYearId, dto);
+        return this.workflowService.moveEntry(schoolId, academicYearId, dto, userId);
     }
 
     @Patch('entries/:id/lock')
@@ -53,10 +55,11 @@ export class TimetableWorkflowController {
     @ApiResponse({ status: 200, description: 'Entry lock status updated.' })
     lockEntry(
         @GetUser('schoolId') schoolId: number,
+        @GetUser('id') userId: number,
         @Param('id', ParseIntPipe) entryId: number,
         @Body('isLocked') isLocked: boolean,
     ) {
-        return this.workflowService.lockEntry(schoolId, entryId, isLocked);
+        return this.workflowService.lockEntry(schoolId, entryId, isLocked, userId);
     }
 
     @Post('sections/:sectionId/publish')
@@ -66,7 +69,7 @@ export class TimetableWorkflowController {
     publishTimetable(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
-        @GetUser('userId') userId: number,
+        @GetUser('id') userId: number,
         @Param('sectionId', ParseIntPipe) sectionId: number,
     ) {
         return this.workflowService.publishTimetable(schoolId, academicYearId, sectionId, userId);
@@ -78,7 +81,7 @@ export class TimetableWorkflowController {
     publishAllTimetable(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
-        @GetUser('userId') userId: number,
+        @GetUser('id') userId: number,
     ) {
         return this.workflowService.publishAllTimetable(schoolId, academicYearId, userId);
     }
@@ -90,9 +93,10 @@ export class TimetableWorkflowController {
     lockTimetable(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
+        @GetUser('id') userId: number,
         @Param('sectionId', ParseIntPipe) sectionId: number,
     ) {
-        return this.workflowService.lockTimetable(schoolId, academicYearId, sectionId);
+        return this.workflowService.lockTimetable(schoolId, academicYearId, sectionId, userId);
     }
 
     @Post('sections/:sectionId/unlock')
@@ -102,8 +106,9 @@ export class TimetableWorkflowController {
     unlockTimetable(
         @GetUser('schoolId') schoolId: number,
         @GetUser('academicYearId') academicYearId: number,
+        @GetUser('id') userId: number,
         @Param('sectionId', ParseIntPipe) sectionId: number,
     ) {
-        return this.workflowService.unlockTimetable(schoolId, academicYearId, sectionId);
+        return this.workflowService.unlockTimetable(schoolId, academicYearId, sectionId, userId);
     }
 }

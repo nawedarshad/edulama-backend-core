@@ -53,6 +53,7 @@ export class SchoolAdminAttendanceController {
     @Get('session')
     async getClassSession(
         @Request() req,
+        @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('classId', ParseIntPipe) classId: number,
         @Query('sectionId', ParseIntPipe) sectionId: number,
         @Query('date') date: string,
@@ -63,7 +64,7 @@ export class SchoolAdminAttendanceController {
         const d = new Date(date);
         const subId = subjectId ? parseInt(subjectId) : undefined;
         const pId = timePeriodId ? parseInt(timePeriodId) : undefined;
-        return this.service.getClassSession(req.user.id, classId, sectionId, d, subId, pId);
+        return this.service.getClassSession(req.user.id, academicYearId, classId, sectionId, d, subId, pId);
     }
 
     @Delete('session/:id')

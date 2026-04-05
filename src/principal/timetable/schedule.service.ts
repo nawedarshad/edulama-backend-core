@@ -101,13 +101,11 @@ export class ScheduleService {
             });
         }
 
-        return this.prisma.schedule.update({
-            where: { id },
+        await this.prisma.schedule.updateMany({
+            where: { id, schoolId },
             data: dto,
-            include: {
-                timePeriods: true,
-            },
         });
+        return this.findOne(schoolId, id);
     }
 
     async deleteSchedule(schoolId: number, id: number) {
@@ -122,8 +120,8 @@ export class ScheduleService {
             throw new BadRequestException(`Cannot delete schedule. ${groupCount} academic group(s) are currently using this schedule.`);
         }
 
-        return this.prisma.schedule.delete({
-            where: { id },
+        return this.prisma.schedule.deleteMany({
+            where: { id, schoolId },
         });
     }
 
@@ -145,10 +143,11 @@ export class ScheduleService {
             data: { isDefault: false },
         });
 
-        return this.prisma.schedule.update({
-            where: { id },
+        await this.prisma.schedule.updateMany({
+            where: { id, schoolId },
             data: { isDefault: true },
         });
+        return this.findOne(schoolId, id);
     }
 
     async duplicateSchedule(schoolId: number, fromScheduleId: number, newName: string) {

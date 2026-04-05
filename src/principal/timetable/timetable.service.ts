@@ -82,23 +82,23 @@ export class TimetableService {
     // ----------------------------------------------------------------
     // ENTRIES
     // ----------------------------------------------------------------
-    async createEntry(schoolId: number, academicYearId: number, dto: CreateTimetableEntryDto) {
+    async createEntry(schoolId: number, academicYearId: number, dto: CreateTimetableEntryDto, userId?: number) {
         const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
         await this.checkYearLock(schoolId, resolvedYearId);
-        return this.entries.createEntry(schoolId, resolvedYearId, dto);
+        return this.entries.createEntry(schoolId, resolvedYearId, dto, userId);
     }
 
-    async deleteEntry(schoolId: number, id: number) {
+    async deleteEntry(schoolId: number, id: number, userId?: number) {
         const entry = await this.prisma.timetableEntry.findUnique({
             where: { id_schoolId: { id, schoolId } }
         });
         if (entry) await this.checkYearLock(schoolId, entry.academicYearId);
-        return this.entries.deleteEntry(schoolId, id);
+        return this.entries.deleteEntry(schoolId, id, userId);
     }
 
-    async copyTimetableStructure(schoolId: number, fromYearId: number, toYearId: number) {
+    async copyTimetableStructure(schoolId: number, fromYearId: number, toYearId: number, userId?: number) {
         await this.checkYearLock(schoolId, toYearId);
-        return this.entries.copyTimetableStructure(schoolId, fromYearId, toYearId);
+        return this.entries.copyTimetableStructure(schoolId, fromYearId, toYearId, userId);
     }
 
     // ----------------------------------------------------------------
@@ -163,5 +163,43 @@ export class TimetableService {
     async getGroupSubjectDistribution(schoolId: number, academicYearId: number, groupId: number) {
         const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
         return this.analytics.getGroupSubjectDistribution(schoolId, resolvedYearId, groupId);
+    }
+
+    async countEntriesByDay(schoolId: number, academicYearId: number, day: DayOfWeek, classId?: number) {
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        
+        // 1. If this is a global check (no classId), we should only count entries 
+        // for classes that DO NOT have an explicit override for this day that makes it a working day.
+        // If a class HAS an override, its entries are "safe" and shouldn't block a global holiday change.
+        let excludedClassIds: number[] = [];
+        if (!classId) {
+            const overrides = await this.prisma.workingPattern.findMany({
+                where: { 
+                    schoolId, 
+                    academicYearId: resolvedYearId, 
+                    dayOfWeek: day, 
+                    classId: { not: null },
+                    isWorking: true 
+                },
+                select: { classId: true }
+            });
+            excludedClassIds = overrides.map(o => o.classId).filter((id): id is number => id !== null);
+        }
+
+        // 2. Count entries filtering by the determined scope
+        const count = await this.prisma.timetableEntry.count({
+            where: {
+                schoolId,
+                academicYearId: resolvedYearId,
+                day,
+                ...(classId 
+                    ? { group: { classId } } 
+                    : excludedClassIds.length > 0 
+                        ? { group: { classId: { notIn: excludedClassIds } } }
+                        : {}
+                )
+            }
+        });
+        return { count };
     }
 }

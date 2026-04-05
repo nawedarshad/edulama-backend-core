@@ -3,9 +3,10 @@ import { CalendarController } from './calendar.controller';
 import { CalendarService } from './calendar.service';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
+import { TimetableModule } from '../timetable/timetable.module';
 
 @Module({
-    imports: [HttpModule, ConfigModule],
+    imports: [HttpModule, ConfigModule, TimetableModule],
     controllers: [CalendarController],
     providers: [CalendarService],
     exports: [CalendarService],

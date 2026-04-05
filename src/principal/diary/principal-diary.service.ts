@@ -36,11 +36,18 @@ export class PrincipalDiaryService {
         if (subjectId) where.subjectId = subjectId;
 
         if (date) {
-            where.lessonDate = new Date(date);
+            const d = new Date(date);
+            const startOfDay = new Date(d); startOfDay.setUTCHours(0, 0, 0, 0);
+            const endOfDay = new Date(d); endOfDay.setUTCHours(23, 59, 59, 999);
+            where.lessonDate = { gte: startOfDay, lte: endOfDay };
         } else if (startDate && endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const sDate = new Date(start); sDate.setUTCHours(0, 0, 0, 0);
+            const eDate = new Date(end); eDate.setUTCHours(23, 59, 59, 999);
             where.lessonDate = {
-                gte: new Date(startDate),
-                lte: new Date(endDate),
+                gte: sDate,
+                lte: eDate,
             };
         }
 
@@ -54,7 +61,7 @@ export class PrincipalDiaryService {
                     teacher: { select: { id: true, user: { select: { name: true } } } },
                     group: { select: { id: true, name: true } },
                     class: { select: { id: true, name: true } },
-                    section: { select: { id: true, name: true } },
+                    section: { select: { id: true, name: true, classId: true } },
                     subject: { select: { id: true, name: true, code: true } },
                 }
             }),
@@ -64,6 +71,7 @@ export class PrincipalDiaryService {
         const mappedData = data.map(diary => ({
             ...diary,
             teacherName: diary.teacher?.user?.name || 'Unknown',
+            classId: diary.classId || (diary.section as any)?.classId,
         }));
 
         return {

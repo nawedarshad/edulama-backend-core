@@ -37,16 +37,37 @@ export class AuditLogService {
         }
     }
 
-    async findAll(filter: { page?: number; limit?: number; schoolId?: number; userId?: number; entity?: string; entityId?: number; action?: string; }) {
-        const { page = 1, limit = 20, schoolId, userId, entity, entityId, action } = filter;
+    async findAll(filter: { 
+        page?: number; 
+        limit?: number; 
+        schoolId?: number; 
+        userId?: number; 
+        entity?: string; 
+        entityId?: number; 
+        entities?: string[];
+        entityIds?: number[];
+        action?: string; 
+    }) {
+        const { page = 1, limit = 20, schoolId, userId, entity, entityId, entities, entityIds, action } = filter;
         const skip = (page - 1) * limit;
 
         const where: Prisma.AuditLogWhereInput = {};
 
         if (schoolId) where.schoolId = schoolId;
         if (userId) where.userId = userId;
-        if (entity) where.entity = { contains: entity, mode: 'insensitive' };
-        if (entityId) where.entityId = Number(entityId);
+        
+        if (entities && entities.length > 0 && entityIds && entityIds.length > 0) {
+            where.OR = [
+                {
+                    entity: { in: entities },
+                    entityId: { in: entityIds.map(id => Number(id)) }
+                }
+            ];
+        } else {
+            if (entity) where.entity = { contains: entity, mode: 'insensitive' };
+            if (entityId) where.entityId = Number(entityId);
+        }
+
         if (action) where.action = action as AuditAction;
 
         const [logs, total] = await Promise.all([

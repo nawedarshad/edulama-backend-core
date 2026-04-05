@@ -3,6 +3,8 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTimetableEntryDto } from '../dto/create-timetable-entry.dto';
 import { TimetableCacheService } from './cache.service';
 import { TimetableInventoryService } from './inventory.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AuditLogEvent } from '../../../common/audit/audit.event';
 
 @Injectable()
 export class TimetableEntryService {
@@ -11,67 +13,77 @@ export class TimetableEntryService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly cacheService: TimetableCacheService,
-        private readonly inventoryService: TimetableInventoryService
+        private readonly inventoryService: TimetableInventoryService,
+        private readonly eventEmitter: EventEmitter2,
     ) { }
 
-    async createEntry(schoolId: number, academicYearId: number, dto: CreateTimetableEntryDto) {
-        const { groupId, teacherId, roomId, subjectId, timeSlotId, day } = dto;
-        this.logger.debug(`Creating entry: schoolId=${schoolId}, yearId=${academicYearId}, groupId=${groupId}, slotId=${timeSlotId}`);
+    async createEntry(schoolId: number, academicYearId: number, dto: CreateTimetableEntryDto, userId?: number) {
+        const { groupId, teacherId, teacherIds = [], roomId, roomIds = [], subjectId, timeSlotId, day, durationSlots = 1 } = dto;
+        
+        // 1. Availability Check (Atomic & Deep)
+        const availability = await this.inventoryService.checkAvailability(schoolId, academicYearId, dto);
+        if (availability.status === 'CONFLICT') {
+            throw new ConflictException(availability.message);
+        }
 
-        // 1. Ownership & N+1 Optimization: Fetch related entities once
-        const [group, teacher, room, subject, timeSlot] = await Promise.all([
-            this.prisma.academicGroup.findFirst({ where: { id: groupId, schoolId } }),
-            teacherId ? this.prisma.teacherProfile.findFirst({ where: { id: teacherId, schoolId } }) : null,
-            roomId ? this.prisma.room.findFirst({ where: { id: roomId, schoolId } }) : null,
-            subjectId ? this.prisma.subject.findFirst({ where: { id: subjectId, schoolId } }) : null,
-            this.prisma.timeSlot.findFirst({ where: { id: timeSlotId, schoolId } })
-        ]);
+        // 2. Resource Prep
+        const allTeacherIds = [...new Set([teacherId, ...teacherIds].filter((id): id is number => !!id))];
+        const allRoomIds = [...new Set([roomId, ...roomIds].filter((id): id is number => !!id))];
 
-        if (!group) throw new NotFoundException('Group not found or unauthorized');
-        if (teacherId && !teacher) throw new NotFoundException('Teacher not found or unauthorized');
-        if (roomId && !room) throw new NotFoundException('Room not found or unauthorized');
-        if (subjectId && !subject) throw new NotFoundException('Subject not found or unauthorized');
-        if (!timeSlot) throw new NotFoundException('Time slot not found or unauthorized. It may have been modified or deleted.');
-
-        // 2. Transactional Create (Atomic Conflict Check + Create)
+        // 3. Transactional Create
         const entry = await this.prisma.$transaction(async (tx) => {
-            // Re-check conflicts inside transaction to prevent race conditions
-            const groupConflict = await tx.timetableEntry.findFirst({
-                where: { schoolId, academicYearId, day, timeSlotId, groupId },
-            });
-            if (groupConflict) throw new ConflictException('Group already has a session in this slot');
-
-            if (teacherId) {
-                const teacherConflict = await tx.timetableEntry.findFirst({
-                    where: { schoolId, academicYearId, day, timeSlotId, teacherId },
-                });
-                if (teacherConflict) throw new ConflictException('Teacher is already busy in this slot');
-            }
-
-            if (roomId) {
-                const roomConflict = await tx.timetableEntry.findFirst({
-                    where: { schoolId, academicYearId, day, timeSlotId, roomId },
-                });
-                if (roomConflict) throw new ConflictException('Room is already occupied in this slot');
-            }
-
-            return tx.timetableEntry.create({
+            const newEntry = await tx.timetableEntry.create({
                 data: {
                     schoolId,
                     academicYearId,
-                    ...dto,
+                    groupId,
+                    subjectId,
+                    teacherId: teacherId || (allTeacherIds.length > 0 ? allTeacherIds[0] : null), // Primary for legacy
+                    roomId: roomId || (allRoomIds.length > 0 ? allRoomIds[0] : null), // Primary for legacy
+                    day,
+                    timeSlotId,
+                    durationSlots,
+                    isBlockStart: true,
+                    isFixed: dto.isFixed || false,
                 },
             });
+
+            // Create Junctions for Multi-Teacher
+            if (allTeacherIds.length > 0) {
+                await tx.timetableEntryTeacher.createMany({
+                    data: allTeacherIds.map(tId => ({
+                        entryId: newEntry.id,
+                        teacherId: tId,
+                    })),
+                });
+            }
+
+            // Create Junctions for Multi-Room
+            if (allRoomIds.length > 0) {
+                await tx.timetableEntryRoom.createMany({
+                    data: allRoomIds.map(rId => ({
+                        entryId: newEntry.id,
+                        roomId: rId,
+                    })),
+                });
+            }
+
+            return newEntry;
         });
+
+        // 4. Audit & Cache
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId, userId || 0, 'TIMETABLE_ENTRY', 'CREATE', entry.id, { ...dto, academicYearId }
+        ));
 
         await this.cacheService.invalidateAnalyticsCache(schoolId, academicYearId);
         return entry;
     }
 
-    async deleteEntry(schoolId: number, id: number) {
+    async deleteEntry(schoolId: number, id: number, userId?: number) {
         const entry = await this.prisma.timetableEntry.findUnique({
             where: { id_schoolId: { id, schoolId } },
-            select: { academicYearId: true }
+            select: { academicYearId: true, day: true, timeSlotId: true, groupId: true }
         });
 
         if (!entry) throw new NotFoundException('Timetable entry not found');
@@ -80,11 +92,16 @@ export class TimetableEntryService {
             where: { id_schoolId: { id, schoolId } },
         });
 
+        // Audit & Cache
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId, userId || 0, 'TIMETABLE_ENTRY', 'DELETE', id, entry
+        ));
+
         await this.cacheService.invalidateAnalyticsCache(schoolId, entry.academicYearId);
         return result;
     }
 
-    async copyTimetableStructure(schoolId: number, fromYearId: number, toYearId: number) {
+    async copyTimetableStructure(schoolId: number, fromYearId: number, toYearId: number, userId?: number) {
         const sourcePeriods = await this.prisma.timePeriod.findMany({
             where: { schoolId, academicYearId: fromYearId },
             include: { timeSlots: true },
@@ -95,7 +112,6 @@ export class TimetableEntryService {
         }
 
         const result = await this.prisma.$transaction(async (tx) => {
-            // Delete existing structure in target year (optional, but safer for "copy over")
             await tx.timePeriod.deleteMany({ where: { schoolId, academicYearId: toYearId } });
 
             for (const period of sourcePeriods) {
@@ -129,6 +145,10 @@ export class TimetableEntryService {
             }
             return { count: sourcePeriods.length };
         });
+
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId, userId || 0, 'TIMETABLE_STRUCTURE', 'COPY', toYearId, { fromYearId, toYearId }
+        ));
 
         await this.cacheService.invalidateAnalyticsCache(schoolId, toYearId);
         return { message: `Successfully copied ${result.count} periods and structure.` };

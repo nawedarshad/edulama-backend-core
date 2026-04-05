@@ -1,13 +1,18 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateSubjectDto, UpdateSubjectDto, CreateClassSubjectDto, UpdateClassSubjectDto, GetSubjectsQueryDto, CreateCategoryDto, UpdateCategoryDto } from './dto/subject.dto';
-import { AcademicYearStatus } from '@prisma/client';
+import { AcademicYearStatus, AssessmentType } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AuditLogEvent } from '../../common/audit/audit.event';
 
 @Injectable()
 export class SubjectService {
     private readonly logger = new Logger(SubjectService.name);
 
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private eventEmitter: EventEmitter2
+    ) { }
 
     private async getActiveAcademicYear(schoolId: number) {
         const academicYear = await this.prisma.academicYear.findFirst({
@@ -24,7 +29,7 @@ export class SubjectService {
     // 1. GLOBAL SUBJECT CATALOG (Scoped by School & Year)
     // ==================================================================
 
-    async create(schoolId: number, dto: CreateSubjectDto) {
+    async create(schoolId: number, dto: CreateSubjectDto, userId: number) {
         this.logger.log(`Creating subject for school ${schoolId}: ${dto.code} - ${dto.name}`);
 
         const existing = await this.prisma.subject.findUnique({
@@ -48,6 +53,16 @@ export class SubjectService {
                     schoolId,
                 },
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId,
+                userId,
+                'SUBJECT',
+                'CREATE',
+                subject.id,
+                dto
+            ));
+
             this.logger.log(`Subject created successfully: ${subject.id}`);
             return subject;
         } catch (error) {
@@ -104,14 +119,24 @@ export class SubjectService {
         return subject;
     }
 
-    async update(schoolId: number, id: number, dto: UpdateSubjectDto) {
+    async update(schoolId: number, id: number, dto: UpdateSubjectDto, userId: number) {
         this.logger.log(`Updating subject ${id} in school ${schoolId}`);
-        await this.findOne(schoolId, id);
+        const subject = await this.findOne(schoolId, id);
         try {
             const updated = await this.prisma.subject.update({
                 where: { id },
                 data: dto,
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId,
+                userId,
+                'SUBJECT',
+                'UPDATE',
+                id,
+                dto
+            ));
+
             this.logger.log(`Subject updated: ${id}`);
             return updated;
         } catch (error) {
@@ -120,9 +145,9 @@ export class SubjectService {
         }
     }
 
-    async remove(schoolId: number, id: number) {
+    async remove(schoolId: number, id: number, userId: number) {
         this.logger.log(`[School ${schoolId}] Attempting to remove subject ${id}`);
-        await this.findOne(schoolId, id);
+        const subject = await this.findOne(schoolId, id);
 
         const inUseCount = await this.prisma.classSubject.count({
             where: { subjectId: id, schoolId }
@@ -134,6 +159,15 @@ export class SubjectService {
 
         try {
             const deleted = await this.prisma.subject.delete({ where: { id } });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId,
+                userId,
+                'SUBJECT',
+                'DELETE',
+                id
+            ));
+
             this.logger.log(`[School ${schoolId}] Subject deleted: ${id}`);
             return deleted;
         } catch (e) {
@@ -146,7 +180,7 @@ export class SubjectService {
     // 2. CLASS SPECIFIC CONFIGURATION (ClassSubject)
     // ==================================================================
 
-    async assignToClass(schoolId: number, dto: CreateClassSubjectDto) {
+    async assignToClass(schoolId: number, dto: CreateClassSubjectDto, userId: number) {
         this.logger.log(`[School ${schoolId}] Assigning subject ${dto.subjectId} to class ${dto.classId}`);
         const academicYear = await this.getActiveAcademicYear(schoolId);
 
@@ -187,10 +221,21 @@ export class SubjectService {
                     passMarks: dto.passMarks,
                     isOptional: dto.isOptional,
                     hasLab: dto.hasLab,
-                    excludeFromGPA: dto.excludeFromGPA
+                    excludeFromGPA: dto.excludeFromGPA,
+                    isGraded: dto.isGraded ?? true,
+                    assessmentType: (dto.assessmentType ?? AssessmentType.MARKS) as AssessmentType
                 })),
                 skipDuplicates: true
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId,
+                userId,
+                'CLASS_SUBJECT',
+                'CREATE',
+                dto.subjectId,
+                { dto, sectionsAssigned: sectionsToAssign.length }
+            ));
 
             this.logger.log(`[School ${schoolId}] Assignment complete. Sections assigned: ${count.count}`);
             return { message: `Assigned to ${count.count} sections.` };
@@ -220,27 +265,53 @@ export class SubjectService {
         });
     }
 
-    async updateClassSubject(schoolId: number, id: number, dto: UpdateClassSubjectDto) {
+    async updateClassSubject(schoolId: number, id: number, dto: UpdateClassSubjectDto, userId: number) {
         this.logger.log(`Updating class subject ${id}`);
-        const cs = await this.prisma.classSubject.findFirst({
-            where: { id, schoolId }
+        const existing = await this.prisma.classSubject.findFirst({
+            where: { id, schoolId },
+            include: { subject: true }
         });
-        if (!cs) throw new NotFoundException('Class Subject configuration not found');
+        if (!existing) throw new NotFoundException('Class Subject configuration not found');
 
-        return this.prisma.classSubject.update({
+        const updated = await this.prisma.classSubject.update({
             where: { id },
-            data: dto
+            data: {
+                ...dto,
+                assessmentType: dto.assessmentType as AssessmentType
+            }
         });
+
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId,
+            userId,
+            'CLASS_SUBJECT',
+            'UPDATE',
+            id,
+            dto
+        ));
+
+        return updated;
     }
 
-    async removeClassSubject(schoolId: number, id: number) {
+    async removeClassSubject(schoolId: number, id: number, userId: number) {
         this.logger.log(`Removing class subject ${id}`);
-        const cs = await this.prisma.classSubject.findFirst({
-            where: { id, schoolId }
+        const existing = await this.prisma.classSubject.findFirst({
+            where: { id, schoolId },
+            include: { subject: true, class: { select: { name: true } }, section: { select: { name: true } } }
         });
-        if (!cs) throw new NotFoundException('Class Subject configuration not found');
+        if (!existing) throw new NotFoundException('Class Subject configuration not found');
 
-        return this.prisma.classSubject.delete({ where: { id } });
+        const deleted = await this.prisma.classSubject.delete({ where: { id } });
+
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId,
+            userId,
+            'CLASS_SUBJECT',
+            'DELETE',
+            id
+        ));
+
+        return deleted;
     }
 
     // ==================================================================
@@ -372,7 +443,7 @@ export class SubjectService {
     // 4. CATEGORIES
     // ==================================================================
 
-    async createCategory(schoolId: number, dto: CreateCategoryDto) {
+    async createCategory(schoolId: number, dto: CreateCategoryDto, userId: number) {
         this.logger.log(`Creating category ${dto.name}`);
         const existing = await this.prisma.subjectCategory.findUnique({
             where: {
@@ -384,9 +455,20 @@ export class SubjectService {
         });
         if (existing) throw new ConflictException('Category already exists');
 
-        return this.prisma.subjectCategory.create({
+        const category = await this.prisma.subjectCategory.create({
             data: { ...dto, schoolId }
         });
+
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId,
+            userId,
+            'SUBJECT_CATEGORY',
+            'CREATE',
+            category.id,
+            dto
+        ));
+
+        return category;
     }
 
     async findAllCategories(schoolId: number) {
@@ -395,19 +477,40 @@ export class SubjectService {
         });
     }
 
-    async updateCategory(schoolId: number, id: number, dto: UpdateCategoryDto) {
+    async updateCategory(schoolId: number, id: number, dto: UpdateCategoryDto, userId: number) {
         const cat = await this.prisma.subjectCategory.findFirst({ where: { id, schoolId } });
         if (!cat) throw new NotFoundException('Category not found');
 
-        return this.prisma.subjectCategory.update({ where: { id }, data: dto });
+        const updated = await this.prisma.subjectCategory.update({ where: { id }, data: dto });
+
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId,
+            userId,
+            'SUBJECT_CATEGORY',
+            'UPDATE',
+            id,
+            dto
+        ));
+
+        return updated;
     }
 
-    async removeCategory(schoolId: number, id: number) {
+    async removeCategory(schoolId: number, id: number, userId: number) {
         const cat = await this.prisma.subjectCategory.findFirst({ where: { id, schoolId } });
         if (!cat) throw new NotFoundException('Category not found');
 
         try {
-            return await this.prisma.subjectCategory.delete({ where: { id } });
+            const deleted = await this.prisma.subjectCategory.delete({ where: { id } });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId,
+                userId,
+                'SUBJECT_CATEGORY',
+                'DELETE',
+                id
+            ));
+
+            return deleted;
         } catch (e) {
             throw new BadRequestException('Cannot delete category in use');
         }

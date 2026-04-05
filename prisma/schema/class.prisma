@@ -4,12 +4,25 @@ enum SubjectType {
   CO_SCHOLASTIC
   LAB
   VOCATIONAL
+  PRACTICAL
+  ACTIVITY
+  GAMES
+  LIBRARY
+  SEMINAR
+  OTHER
 }
 
 enum AcademicGroupType {
   CLASS_SECTION
   COLLEGE_CLASS
   COACHING_BATCH
+}
+
+enum AssessmentType {
+  MARKS
+  GRADES
+  MARKS_AND_GRADES
+  NOT_ASSESSED
 }
 
 model AcademicGroup {
@@ -77,6 +90,8 @@ model ClassSubject {
   isOptional     Boolean @default(false)
   hasLab         Boolean @default(false)
   excludeFromGPA Boolean @default(false)
+  isGraded       Boolean @default(true)
+  assessmentType AssessmentType @default(MARKS)
 
   // ---------------------------------------------
 
@@ -144,6 +159,7 @@ model Class {
   exams               Exam[]
   examRoomTemplates   ExamRoomTemplate[]
   academicAssignments AcademicAssignment[]
+  workingPatterns     WorkingPattern[]
 
   @@unique([schoolId, name])
   @@index([schoolId])

@@ -23,18 +23,65 @@ export class TeacherService {
 
     constructor(private readonly prisma: PrismaService) { }
 
+    async checkEmail(schoolId: number, email: string) {
+        const identity = await this.prisma.authIdentity.findFirst({
+            where: { type: 'EMAIL', value: email },
+            include: {
+                user: {
+                    include: {
+                        userSchools: {
+                            where: { schoolId },
+                            include: { roles: { include: { role: true } } }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!identity) {
+            return { exists: false };
+        }
+
+        const isTeacherInSchool = identity.user.userSchools.some(us => 
+            us.roles.some(r => r.role.name === 'TEACHER')
+        );
+
+        return {
+            exists: true,
+            userName: identity.user.name,
+            isTeacherInSchool
+        };
+    }
+
     async create(schoolId: number, dto: CreateTeacherDto) {
-        // 1. Check for duplicate email
+        // 1. Check for duplicate email across the global system
         const existingIdentity = await this.prisma.authIdentity.findFirst({
             where: {
                 type: 'EMAIL',
                 value: dto.email,
             },
-            include: { user: true }
+            include: { 
+                user: {
+                   include: {
+                       userSchools: { include: { roles: { include: { role: true } } } }
+                   }
+                } 
+            }
         });
 
-        if (existingIdentity) {
-            throw new BadRequestException(`Email ${dto.email} is already in use`);
+        // If identity exists, we will LINK it instead of rejecting
+        const identityAlreadyExists = !!existingIdentity;
+        let existingUserRoles: string[] = [];
+
+        if (identityAlreadyExists) {
+            this.logger.log(`Email ${dto.email} already exists. Linking to existing user ${existingIdentity.userId}`);
+             const mem = existingIdentity.user.userSchools.find(m => m.schoolId === schoolId);
+             if (mem) {
+                 existingUserRoles = mem.roles.map(r => r.role.name);
+                 if (existingUserRoles.includes('TEACHER')) {
+                      throw new BadRequestException(`User ${dto.email} is already a teacher in this school`);
+                 }
+             }
         }
 
         // 2. Find OR CREATE Teacher Role
@@ -71,7 +118,7 @@ export class TeacherService {
         try {
             return await this.prisma.$transaction(async (tx) => {
                 // A. Find or Create Global User
-                let user = null as any;
+                let user: any = identityAlreadyExists ? existingIdentity.user : null;
 
                 if (!user) {
                     user = await tx.user.create({
@@ -81,6 +128,10 @@ export class TeacherService {
                             photo: dto.photo || null,
                         },
                     });
+                }
+
+                if (!user) {
+                    throw new InternalServerErrorException('Failed to resolve user account.');
                 }
 
                 // B. Link to School via UserSchool
@@ -98,7 +149,9 @@ export class TeacherService {
                         isActive: true,
                     },
                     update: {
-                        primaryRoleId: teacherRole.id,
+                        // If they are already in the school (e.g. as parent), leave primaryRole alone or update it?
+                        // Usually we don't forcefully overwrite primaryRoleId if they were already active as another role,
+                        // but for now we'll ensure isActive is true.
                         isActive: true,
                     }
                 });
@@ -118,8 +171,8 @@ export class TeacherService {
                     update: {}
                 });
 
-                // C. Create/Link AuthIdentity if missing
-                if (!existingIdentity) {
+                // C. Create AuthIdentity if missing
+                if (!identityAlreadyExists) {
                     await tx.authIdentity.create({
                         data: {
                             userId: user.id,
@@ -273,7 +326,12 @@ export class TeacherService {
                     userId: user.id,
                     name: user.name,
                     email: dto.email,
-                    message: 'Teacher created successfully',
+                    message: identityAlreadyExists 
+                        ? 'Teacher linked to existing user account successfully' 
+                        : 'Teacher created successfully',
+                    identityAlreadyExists,
+                    emailVerified: true,
+                    existingUserRoles,
                 };
             });
         } catch (error) {
@@ -317,6 +375,26 @@ export class TeacherService {
 
         if (employmentType) {
             where.employmentType = employmentType;
+        }
+
+        if (query.joinedThisMonth === 'true') {
+            const now = new Date();
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            where.joinDate = {
+                gte: startOfMonth
+            };
+        }
+
+        if (query.department) {
+            where.department = query.department;
+        }
+
+        if (query.startDate || query.endDate) {
+            where.joinDate = {
+                ...(where.joinDate || {}),
+                ...(query.startDate ? { gte: new Date(query.startDate) } : {}),
+                ...(query.endDate ? { lte: new Date(query.endDate) } : {}),
+            };
         }
 
         if (gender || search) {

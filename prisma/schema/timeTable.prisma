@@ -101,11 +101,13 @@ model TimetableEntry {
   subjectId Int?
   teacherId Int?
 
-  // Time
-  day        DayOfWeek
-  timeSlotId Int
+  // Time & Block Handling
+  day          DayOfWeek
+  timeSlotId   Int
+  durationSlots Int     @default(1) // Number of consecutive slots this entry occupies (e.g., 2 for a double lab)
+  isBlockStart Boolean @default(true) // To identify the first entry in a sequence
 
-  // Optional room
+  // Optional room (primary, legacy support)
   roomId Int?
 
   // Workflow & Locking
@@ -130,12 +132,42 @@ model TimetableEntry {
   publisher          User?               @relation("TimetablePublisher", fields: [publishedBy], references: [id], onDelete: SetNull)
   timetableOverrides TimetableOverride[]
 
-  // Prevent double booking
-  @@unique([schoolId, academicYearId, groupId, day, timeSlotId]) // Group cannot be in two places
-  @@unique([schoolId, academicYearId, teacherId, day, timeSlotId]) // Teacher cannot be in two places
-  @@unique([schoolId, academicYearId, roomId, day, timeSlotId]) // Room cannot be double booked
+  // Multi-Resource Relations
+  teachers TimetableEntryTeacher[]
+  rooms    TimetableEntryRoom[]
+
+  // Prevent double booking (Standard single slot)
+  @@unique([schoolId, academicYearId, groupId, day, timeSlotId]) 
+  // Note: Complex conflict detection for blocks will be handled in service layer
   @@unique([id, schoolId])
   @@index([teacherId])
+  @@index([roomId])
+}
+
+//-------------------------------------------------------------
+// MULTI-RESOURCE JUNCTIONS
+//-------------------------------------------------------------
+model TimetableEntryTeacher {
+  id      Int @id @default(autoincrement())
+  entryId Int
+  teacherId Int
+
+  entry   TimetableEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  teacher TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, teacherId])
+  @@index([teacherId])
+}
+
+model TimetableEntryRoom {
+  id     Int @id @default(autoincrement())
+  entryId Int
+  roomId  Int
+
+  entry TimetableEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  room  Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, roomId])
   @@index([roomId])
 }
 
