@@ -246,9 +246,16 @@ export class NotificationService {
             body: body,
             data,
             subtitle: 'Edulama', // iOS only subtitle
-            badge: 1, // Update badge count
+            badge: 1,
             _displayInForeground: true,
-            channelId: isEmergency ? 'emergency-alerts' : 'default', // Android Channel Separation
+            priority: isEmergency ? ('high' as const) : ('default' as const),
+            ttl: isEmergency ? 60 : 3600, // Emergency expires fast; regular expires in 1hr
+            channelId: isEmergency ? 'emergency-alerts' : 'default',
+            ...(isEmergency && {
+                // iOS critical alert — bypasses mute/silent mode
+                _category: 'emergency',
+                _contentAvailable: true,
+            }),
         }));
 
         const chunks = this.expo.chunkPushNotifications(messages);
