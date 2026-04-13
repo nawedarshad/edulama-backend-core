@@ -262,7 +262,7 @@ export class NotificationService {
 
         // 2. Send via Firebase FCM for Notifee Full-Screen Intents (Emergency only or All)
         if (fcmTokens.length > 0 && admin.apps.length > 0) {
-            const fcmMessage = {
+            const fcmMessage: admin.messaging.MulticastMessage = {
                 tokens: fcmTokens,
                 data: {
                     title: displayTitle,
