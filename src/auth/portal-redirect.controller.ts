@@ -10,6 +10,7 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { lastValueFrom } from 'rxjs';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
 /**
  * Portal Redirect
@@ -23,6 +24,7 @@ import { lastValueFrom } from 'rxjs';
  *
  * No schoolId or token in the URL. No query params. The Auth MS owns context from cookie.
  */
+@ApiTags('Auth')
 @Controller('auth/portal')
 export class PortalRedirectController {
     private readonly logger = new Logger(PortalRedirectController.name);
@@ -33,6 +35,9 @@ export class PortalRedirectController {
     ) { }
 
     @Get()
+    @ApiOperation({ summary: 'Portal Redirect', description: 'Redirects the user to their respective school portal based on their session cookie.' })
+    @ApiResponse({ status: 302, description: 'Redirects to the portal URL.' })
+    @ApiResponse({ status: 401, description: 'Unauthorized if session is invalid or cookie is missing.' })
     async redirectToPortal(@Req() req: Request, @Res() res: Response) {
         const authMsUrl = this.configService.get<string>('AUTH_MS_URL');
         const portalBaseDomain = this.configService.get<string>('PORTAL_BASE_DOMAIN', 'edulama.com');

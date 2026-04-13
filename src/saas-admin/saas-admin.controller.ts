@@ -12,13 +12,35 @@ import {
 } from '@nestjs/common';
 import { SaaSAdminService } from './saas-admin.service';
 import { Prisma } from '@prisma/client';
+import { ApiTags, ApiOperation, ApiQuery, ApiBody, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 
 // TODO: Add SuperAdmin Guard
+@ApiTags('SaaS Admin')
+@ApiBearerAuth()
 @Controller('api/admin/schools')
 export class SaaSAdminController {
     constructor(private readonly saasAdminService: SaaSAdminService) { }
 
     @Post()
+    @ApiOperation({ summary: 'Create a new school (SaaS)', description: 'Registers a new school with an initial admin user and academic year. Used by SaaS administrators.' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                name: { type: 'string', example: 'Example International School' },
+                code: { type: 'string', example: 'EIS001' },
+                subdomain: { type: 'string', example: 'eis' },
+                adminEmail: { type: 'string', example: 'admin@eis.edu' },
+                adminName: { type: 'string', example: 'School Admin' },
+                initialPassword: { type: 'string' },
+                type: { type: 'string', enum: ['SCHOOL', 'COLLEGE', 'COACHING'] },
+                academicYearName: { type: 'string', example: '2025-26' },
+                startDate: { type: 'string', format: 'date' }
+            },
+            required: ['name', 'code', 'subdomain', 'adminEmail', 'adminName']
+        }
+    })
+    @ApiResponse({ status: 201, description: 'School and admin user created successfully.' })
     create(@Body() createSchoolDto: {
         name: string;
         code: string;
@@ -34,6 +56,11 @@ export class SaaSAdminController {
     }
 
     @Get()
+    @ApiOperation({ summary: 'List all schools (SaaS)', description: 'Returns a paginated and searchable list of all schools on the platform.' })
+    @ApiQuery({ name: 'skip', required: false, type: Number })
+    @ApiQuery({ name: 'take', required: false, type: Number })
+    @ApiQuery({ name: 'search', required: false, type: String, description: 'Search by name, code, or subdomain' })
+    @ApiQuery({ name: 'active', required: false, type: Boolean })
     findAll(
         @Query('skip') skip?: string,
         @Query('take') take?: string,
@@ -63,6 +90,7 @@ export class SaaSAdminController {
     }
 
     @Get('stats')
+    @ApiOperation({ summary: 'Get platform stats', description: 'Returns high-level statistics about the entire platform (total schools, users, etc.).' })
     getStats() {
         // Note: This endpoint is technically under /api/admin/schools/stats if placed here, 
         // but "api/admin/stats" might be cleaner. 
@@ -72,11 +100,22 @@ export class SaaSAdminController {
     }
 
     @Get(':id')
+    @ApiOperation({ summary: 'Get school by ID', description: 'Returns detailed information about a specific school.' })
     findOne(@Param('id', ParseIntPipe) id: number) {
         return this.saasAdminService.getSchoolById(id);
     }
 
     @Patch(':id/status')
+    @ApiOperation({ summary: 'Update school active status', description: 'Enable or disable a school.' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                isActive: { type: 'boolean' }
+            },
+            required: ['isActive']
+        }
+    })
     updateStatus(
         @Param('id', ParseIntPipe) id: number,
         @Body('isActive') isActive: boolean
@@ -85,6 +124,19 @@ export class SaaSAdminController {
     }
 
     @Patch(':id')
+    @ApiOperation({ summary: 'Update school details', description: 'Updates core properties of a school.' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                name: { type: 'string' },
+                code: { type: 'string' },
+                subdomain: { type: 'string' },
+                isActive: { type: 'boolean' },
+                type: { type: 'string', enum: ['SCHOOL', 'COLLEGE', 'COACHING'] }
+            }
+        }
+    })
     update(
         @Param('id', ParseIntPipe) id: number,
         @Body() updateSchoolDto: {
@@ -99,16 +151,20 @@ export class SaaSAdminController {
     }
 
     @Delete(':id')
+    @ApiOperation({ summary: 'Delete school', description: 'Permanently removes a school and all associated data. CAUTION: This is irreversible.' })
     remove(@Param('id', ParseIntPipe) id: number) {
         return this.saasAdminService.deleteSchool(id);
     }
 
     @Get(':id/settings')
+    @ApiOperation({ summary: 'Get school platform settings', description: 'Returns platform-level settings for a specific school (e.g. storage limits, features enabled).' })
     getSettings(@Param('id', ParseIntPipe) id: number) {
         return this.saasAdminService.getSchoolSettings(id);
     }
 
     @Patch(':id/settings')
+    @ApiOperation({ summary: 'Update school platform settings', description: 'Updates platform-level settings for a school.' })
+    @ApiBody({ type: Object, description: 'The settings object to merge' })
     updateSettings(
         @Param('id', ParseIntPipe) id: number,
         @Body() data: any

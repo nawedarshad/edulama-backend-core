@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Body, Param, UseGuards, Request, ParseIntPipe, Delete, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { TeacherSubjectService } from './teacher-subject.service';
 import { UserAuthGuard } from '../../common/guards/user.guard';
 import { CreateSyllabusDto } from './dto/create-syllabus.dto';
@@ -39,6 +39,15 @@ export class TeacherSubjectController {
 
     @Patch(':id/syllabus/:syllabusId/status')
     @ApiOperation({ summary: 'Mark syllabus topic as completed/incomplete' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                isCompleted: { type: 'boolean', example: true }
+            },
+            required: ['isCompleted']
+        }
+    })
     @ApiResponse({ status: 200, description: 'Status updated successfully.' })
     updateSyllabusStatus(
         @Request() req,
@@ -91,6 +100,16 @@ export class TeacherSubjectController {
         },
     }))
     @ApiOperation({ summary: 'Upload a syllabus file (PDF/Image)' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                file: { type: 'string', format: 'binary' },
+                title: { type: 'string', description: 'Optional title for the file' }
+            },
+            required: ['file']
+        }
+    })
     uploadSyllabusFile(
         @Request() req,
         @Param('id', ParseIntPipe) id: number,

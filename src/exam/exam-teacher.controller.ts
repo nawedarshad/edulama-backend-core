@@ -1,5 +1,5 @@
 import { Controller, Post, Body, Param, UseGuards, Request, Get, Put } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiBody } from '@nestjs/swagger';
 import { TeacherAuthGuard } from '../common/guards/teacher.guard';
 import { ExamAttendanceService } from './exam-attendance.service';
 import { ExamService } from './exam.service';
@@ -41,6 +41,26 @@ export class ExamTeacherController {
 
     @Post(':examId/schedule/:scheduleId/attendance')
     @ApiOperation({ summary: 'Mark exam attendance' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                students: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            studentId: { type: 'number' },
+                            isPresent: { type: 'boolean' },
+                            remarks: { type: 'string' }
+                        },
+                        required: ['studentId', 'isPresent']
+                    }
+                }
+            },
+            required: ['students']
+        }
+    })
     async markAttendance(
         @Request() req,
         @Param('examId') examId: string,
@@ -73,6 +93,26 @@ export class ExamTeacherController {
 
     @Put(':examId/schedule/:scheduleId/results')
     @ApiOperation({ summary: 'Submit exam results' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                results: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            studentId: { type: 'number' },
+                            marksObtained: { type: 'number' },
+                            remarks: { type: 'string' }
+                        },
+                        required: ['studentId', 'marksObtained']
+                    }
+                }
+            },
+            required: ['results']
+        }
+    })
     async submitResults(
         @Request() req,
         @Param('examId') examId: string,

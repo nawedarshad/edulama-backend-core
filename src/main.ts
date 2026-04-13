@@ -23,13 +23,27 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('Edulama API')
-    .setDescription('The Edulama School Management API description')
+    .setDescription('Comprehensive API documentation for the Edulama School Management System. Includes Admin, Principal, Teacher, Student, and Parent modules.')
     .setVersion('1.0')
-    .addTag('Class')
-    .addTag('Section')
+    .addBearerAuth()
+    .addTag('Auth', 'Authentication and Authorization')
+    .addTag('Admin', 'School and Platform Administration')
+    .addTag('SaaS Admin', 'Global Platform Administration')
+    .addTag('Principal', 'Principal and School Management Operations')
+    .addTag('Teacher', 'Teacher-specific operations (Attendance, Homework, etc.)')
+    .addTag('Student', 'Student-facing operations')
+    .addTag('Parent', 'Parent-facing operations')
+    .addTag('Class', 'Class management')
+    .addTag('Section', 'Section management')
+    .addTag('Common', 'Shared and utility endpoints')
     .build();
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document, { useGlobalPrefix: true });
+  SwaggerModule.setup('api', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+    useGlobalPrefix: true,
+  });
 
   // BigInt Serialization Fix
   (BigInt.prototype as any).toJSON = function () {

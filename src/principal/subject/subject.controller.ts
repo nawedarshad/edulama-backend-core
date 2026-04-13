@@ -52,6 +52,8 @@ export class SubjectController {
     // ===================================================
 
     @Post('category')
+    @ApiOperation({ summary: 'Create a new subject category', description: 'Categories are used to group subjects (e.g. Scholastic, Co-Scholastic).' })
+    @ApiResponse({ status: 201, description: 'Category created successfully.' })
     createCategory(@Request() req, @Body() dto: CreateCategoryDto) {
         return this.subjectService.createCategory(req.user.schoolId, dto, req.user.id);
     }
@@ -63,6 +65,7 @@ export class SubjectController {
     }
 
     @Patch('category/:id')
+    @ApiOperation({ summary: 'Update a subject category' })
     updateCategory(@Request() req, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
         return this.subjectService.updateCategory(req.user.schoolId, id, dto, req.user.id);
     }
@@ -77,6 +80,8 @@ export class SubjectController {
     // ===================================================
 
     @Post('class-assignment')
+    @ApiOperation({ summary: 'Assign a subject to a class/section', description: 'Creates a link between a global subject and a specific class/section for the current academic year.' })
+    @ApiResponse({ status: 201, description: 'Assignment created successfully.' })
     assignToClass(@Request() req, @Body() dto: CreateClassSubjectDto) {
         return this.subjectService.assignToClass(req.user.schoolId, dto, req.user.id);
     }
