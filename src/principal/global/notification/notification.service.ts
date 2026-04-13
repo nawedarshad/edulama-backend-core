@@ -4,6 +4,8 @@ import { CreateNotificationDto } from './dto/create-notification.dto';
 import { NotificationType } from '@prisma/client';
 import { NotificationGateway } from './notification.gateway';
 import { Expo } from 'expo-server-sdk';
+import * as admin from 'firebase-admin';
+
 
 @Injectable()
 export class NotificationService {
@@ -225,48 +227,67 @@ export class NotificationService {
         return notification;
     }
 
+    
     private async sendPushNotifications(tokens: string[], title: string, body: string, data: any) {
-        // 1. Determine Urgency and Styling
-        const isEmergency = title.toUpperCase().includes('EMERGENCY') || title.toUpperCase().includes('URGENT');
+        const expoTokens = tokens.filter(t => Expo.isExpoPushToken(t));
+        const fcmTokens = tokens.filter(t => !Expo.isExpoPushToken(t)); // Assuming non-Expo tokens are FCM tokens
 
-        // 2. Format Title with Branding & Icons
-        let displayTitle = title;
-        if (isEmergency) {
-            displayTitle = `🚨 ${title}`;
-        } else {
-            // If it's a generic title, prefix with Edulama. 
-            // If it's already specific, maybe just append or use Icon.
-            displayTitle = `📢 Edulama: ${title}`;
+        const isEmergency = title.toUpperCase().includes('EMERGENCY') || title.toUpperCase().includes('URGENT');
+        let displayTitle = isEmergency ? `🚨 ${title}` : `📢 Edulama: ${title}`;
+
+        // 1. Send via Expo (for standard apps)
+        if (expoTokens.length > 0) {
+            const messages = expoTokens.map(token => ({
+                to: token,
+                sound: 'default' as const,
+                title: displayTitle,
+                body: body,
+                data,
+                subtitle: 'Edulama',
+                badge: 1,
+                _displayInForeground: true,
+                priority: isEmergency ? ('high' as const) : ('default' as const),
+                channelId: isEmergency ? 'emergency-alerts' : 'default',
+            }));
+
+            const chunks = this.expo.chunkPushNotifications(messages);
+            for (const chunk of chunks) {
+                try {
+                    await this.expo.sendPushNotificationsAsync(chunk);
+                } catch (error) {
+                    this.logger.error('DEBUG: Error sending Expo push notifications', error);
+                }
+            }
         }
 
-        const messages = tokens.map(token => ({
-            to: token,
-            sound: 'default' as const,
-            title: displayTitle,
-            body: body,
-            data,
-            subtitle: 'Edulama', // iOS only subtitle
-            badge: 1,
-            _displayInForeground: true,
-            priority: isEmergency ? ('high' as const) : ('default' as const),
-            ttl: isEmergency ? 60 : 3600, // Emergency expires fast; regular expires in 1hr
-            channelId: isEmergency ? 'emergency-alerts' : 'default',
-            ...(isEmergency && {
-                // iOS critical alert — bypasses mute/silent mode
-                _category: 'emergency',
-                _contentAvailable: true,
-            }),
-        }));
+        // 2. Send via Firebase FCM for Notifee Full-Screen Intents (Emergency only or All)
+        if (fcmTokens.length > 0 && admin.apps.length > 0) {
+            const fcmMessage = {
+                tokens: fcmTokens,
+                data: {
+                    title: displayTitle,
+                    body: body,
+                    isEmergency: isEmergency ? 'true' : 'false',
+                    ...data,
+                },
+                android: {
+                    priority: isEmergency ? 'high' : 'normal',
+                }
+            };
 
-        const chunks = this.expo.chunkPushNotifications(messages);
+            // For non-emergency, we might also want to send the display notification part
+            if (!isEmergency) {
+                fcmMessage.notification = {
+                    title: displayTitle,
+                    body: body,
+                };
+            }
 
-        for (const chunk of chunks) {
             try {
-                const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
-                this.logger.log(`DEBUG: Sent ${chunk.length} push notifications. Tickets: ${JSON.stringify(ticketChunk)}`);
-                // Process tickets to check for errors/rejections if needed
+                const response = await admin.messaging().sendEachForMulticast(fcmMessage);
+                this.logger.log(`DEBUG: FCM Multicast sent, successes: ${response.successCount}, failures: ${response.failureCount}`);
             } catch (error) {
-                this.logger.error('DEBUG: Error sending push notifications', error);
+                this.logger.error('DEBUG: Error sending FCM push notifications', error);
             }
         }
     }
