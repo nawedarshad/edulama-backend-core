@@ -6,11 +6,13 @@ import { ConfigModule } from '@nestjs/config';
 import { SaaSAdminFeaturesController } from './saas-admin-features.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PlatformSettingsModule } from './settings/platform-settings.module';
+import { AnalyticsService } from './analytics/analytics.service';
+import { AnalyticsController } from './analytics/analytics.controller';
 
 @Module({
     imports: [PrismaModule, HttpModule, ConfigModule, PlatformSettingsModule],
-    controllers: [SaaSAdminController, SaaSAdminFeaturesController],
-    providers: [SaaSAdminService],
-    exports: [SaaSAdminService],
+    controllers: [SaaSAdminController, SaaSAdminFeaturesController, AnalyticsController],
+    providers: [SaaSAdminService, AnalyticsService],
+    exports: [SaaSAdminService, AnalyticsService],
 })
 export class SaaSAdminModule { }
