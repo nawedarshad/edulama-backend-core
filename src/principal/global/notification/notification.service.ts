@@ -235,8 +235,8 @@ export class NotificationService {
 
     
     private async sendPushNotifications(tokens: string[], title: string, body: string, data: any) {
-        const expoTokens = tokens.filter(t => Expo.isExpoPushToken(t));
-        const fcmTokens = tokens.filter(t => !Expo.isExpoPushToken(t)); // Assuming non-Expo tokens are FCM tokens
+        const expoTokens: string[] = tokens.filter(t => Expo.isExpoPushToken(t));
+        const fcmTokens: string[] = tokens.filter(t => !Expo.isExpoPushToken(t)); // Assuming non-Expo tokens are FCM tokens
 
         const isEmergency = title.toUpperCase().includes('EMERGENCY') || title.toUpperCase().includes('URGENT');
         let displayTitle = isEmergency ? `🚨 ${title}` : `📢 Edulama: ${title}`;
