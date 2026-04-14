@@ -6,7 +6,7 @@ import { AnalyticsService } from './analytics.service';
 @ApiTags('SaaS Admin - Analytics')
 @ApiBearerAuth()
 @UseGuards(AdminAuthGuard)
-@Controller('admin/analytics')
+@Controller('api/admin/analytics')
 export class AnalyticsController {
     constructor(private readonly analyticsService: AnalyticsService) { }
 
