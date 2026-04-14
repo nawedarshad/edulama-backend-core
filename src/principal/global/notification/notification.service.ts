@@ -270,7 +270,10 @@ export class NotificationService {
         if (fcmTokens.length > 0 && admin.apps.length > 0) {
             // FCM data fields MUST be strings
             const stringifiedData = Object.keys(data || {}).reduce((acc, key) => {
-                acc[key] = String(data[key]);
+                const val = data[key];
+                if (val !== null && val !== undefined) {
+                    acc[key] = String(val);
+                }
                 return acc;
             }, {} as Record<string, string>);
 
