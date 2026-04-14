@@ -292,6 +292,14 @@ export class NotificationService {
             try {
                 const response = await admin.messaging().sendEachForMulticast(fcmMessage);
                 this.logger.log(`DEBUG: FCM Multicast sent, successes: ${response.successCount}, failures: ${response.failureCount}`);
+                
+                if (response.failureCount > 0) {
+                    response.responses.forEach((resp, idx) => {
+                        if (!resp.success) {
+                            this.logger.error(`DEBUG: FCM individual failure for token [${fcmTokens[idx].substring(0, 10)}...]: ${resp.error?.message} (${resp.error?.code})`);
+                        }
+                    });
+                }
             } catch (error) {
                 this.logger.error('DEBUG: Error sending FCM push notifications', error);
             }
