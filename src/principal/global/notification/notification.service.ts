@@ -6,7 +6,6 @@ import { NotificationGateway } from './notification.gateway';
 import { Expo } from 'expo-server-sdk';
 import * as admin from 'firebase-admin';
 
-
 @Injectable()
 export class NotificationService {
     private readonly logger = new Logger(NotificationService.name);
@@ -15,7 +14,23 @@ export class NotificationService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly gateway: NotificationGateway
-    ) { }
+    ) {
+        if (admin.apps.length === 0) {
+            const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+            if (serviceAccountPath) {
+                try {
+                    admin.initializeApp({
+                        credential: admin.credential.applicationDefault()
+                    });
+                    this.logger.log('Firebase Admin initialized successfully.');
+                } catch (error) {
+                    this.logger.error('Failed to initialize Firebase Admin:', error);
+                }
+            } else {
+                this.logger.warn('GOOGLE_APPLICATION_CREDENTIALS not found. FCM notifications will be disabled.');
+            }
+        }
+    }
 
     async create(schoolId: number, creatorId: number, dto: CreateNotificationDto) {
         // 1. Create Notification Record
@@ -50,9 +65,7 @@ export class NotificationService {
                 if (user.deviceTokens) {
                     const tokensMap = user.deviceTokens as Record<string, string>;
                     for (const t of Object.values(tokensMap)) {
-                        if (Expo.isExpoPushToken(t)) {
-                            pushTokens.push({ token: t, user });
-                        }
+                        pushTokens.push({ token: t, user });
                     }
                 }
             }
@@ -130,9 +143,7 @@ export class NotificationService {
                     if (user.deviceTokens) {
                         const tokensMap = user.deviceTokens as Record<string, string>;
                         for (const t of Object.values(tokensMap)) {
-                            if (Expo.isExpoPushToken(t)) {
-                                pushTokens.push({ token: t, user });
-                            }
+                            pushTokens.push({ token: t, user });
                         }
                     }
                 }
@@ -168,11 +179,8 @@ export class NotificationService {
 
             const roleUsers = memberships.map(m => m.user);
             this.logger.log(`[NotificationService] Role-based: found ${roleUsers.length} users for roleIds=[${dto.targetRoleIds?.join(',')}]`);
-            const usersWithTokens = roleUsers.filter(u => {
-                if (!u.deviceTokens) return false;
-                return Object.values(u.deviceTokens as Record<string, string>).some(t => Expo.isExpoPushToken(t));
-            });
-            this.logger.log(`[NotificationService] Role-based: ${usersWithTokens.length} users have valid Expo push tokens`);
+            const usersWithTokens = roleUsers.filter(u => u.deviceTokens && Object.keys(u.deviceTokens).length > 0);
+            this.logger.log(`[NotificationService] Role-based: ${usersWithTokens.length} users have device tokens`);
 
             if (roleUsers.length > 0) {
                 // Avoid duplicates if user was also in targetUserIds
@@ -201,9 +209,7 @@ export class NotificationService {
                         if (user.deviceTokens) {
                             const tokensMap = user.deviceTokens as Record<string, string>;
                             for (const t of Object.values(tokensMap)) {
-                                if (Expo.isExpoPushToken(t)) {
-                                    pushTokens.push(t);
-                                }
+                                pushTokens.push(t);
                             }
                         }
                     }
