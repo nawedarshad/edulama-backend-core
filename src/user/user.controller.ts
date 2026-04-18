@@ -1,4 +1,4 @@
-import { Controller, Patch, Body, UseGuards } from '@nestjs/common';
+import { Controller, Patch, Body, UseGuards, Logger } from '@nestjs/common';
 import { UserService } from './user.service';
 import { GetUser } from '../common/decorators/get-user.decorator';
 import type { User } from '@prisma/client';
@@ -10,6 +10,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 @Controller('users')
 @UseGuards(UserAuthGuard)
 export class UserController {
+    private readonly logger = new Logger(UserController.name);
     constructor(private readonly userService: UserService) { }
 
     @Patch('device-token')
