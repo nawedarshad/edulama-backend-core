@@ -72,7 +72,7 @@ export class NotificationService {
 
             if (pushTokens.length > 0) {
                 this.sendPushNotifications(
-                    pushTokens.map(p => p.token),
+                    pushTokens.map(p => ({ token: p.token, userId: p.user.id })),
                     dto.title,
                     dto.message,
                     { notificationId: notification.id, ...(dto.data || {}) }
@@ -151,7 +151,7 @@ export class NotificationService {
                 // Send Push
                 if (pushTokens.length > 0) {
                     this.sendPushNotifications(
-                        pushTokens.map(p => p.token),
+                        pushTokens.map(p => ({ token: p.token, userId: p.user.id })),
                         dto.title,
                         dto.message,
                         {
@@ -217,7 +217,11 @@ export class NotificationService {
                     // Send Push
                     if (pushTokens.length > 0) {
                         this.sendPushNotifications(
-                            pushTokens,
+                            newUsers.map(user => {
+                                // A user might have multiple tokens, so we map them all
+                                const tokensMap = user.deviceTokens as Record<string, string>;
+                                return Object.values(tokensMap).map(t => ({ token: t, userId: user.id }));
+                            }).flat(),
                             dto.title,
                             dto.message,
                             {
@@ -234,17 +238,17 @@ export class NotificationService {
     }
 
     
-    private async sendPushNotifications(tokens: string[], title: string, body: string, data: any) {
-        const expoTokens: string[] = tokens.filter(t => Expo.isExpoPushToken(t));
-        const fcmTokens: string[] = tokens.filter(t => !Expo.isExpoPushToken(t)); // Assuming non-Expo tokens are FCM tokens
+    private async sendPushNotifications(targetConfigs: { token: string, userId: number }[], title: string, body: string, data: any) {
+        const expoTokensConfigs = targetConfigs.filter(c => Expo.isExpoPushToken(c.token));
+        const fcmTokensConfigs = targetConfigs.filter(c => !Expo.isExpoPushToken(c.token)); 
 
         const isEmergency = title.toUpperCase().includes('EMERGENCY') || title.toUpperCase().includes('URGENT');
         let displayTitle = isEmergency ? `🚨 ${title}` : `📢 Edulama: ${title}`;
 
         // 1. Send via Expo (for standard apps)
-        if (expoTokens.length > 0) {
-            const messages = expoTokens.map(token => ({
-                to: token,
+        if (expoTokensConfigs.length > 0) {
+            const messages = expoTokensConfigs.map(config => ({
+                to: config.token,
                 sound: 'default' as const,
                 title: displayTitle,
                 body: body,
@@ -267,8 +271,7 @@ export class NotificationService {
         }
 
         // 2. Send via Firebase FCM for Notifee Full-Screen Intents (Data-Only for Enterprise Reliability)
-        if (fcmTokens.length > 0 && admin.apps.length > 0) {
-            // FCM data fields MUST be strings
+        if (fcmTokensConfigs.length > 0 && admin.apps.length > 0) {
             const stringifiedData = Object.keys(data || {}).reduce((acc, key) => {
                 const val = data[key];
                 if (val !== null && val !== undefined) {
@@ -277,14 +280,11 @@ export class NotificationService {
                 return acc;
             }, {} as Record<string, string>);
 
-            // FCM Multicast allows a maximum of 500 tokens per request
             const FCM_CHUNK_SIZE = 500;
-            for (let i = 0; i < fcmTokens.length; i += FCM_CHUNK_SIZE) {
-                const chunkTokens = fcmTokens.slice(i, i + FCM_CHUNK_SIZE);
+            for (let i = 0; i < fcmTokensConfigs.length; i += FCM_CHUNK_SIZE) {
+                const chunkConfigs = fcmTokensConfigs.slice(i, i + FCM_CHUNK_SIZE);
+                const chunkTokens = chunkConfigs.map(c => c.token);
 
-                // We exclusively use data messages. Removing the `notification` block ensures 
-                // Android doesn't hijack the notification display from React Native, allowing
-                // our `setBackgroundMessageHandler` Notifee code to dictate icons, sounds, channels.
                 const fcmMessage: admin.messaging.MulticastMessage = {
                     tokens: chunkTokens,
                     data: {
@@ -294,38 +294,69 @@ export class NotificationService {
                         ...stringifiedData,
                     },
                     android: {
-                        priority: 'high', // Ensures React Native is woken up reliably in background
+                        priority: 'high',
                     }
                 };
 
                 try {
                     const response = await admin.messaging().sendEachForMulticast(fcmMessage);
-                    this.logger.log(`DEBUG: FCM Multicast Batch [${i}-${i + chunkTokens.length}] sent. Successes: ${response.successCount}, Failures: ${response.failureCount}`);
+                    this.logger.log(`DEBUG: FCM Multicast Batch [${i}-${i + chunkConfigs.length}] sent. Successes: ${response.successCount}, Failures: ${response.failureCount}`);
                     
                     if (response.failureCount > 0) {
-                        response.responses.forEach((resp, idx) => {
+                        for (let idx = 0; idx < response.responses.length; idx++) {
+                            const resp = response.responses[idx];
                             if (!resp.success) {
-                                const token = chunkTokens[idx];
+                                const tokenConfig = chunkConfigs[idx];
                                 const errorCode = resp.error?.code;
                                 const errorMessage = resp.error?.message;
-                                this.logger.error(`DEBUG: FCM individual failure!`);
-                                this.logger.error(` >> Token: ${token}`);
-                                this.logger.error(` >> Error Code: ${errorCode}`);
-                                this.logger.error(` >> Error Message: ${errorMessage}`);
                                 
-                                // Specific handling for common errors
+                                this.logger.error(`DEBUG: FCM individual failure! Token: ${tokenConfig.token.substring(0, 10)}... Error: ${errorMessage} (${errorCode})`);
+                                
+                                // Specific handling for stale tokens: CLEANUP
                                 if (errorCode === 'messaging/registration-token-not-registered' || errorCode === 'messaging/invalid-registration-token') {
-                                    this.logger.warn(` >> ADVICE: The token is invalid or no longer registered. The user might have reinstalled the app or cleared data.`);
-                                } else if (errorCode === 'messaging/mismatched-credential') {
-                                    this.logger.error(` >> ADVICE: Mismatched Project! The backend service account does not match the app's google-services.json.`);
+                                    this.logger.warn(` >> CLEANUP: Automatically removing stale token for user #${tokenConfig.userId}`);
+                                    await this.removeStaleToken(tokenConfig.userId, tokenConfig.token);
                                 }
                             }
-                        });
+                        }
                     }
                 } catch (error) {
                     this.logger.error('DEBUG: Error sending FCM push notifications block', error);
                 }
             }
+        }
+    }
+
+    private async removeStaleToken(userId: number, token: string) {
+        try {
+            const user = await this.prisma.user.findUnique({
+                where: { id: userId },
+                select: { deviceTokens: true }
+            });
+            if (!user || !user.deviceTokens) return;
+
+            const tokens = (user.deviceTokens as Record<string, string>);
+            const updatedTokens: Record<string, string> = {};
+            
+            // Re-build tokens object without the stale one
+            let removedCount = 0;
+            for (const [key, value] of Object.entries(tokens)) {
+                if (value === token) {
+                    removedCount++;
+                    continue;
+                }
+                updatedTokens[key] = value;
+            }
+
+            if (removedCount > 0) {
+                await this.prisma.user.update({
+                    where: { id: userId },
+                    data: { deviceTokens: updatedTokens }
+                });
+                this.logger.log(`[NotificationService] Successfully cleaned up ${removedCount} stale token(s) for user #${userId}`);
+            }
+        } catch (error) {
+            this.logger.error(`[NotificationService] Failed to cleanup stale token for user #${userId}`, error);
         }
     }
 

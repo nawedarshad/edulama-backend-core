@@ -24,7 +24,7 @@ export class DebugNotificationController {
                 // Accessing the private method sendPushNotifications via casting to any
                 // since this is a temporary debug tool.
                 await (this.notificationService as any).sendPushNotifications(
-                    [token],
+                    [{ token, userId: 0 }],
                     'CRITICAL EMERGENCY ALERT',
                     'This is a test emergency broadcast for terminal verification. Please stay calm.',
                     { 
