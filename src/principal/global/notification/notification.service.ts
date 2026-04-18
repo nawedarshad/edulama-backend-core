@@ -93,6 +93,8 @@ export class NotificationService {
                     orderBy: { id: 'asc' },
                 });
 
+                this.logger.log(`[NotificationService] Global: Found ${memberships.length} memberships for schoolId=${schoolId} (skip=${skip})`);
+
                 if (memberships.length === 0) break;
                 const chunk = memberships.map(m => m.user);
                 await processUserChunk(chunk);

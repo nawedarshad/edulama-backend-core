@@ -29,7 +29,7 @@ export class UserController {
         @Body('token') token: string,
         @Body('appRole') appRole?: string
     ) {
-        console.log(`DEBUG: Received device token update for user ${user.id}. Token: ${token?.substring(0, 10)}... AppRole: ${appRole}`);
+        this.logger.log(`[UserController] DEVICE TOKEN UPDATE REQUEST: userId=${user.id}, appRole=${appRole || 'DEFAULT'}, tokenPrefix=${token?.substring(0, 10)}...`);
         return this.userService.updateDeviceToken(user.id, token, appRole || 'DEFAULT');
     }
 }
