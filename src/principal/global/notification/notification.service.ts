@@ -305,7 +305,20 @@ export class NotificationService {
                     if (response.failureCount > 0) {
                         response.responses.forEach((resp, idx) => {
                             if (!resp.success) {
-                                this.logger.error(`DEBUG: FCM individual failure for token [${chunkTokens[idx].substring(0, 10)}...]: ${resp.error?.message} (${resp.error?.code})`);
+                                const token = chunkTokens[idx];
+                                const errorCode = resp.error?.code;
+                                const errorMessage = resp.error?.message;
+                                this.logger.error(`DEBUG: FCM individual failure!`);
+                                this.logger.error(` >> Token: ${token}`);
+                                this.logger.error(` >> Error Code: ${errorCode}`);
+                                this.logger.error(` >> Error Message: ${errorMessage}`);
+                                
+                                // Specific handling for common errors
+                                if (errorCode === 'messaging/registration-token-not-registered' || errorCode === 'messaging/invalid-registration-token') {
+                                    this.logger.warn(` >> ADVICE: The token is invalid or no longer registered. The user might have reinstalled the app or cleared data.`);
+                                } else if (errorCode === 'messaging/mismatched-credential') {
+                                    this.logger.error(` >> ADVICE: Mismatched Project! The backend service account does not match the app's google-services.json.`);
+                                }
                             }
                         });
                     }
