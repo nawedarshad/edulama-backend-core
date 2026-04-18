@@ -266,7 +266,7 @@ export class NotificationService {
             }
         }
 
-        // 2. Send via Firebase FCM for Notifee Full-Screen Intents (Emergency only or All)
+        // 2. Send via Firebase FCM for Notifee Full-Screen Intents (Data-Only for Enterprise Reliability)
         if (fcmTokens.length > 0 && admin.apps.length > 0) {
             // FCM data fields MUST be strings
             const stringifiedData = Object.keys(data || {}).reduce((acc, key) => {
@@ -277,40 +277,41 @@ export class NotificationService {
                 return acc;
             }, {} as Record<string, string>);
 
-            const fcmMessage: admin.messaging.MulticastMessage = {
-                tokens: fcmTokens,
-                data: {
-                    title: displayTitle,
-                    body: body,
-                    isEmergency: isEmergency ? 'true' : 'false',
-                    ...stringifiedData,
-                },
-                android: {
-                    priority: isEmergency ? 'high' : 'normal',
-                }
-            };
+            // FCM Multicast allows a maximum of 500 tokens per request
+            const FCM_CHUNK_SIZE = 500;
+            for (let i = 0; i < fcmTokens.length; i += FCM_CHUNK_SIZE) {
+                const chunkTokens = fcmTokens.slice(i, i + FCM_CHUNK_SIZE);
 
-            // For non-emergency, we might also want to send the display notification part
-            if (!isEmergency) {
-                fcmMessage.notification = {
-                    title: displayTitle,
-                    body: body,
+                // We exclusively use data messages. Removing the `notification` block ensures 
+                // Android doesn't hijack the notification display from React Native, allowing
+                // our `setBackgroundMessageHandler` Notifee code to dictate icons, sounds, channels.
+                const fcmMessage: admin.messaging.MulticastMessage = {
+                    tokens: chunkTokens,
+                    data: {
+                        title: displayTitle,
+                        body: body,
+                        isEmergency: isEmergency ? 'true' : 'false',
+                        ...stringifiedData,
+                    },
+                    android: {
+                        priority: 'high', // Ensures React Native is woken up reliably in background
+                    }
                 };
-            }
 
-            try {
-                const response = await admin.messaging().sendEachForMulticast(fcmMessage);
-                this.logger.log(`DEBUG: FCM Multicast sent, successes: ${response.successCount}, failures: ${response.failureCount}`);
-                
-                if (response.failureCount > 0) {
-                    response.responses.forEach((resp, idx) => {
-                        if (!resp.success) {
-                            this.logger.error(`DEBUG: FCM individual failure for token [${fcmTokens[idx].substring(0, 10)}...]: ${resp.error?.message} (${resp.error?.code})`);
-                        }
-                    });
+                try {
+                    const response = await admin.messaging().sendEachForMulticast(fcmMessage);
+                    this.logger.log(`DEBUG: FCM Multicast Batch [${i}-${i + chunkTokens.length}] sent. Successes: ${response.successCount}, Failures: ${response.failureCount}`);
+                    
+                    if (response.failureCount > 0) {
+                        response.responses.forEach((resp, idx) => {
+                            if (!resp.success) {
+                                this.logger.error(`DEBUG: FCM individual failure for token [${chunkTokens[idx].substring(0, 10)}...]: ${resp.error?.message} (${resp.error?.code})`);
+                            }
+                        });
+                    }
+                } catch (error) {
+                    this.logger.error('DEBUG: Error sending FCM push notifications block', error);
                 }
-            } catch (error) {
-                this.logger.error('DEBUG: Error sending FCM push notifications', error);
             }
         }
     }

@@ -5,6 +5,7 @@ import { AttendanceStatus } from './dto/update-staff-attendance.dto';
 import { MarkStudentLateDto } from '../../teacher/attendance/dto/mark-student-late.dto';
 import { TakeClassAttendanceDto } from './dto/take-class-attendance.dto';
 import { AttendanceReportFilterDto } from './dto/attendance-report-wrapper.dto';
+import { AssignLateMonitorsDto } from './dto/assign-late-monitors.dto';
 import { AttendanceStatus as PrismaAttendanceStatus } from '@prisma/client';
 
 @Injectable()
@@ -215,29 +216,9 @@ export class SchoolAdminAttendanceService {
         return { message: 'Attendance updated successfully', count: results.length };
     }
 
-    async markStudentLate(userId: number, dto: MarkStudentLateDto) {
-        // 1. Fetch user and verify they are Principal or School Administrator
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
-            include: {
-                role: true,
-                schoolAdminScopes: true,
-            }
-        });
+    async markStudentLate(userId: number, schoolId: number, dto: MarkStudentLateDto) {
+        // Validation handled by Guard and Controller
 
-        if (!user) {
-            throw new NotFoundException('User not found.');
-        }
-
-        const schoolId = user.schoolId as number;
-
-        // Check if user is Principal or School Administrator
-        const isPrincipal = user?.role?.name === 'PRINCIPAL';
-        const isSchoolAdmin = user.schoolAdminScopes && user.schoolAdminScopes.length > 0;
-
-        if (!isPrincipal && !isSchoolAdmin) {
-            throw new ForbiddenException('Only Principal or School Administrators can mark students as late.');
-        }
 
         // 2. Verify student belongs to the same school
         const student = await this.prisma.studentProfile.findFirst({
@@ -336,28 +317,9 @@ export class SchoolAdminAttendanceService {
         };
     }
 
-    async getLateMonitors(userId: number, academicYearId: number) {
-        // 1. Verify user is Principal or School Administrator
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
-            include: {
-                role: true,
-                schoolAdminScopes: true,
-            }
-        });
+    async getLateMonitors(schoolId: number, academicYearId: number) {
+        // Validation handled by Guard and Controller
 
-        if (!user) {
-            throw new NotFoundException('User not found.');
-        }
-
-        const isPrincipal = user?.role?.name === 'PRINCIPAL';
-        const isSchoolAdmin = user.schoolAdminScopes && user.schoolAdminScopes.length > 0;
-
-        if (!isPrincipal && !isSchoolAdmin) {
-            throw new ForbiddenException('Only Principal or School Administrators can view late monitors.');
-        }
-
-        const schoolId = user.schoolId as number;
 
         // 2. Fetch all late attendance monitors for this academic year
         const monitors: any[] = await this.prisma.lateAttendanceMonitor.findMany({
@@ -388,7 +350,6 @@ export class SchoolAdminAttendanceService {
                 assignedAt: 'desc'
             }
         });
-
         return monitors.map(m => ({
             id: m.id,
             teacherId: m.teacherId,
@@ -400,18 +361,54 @@ export class SchoolAdminAttendanceService {
             assignedAt: m.assignedAt,
         }));
     }
+    
+    async assignLateMonitors(schoolId: number, dto: AssignLateMonitorsDto) {
+        // Validation handled by Guard and Controller
 
-    async takeClassAttendance(userId: number, dto: TakeClassAttendanceDto) {
-        // 1. Fetch User to get School ID
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
+
+        // 2. Map userIds to teacherProfileIds for this school
+        const teacherProfiles = await this.prisma.teacherProfile.findMany({
+            where: {
+                schoolId,
+                userId: { in: dto.userIds },
+                isActive: true
+            },
+            select: { id: true }
         });
 
-        if (!user) {
-            throw new NotFoundException('User not found.');
-        }
+        const teacherProfileIds = teacherProfiles.map(tp => tp.id);
 
-        const schoolId = user.schoolId as number;
+        // 3. Update monitors in a transaction
+        return this.prisma.$transaction(async (tx) => {
+            // Remove all existing monitors for this school and academic year
+            await tx.lateAttendanceMonitor.deleteMany({
+                where: {
+                    schoolId,
+                    academicYearId: dto.academicYearId,
+                }
+            });
+
+            // Create new monitor records
+            if (teacherProfileIds.length > 0) {
+                await tx.lateAttendanceMonitor.createMany({
+                    data: teacherProfileIds.map(tId => ({
+                        schoolId,
+                        academicYearId: dto.academicYearId,
+                        teacherId: tId
+                    }))
+                });
+            }
+
+            return { 
+                message: 'Late monitors assigned successfully', 
+                count: teacherProfileIds.length 
+            };
+        });
+    }
+
+    async takeClassAttendance(userId: number, schoolId: number, dto: TakeClassAttendanceDto) {
+        // Validation handled by Guard and Controller
+
 
         const group = await this.prisma.academicGroup.findFirst({
             where: {
@@ -425,6 +422,10 @@ export class SchoolAdminAttendanceService {
             throw new BadRequestException('Academic Group not found for the specified class and section.');
         }
 
+        // Standardize Date (Strip time component for daily/session consistency)
+        const normalizedDate = new Date(dto.date);
+        normalizedDate.setUTCHours(0, 0, 0, 0);
+
         // 2. Create or Update Attendance Session
         let session = await this.prisma.attendanceSession.findFirst({
             where: {
@@ -434,7 +435,7 @@ export class SchoolAdminAttendanceService {
                 sectionId: dto.sectionId,
                 subjectId: dto.subjectId || undefined,
                 timePeriodId: dto.timePeriodId || undefined,
-                date: new Date(dto.date),
+                date: normalizedDate,
             }
         });
 
@@ -450,7 +451,7 @@ export class SchoolAdminAttendanceService {
                         sectionId: dto.sectionId,
                         subjectId: dto.subjectId,
                         timePeriodId: dto.timePeriodId,
-                        date: new Date(dto.date),
+                        date: normalizedDate,
                         markedById: userId, // Marked by Admin
                         takenAt: new Date(),
                     }
@@ -496,7 +497,7 @@ export class SchoolAdminAttendanceService {
                     update: {
                         status: record.status,
                         remarks: record.remarks,
-                        isLate: record.status === "ABSENT" ? false : undefined,
+                        isLate: record.status === "LATE" ? true : (record.status === "ABSENT" ? false : undefined),
                     },
                     create: {
                         schoolId,
@@ -504,6 +505,7 @@ export class SchoolAdminAttendanceService {
                         studentProfileId: pid as number,
                         status: record.status,
                         remarks: record.remarks,
+                        isLate: record.status === "LATE" ? true : false,
                     }
                 });
             }
@@ -513,7 +515,7 @@ export class SchoolAdminAttendanceService {
     }
 
     async getClassSession(
-        userId: number,
+        schoolId: number,
         academicYearId: number,
         classId: number,
         sectionId: number,
@@ -521,9 +523,11 @@ export class SchoolAdminAttendanceService {
         subjectId?: number,
         timePeriodId?: number
     ) {
-        const user = await this.prisma.user.findUnique({ where: { id: userId } });
-        if (!user) throw new NotFoundException('User not found');
-        const schoolId = user.schoolId as number;
+        // Validation handled by Guard and Controller
+
+
+        const normalizedDate = new Date(date);
+        normalizedDate.setUTCHours(0, 0, 0, 0);
 
         const session = await this.prisma.attendanceSession.findFirst({
             where: {
@@ -531,7 +535,7 @@ export class SchoolAdminAttendanceService {
                 academicYearId,
                 classId,
                 sectionId,
-                date,
+                date: normalizedDate,
                 subjectId: subjectId || undefined,
                 timePeriodId: timePeriodId || undefined,
             },
@@ -579,7 +583,7 @@ export class SchoolAdminAttendanceService {
                     }
                 },
                 orderBy: {
-                    user: { name: 'asc' }
+                    fullName: 'asc'
                 }
             });
 
@@ -591,7 +595,7 @@ export class SchoolAdminAttendanceService {
                 attendances: students.map(s => ({
                     studentProfileId: s.id,
                     userId: s.userId,
-                    studentName: s.user.name,
+                    studentName: s.fullName || s.user?.name || "Unknown Student",
                     status: undefined, // Not marked
                     remarks: undefined,
                     isLate: false,
@@ -608,7 +612,7 @@ export class SchoolAdminAttendanceService {
             attendances: (session as any).attendances.map((a: any) => ({
                 studentProfileId: a.studentProfileId,
                 userId: a.studentProfile.userId,
-                studentName: a.studentProfile.user.name,
+                studentName: a.studentProfile?.fullName || a.studentProfile?.user?.name || "Unknown Student",
                 status: a.status,
                 remarks: a.remarks,
                 isLate: a.isLate,
@@ -617,26 +621,15 @@ export class SchoolAdminAttendanceService {
         };
     }
 
-    async deleteSession(userId: number, sessionId: number) {
-        // 1. Verify user (School Admin/Principal)
-        const user = await this.prisma.user.findUnique({ where: { id: userId } });
-        if (!user) throw new NotFoundException('User not found');
-
-        // 2. Verify session exists and belongs to school
+    async deleteSession(schoolId: number, id: number) {
         const session = await this.prisma.attendanceSession.findFirst({
-            where: {
-                id: sessionId,
-                schoolId: user.schoolId as number
-            }
+            where: { id, schoolId }
         });
-
-        if (!session) {
-            throw new NotFoundException('Attendance session not found.');
-        }
+        if (!session) throw new NotFoundException('Attendance session not found.');
 
         // 3. Delete session
         await this.prisma.attendanceSession.delete({
-            where: { id: sessionId }
+            where: { id }
         });
 
         return { message: 'Attendance session deleted successfully' };
@@ -665,7 +658,10 @@ export class SchoolAdminAttendanceService {
         const records = await this.prisma.attendance.findMany({
             where: {
                 schoolId,
-                isLate: true,
+                OR: [
+                    { isLate: true },
+                    { status: 'LATE' }
+                ],
                 session: {
                     date: {
                         gte: start,
@@ -696,13 +692,14 @@ export class SchoolAdminAttendanceService {
 
         return records.map(r => ({
             studentId: r.studentProfileId,
-            name: r?.studentProfile?.user?.name,
+            name: r?.studentProfile?.fullName || r?.studentProfile?.user?.name || "Unknown Student",
             photo: r?.studentProfile?.user?.photo,
             rollNo: r.studentProfile.rollNo,
             class: r.session?.class?.name,
             section: r.session?.section?.name,
             lateReason: r.lateReason,
             lateMarkedAt: r.lateMarkedAt,
+            date: r.session?.date,
         }));
     }
 
@@ -714,10 +711,7 @@ export class SchoolAdminAttendanceService {
                 schoolId,
                 status: 'ABSENT',
                 session: {
-                    date: {
-                        gte: start,
-                        lte: end
-                    },
+                    date: { gte: start, lte: end },
                     academicYearId: dto.academicYearId,
                     classId: dto.classId,
                     sectionId: dto.sectionId
@@ -728,10 +722,8 @@ export class SchoolAdminAttendanceService {
                     include: {
                         user: { select: { name: true, photo: true, id: true } },
                         parents: {
-                            include: {
-                                parent: true
-                            },
-                            take: 1 // Get first parent for contact
+                            include: { parent: true },
+                            take: 1
                         }
                     }
                 },
@@ -744,24 +736,31 @@ export class SchoolAdminAttendanceService {
             }
         });
 
-        return records.map(r => {
-            const parent = r.studentProfile.parents[0]?.parent;
-            // Fallback to any available contact number from parent profile
-            const parentName = parent?.fatherName || parent?.motherName || parent?.guardianName;
-            const parentPhone = parent?.fatherContact || parent?.motherContact || parent?.guardianContact;
+        // Use a Map to aggregate by studentProfileId to ensure unique students per day
+        const uniqueStudents = new Map<number, any>();
 
-            return {
-                studentId: r.studentProfileId,
-                userId: r?.studentProfile?.user?.id,
-                name: r?.studentProfile?.user?.name,
-                photo: r?.studentProfile?.user?.photo,
-                rollNo: r.studentProfile.rollNo,
-                class: r.session?.class?.name,
-                section: r.session?.section?.name,
-                parentName,
-                parentPhone,
-            };
-        });
+        for (const r of records) {
+            if (!uniqueStudents.has(r.studentProfileId)) {
+                const parent = r.studentProfile.parents[0]?.parent;
+                const parentName = parent?.fatherName || parent?.motherName || parent?.guardianName;
+                const parentPhone = parent?.fatherContact || parent?.motherContact || parent?.guardianContact;
+
+                uniqueStudents.set(r.studentProfileId, {
+                    studentId: r.studentProfileId,
+                    userId: r?.studentProfile?.user?.id,
+                    name: r?.studentProfile?.fullName || r?.studentProfile?.user?.name || "Unknown Student",
+                    photo: r?.studentProfile?.user?.photo,
+                    rollNo: r.studentProfile.rollNo,
+                    class: r.session?.class?.name,
+                    section: r.session?.section?.name,
+                    parentName,
+                    parentPhone,
+                    date: r.session?.date,
+                });
+            }
+        }
+
+        return Array.from(uniqueStudents.values());
     }
 
     async getClassComparisonReport(schoolId: number, dto: AttendanceReportFilterDto) {
@@ -782,6 +781,9 @@ export class SchoolAdminAttendanceService {
                 class: { select: { name: true } },
                 section: { select: { name: true } },
                 attendances: {
+                    where: {
+                        studentProfile: { isActive: true }
+                    },
                     select: {
                         status: true,
                         isLate: true
@@ -790,7 +792,51 @@ export class SchoolAdminAttendanceService {
             }
         });
 
-        // Aggregation Map
+        // Aggregation Map by Class-Section AND Date to handle multi-session days properly
+        const dailyAggregation = new Map<string, {
+            total: number;
+            present: number;
+            absent: number;
+            late: number;
+            excused: number;
+        }>();
+
+        for (const session of stats) {
+            const dateKey = session.date.toISOString().split('T')[0];
+            const classKey = `${session.classId}-${session.sectionId}`;
+            const key = `${classKey}_${dateKey}`;
+
+            const attendances = session.attendances;
+            const currentTotal = attendances.length;
+            const currentPresent = attendances.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
+            const currentAbsent = attendances.filter(a => a.status === 'ABSENT').length;
+            const currentLate = attendances.filter(a => a.isLate || a.status === 'LATE').length;
+            const currentExcused = attendances.filter(a => a.status === 'EXCUSED').length;
+
+            if (!dailyAggregation.has(key)) {
+                dailyAggregation.set(key, {
+                    total: currentTotal,
+                    present: currentPresent,
+                    absent: currentAbsent,
+                    late: currentLate,
+                    excused: currentExcused
+                });
+            } else {
+                // If multiple sessions exist for the same class on the same day,
+                // we take the session with the MOST attendances as the representative total for the day.
+                // This prevents double-counting students in multi-subject schools.
+                const existing = dailyAggregation.get(key)!;
+                if (currentTotal > existing.total) {
+                    existing.total = currentTotal;
+                    existing.present = currentPresent;
+                    existing.absent = currentAbsent;
+                    existing.late = currentLate;
+                    existing.excused = currentExcused;
+                }
+            }
+        }
+
+        // Final Aggregation by Class-Section (summing up the Daily totals)
         const aggregation = new Map<string, {
             classId: number;
             sectionId: number;
@@ -803,15 +849,30 @@ export class SchoolAdminAttendanceService {
             excusedCount: number;
         }>();
 
-        for (const session of stats) {
-            const key = `${session?.classId}-${session?.sectionId}`;
+        // Helper to get class/section names from any session of that class
+        const classNames = new Map<string, { className: string, sectionName: string, classId: number, sectionId: number }>();
+        stats.forEach(s => {
+            const key = `${s.classId}-${s.sectionId}`;
+            if (!classNames.has(key)) {
+                classNames.set(key, {
+                    className: s.class?.name || '',
+                    sectionName: s.section?.name || '',
+                    classId: s.classId as number,
+                    sectionId: s.sectionId as number
+                });
+            }
+        });
 
-            if (!aggregation.has(key)) {
-                aggregation.set(key, {
-                    classId: session?.classId as number,
-                    sectionId: session?.sectionId as number,
-                    className: session?.class?.name as string,
-                    sectionName: session?.section?.name as string,
+        for (const [key, daily] of dailyAggregation.entries()) {
+            const classKey = key.split('_')[0];
+            const meta = classNames.get(classKey)!;
+
+            if (!aggregation.has(classKey)) {
+                aggregation.set(classKey, {
+                    classId: meta.classId,
+                    sectionId: meta.sectionId,
+                    className: meta.className,
+                    sectionName: meta.sectionName,
                     totalStudents: 0,
                     presentCount: 0,
                     absentCount: 0,
@@ -820,13 +881,12 @@ export class SchoolAdminAttendanceService {
                 });
             }
 
-            const entry = aggregation.get(key)!;
-
-            entry.totalStudents += (session as any).attendances.length;
-            entry.presentCount += (session as any).attendances.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
-            entry.absentCount += (session as any).attendances.filter(a => a.status === 'ABSENT').length;
-            entry.lateCount += (session as any).attendances.filter(a => a.isLate).length;
-            entry.excusedCount += (session as any).attendances.filter(a => a.status === 'EXCUSED').length;
+            const entry = aggregation.get(classKey)!;
+            entry.totalStudents += daily.total;
+            entry.presentCount += daily.present;
+            entry.absentCount += daily.absent;
+            entry.lateCount += daily.late;
+            entry.excusedCount += daily.excused;
         }
 
         // Convert to array and calculate percentage
@@ -843,36 +903,68 @@ export class SchoolAdminAttendanceService {
         // Range based report
         const { start, end } = this.resolveDateRange(dto);
 
-        const counts = await this.prisma.attendance.groupBy({
-            by: ['status'],
-            where: {
-                schoolId,
-                session: {
-                    academicYearId: dto.academicYearId,
-                    date: {
-                        gte: start,
-                        lte: end
-                    }
-                }
-            },
-            _count: {
-                status: true
-            }
-        });
+        let counts: any[];
+        let lateCount: number;
 
-        const lateCount = await this.prisma.attendance.count({
-            where: {
-                schoolId,
-                isLate: true,
-                session: {
+        if (dto.scope === 'TEACHER') {
+            counts = await (this.prisma.staffAttendance as any).groupBy({
+                by: ['status'],
+                where: {
+                    schoolId,
                     academicYearId: dto.academicYearId,
                     date: {
                         gte: start,
                         lte: end
                     }
+                },
+                _count: {
+                    status: true
                 }
-            }
-        });
+            });
+
+            lateCount = await this.prisma.staffAttendance.count({
+                where: {
+                    schoolId,
+                    academicYearId: dto.academicYearId,
+                    date: {
+                        gte: start,
+                        lte: end
+                    },
+                    isLate: true
+                }
+            });
+        } else {
+            counts = await (this.prisma.attendance as any).groupBy({
+                by: ['status'],
+                where: {
+                    schoolId,
+                    session: {
+                        academicYearId: dto.academicYearId,
+                        date: {
+                            gte: start,
+                            lte: end
+                        }
+                    }
+                },
+                _count: {
+                    status: true
+                }
+            });
+
+            lateCount = await this.prisma.attendance.count({
+                where: {
+                    schoolId,
+                    isLate: true,
+                    session: {
+                        academicYearId: dto.academicYearId,
+                        date: {
+                            gte: start,
+                            lte: end
+                        }
+                    }
+                }
+            });
+        }
 
         const stats = {
             PRESENT: 0,
@@ -931,12 +1023,18 @@ export class SchoolAdminAttendanceService {
             }
         }
 
-        // 3. Convert to array and sort
-        const ranked = Array.from(studentStats.entries()).map(([id, stats]) => ({
-            studentId: id,
-            ...stats,
-            score: (stats.present / stats.total) * 100
-        }));
+        // 3. Convert to array, filter, and sort
+        const ranked = Array.from(studentStats.entries())
+            .map(([id, stats]) => ({
+                studentId: id,
+                ...stats,
+                score: (stats.present / stats.total) * 100
+            }))
+            .filter(r => {
+                if (order === 'desc') return r.score >= 85; 
+                if (order === 'asc') return r.score < 75;
+                return true;
+            });
 
         ranked.sort((a, b) => {
             return order === 'desc' ? b.score - a.score : a.score - b.score;
@@ -948,7 +1046,9 @@ export class SchoolAdminAttendanceService {
         // 5. Hydrate details
         const studentDetails = await this.prisma.studentProfile.findMany({
             where: { id: { in: topN.map(r => r.studentId) } },
-            include: {
+            select: {
+                id: true,
+                fullName: true,
                 user: { select: { name: true, photo: true } },
                 class: { select: { name: true } },
                 section: { select: { name: true } }
@@ -959,7 +1059,7 @@ export class SchoolAdminAttendanceService {
             const details = studentDetails.find(d => d.id === r.studentId);
             return {
                 studentId: r.studentId,
-                name: details?.user?.name || 'Unknown',
+                name: (details?.fullName && details.fullName.trim() !== "") ? details.fullName : (details?.user?.name || 'Unknown Student'),
                 photo: details?.user?.photo,
                 className: details?.class?.name,
                 sectionName: details?.section?.name,
@@ -987,5 +1087,44 @@ export class SchoolAdminAttendanceService {
         const all = await this.getDailyAttendance(schoolId, date, true);
         // Include Absent and Excused (Leave)
         return all.filter(t => t.status === 'ABSENT' || t.status === 'EXCUSED');
+    }
+
+    async getClassFullDayLog(schoolId: number, academicYearId: number, classId: number, sectionId: number, date: Date) {
+        const start = new Date(date);
+        start.setUTCHours(0, 0, 0, 0);
+        const end = new Date(date);
+        end.setUTCHours(23, 59, 59, 999);
+
+        const sessions = await this.prisma.attendanceSession.findMany({
+            where: {
+                schoolId,
+                academicYearId,
+                classId,
+                sectionId,
+                date: {
+                    gte: start,
+                    lte: end
+                }
+            },
+            include: {
+                attendances: {
+                    select: {
+                        studentProfileId: true,
+                        status: true,
+                        isLate: true,
+                        remarks: true,
+                        lateReason: true
+                    }
+                },
+                subject: { select: { id: true, name: true } },
+                timePeriod: { select: { id: true, name: true, startTime: true, endTime: true } },
+                markedBy: { select: { name: true } }
+            },
+            orderBy: {
+                timePeriod: { startTime: 'asc' }
+            }
+        });
+
+        return sessions;
     }
 }

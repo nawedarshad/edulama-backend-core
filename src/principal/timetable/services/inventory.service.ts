@@ -173,45 +173,53 @@ export class TimetableInventoryService {
         const slotIds = relevantSlots.map(s => s.id);
 
         // 3. Deep Conflict Detection
-        for (const slotId of slotIds) {
-            // Group check
-            const groupConflict = await this.prisma.timetableEntry.findFirst({
-                where: { schoolId, academicYearId, day, timeSlotId: slotId, groupId },
-            });
-            if (groupConflict) return { status: 'CONFLICT', message: `Group is already busy in one of the requested slots` };
+        const allDaySlots = await this.prisma.timeSlot.findMany({
+            where: { schoolId, academicYearId, day },
+            orderBy: { startTime: 'asc' }
+        });
 
-            // Teacher check
-            if (allTeacherIds.length > 0) {
-                const teacherConflict = await this.prisma.timetableEntry.findFirst({
-                    where: {
-                        schoolId,
-                        academicYearId,
-                        day,
-                        timeSlotId: slotId,
-                        OR: [
-                            { teacherId: { in: allTeacherIds } },
-                            { teachers: { some: { teacherId: { in: allTeacherIds } } } }
-                        ]
-                    },
-                });
-                if (teacherConflict) return { status: 'CONFLICT', message: `One or more teachers are busy in one of the requested slots` };
+        const existingEntries = await this.prisma.timetableEntry.findMany({
+            where: {
+                schoolId,
+                academicYearId,
+                day,
+                OR: [
+                    { groupId },
+                    { teacherId: { in: allTeacherIds } },
+                    { teachers: { some: { teacherId: { in: allTeacherIds } } } },
+                    { roomId: { in: allRoomIds } },
+                    { rooms: { some: { roomId: { in: allRoomIds } } } }
+                ]
+            },
+            include: {
+                teachers: { select: { teacherId: true } },
+                rooms: { select: { roomId: true } },
             }
+        });
 
-            // Room check
-            if (allRoomIds.length > 0) {
-                const roomConflict = await this.prisma.timetableEntry.findFirst({
-                    where: {
-                        schoolId,
-                        academicYearId,
-                        day,
-                        timeSlotId: slotId,
-                        OR: [
-                            { roomId: { in: allRoomIds } },
-                            { rooms: { some: { roomId: { in: allRoomIds } } } }
-                        ]
-                    },
-                });
-                if (roomConflict) return { status: 'CONFLICT', message: `One or more rooms are occupied in one of the requested slots` };
+        for (const entry of existingEntries) {
+            const startIndex = allDaySlots.findIndex(s => s.id === entry.timeSlotId);
+            if (startIndex === -1) continue;
+
+            const entrySpanIds = allDaySlots.slice(startIndex, startIndex + entry.durationSlots).map(s => s.id);
+            const overlaps = slotIds.some(id => entrySpanIds.includes(id));
+
+            if (overlaps) {
+                if (entry.groupId === groupId) {
+                    return { status: 'CONFLICT', message: `Group is already busy in one of the requested slots` };
+                }
+                const conflictingTeacher = allTeacherIds.find(tId => 
+                    entry.teacherId === tId || entry.teachers.some(et => et.teacherId === tId)
+                );
+                if (conflictingTeacher) {
+                    return { status: 'CONFLICT', message: `One or more teachers are busy in one of the requested slots` };
+                }
+                const conflictingRoom = allRoomIds.find(rId => 
+                    entry.roomId === rId || entry.rooms.some(er => er.roomId === rId)
+                );
+                if (conflictingRoom) {
+                    return { status: 'CONFLICT', message: `One or more rooms are occupied in one of the requested slots` };
+                }
             }
         }
 

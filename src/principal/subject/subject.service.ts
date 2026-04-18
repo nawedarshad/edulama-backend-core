@@ -204,41 +204,78 @@ export class SubjectService {
             if (sectionsToAssign.length === 0) throw new BadRequestException('No sections found for this class');
         }
 
-        // Optimization: bulk create assignment records using createMany
+        // 1. Atomic Transaction for dual occupancy sync
         try {
-            const count = await this.prisma.classSubject.createMany({
-                data: sectionsToAssign.map(section => ({
-                    schoolId,
-                    academicYearId: academicYear.id,
-                    classId: dto.classId,
-                    sectionId: section.id,
-                    subjectId: dto.subjectId,
-                    classSubjectCode: dto.classSubjectCode || `${subject.code}-${section.id}`,
-                    type: dto.type,
-                    credits: dto.credits,
-                    weeklyClasses: dto.weeklyClasses,
-                    maxMarks: dto.maxMarks,
-                    passMarks: dto.passMarks,
-                    isOptional: dto.isOptional,
-                    hasLab: dto.hasLab,
-                    excludeFromGPA: dto.excludeFromGPA,
-                    isGraded: dto.isGraded ?? true,
-                    assessmentType: (dto.assessmentType ?? AssessmentType.MARKS) as AssessmentType
-                })),
-                skipDuplicates: true
+            await this.prisma.$transaction(async (tx) => {
+                // A. Create/Update ClassSubject records (the configuration)
+                // Since createMany doesn't support returning data or complex nested logic, we use it for bulk config.
+                await tx.classSubject.createMany({
+                    data: sectionsToAssign.map(section => ({
+                        schoolId,
+                        academicYearId: academicYear.id,
+                        classId: dto.classId,
+                        sectionId: section.id,
+                        subjectId: dto.subjectId,
+                        teacherProfileId: dto.teacherId, // SYNC: Store in config
+                        classSubjectCode: dto.classSubjectCode || `${subject.code}-${section.id}`,
+                        type: dto.type,
+                        credits: dto.credits,
+                        weeklyClasses: dto.weeklyClasses,
+                        maxMarks: dto.maxMarks,
+                        passMarks: dto.passMarks,
+                        isOptional: dto.isOptional,
+                        hasLab: dto.hasLab,
+                        excludeFromGPA: dto.excludeFromGPA,
+                        isGraded: dto.isGraded ?? true,
+                        assessmentType: (dto.assessmentType ?? AssessmentType.MARKS) as AssessmentType
+                    })),
+                    skipDuplicates: true
+                });
+
+                // B. Synchronize SubjectAssignment (the teacher allocation used by Timetable)
+                if (dto.teacherId) {
+                    for (const section of sectionsToAssign) {
+                        await tx.subjectAssignment.upsert({
+                            where: {
+                                schoolId_academicYearId_classId_sectionId_subjectId: {
+                                    schoolId,
+                                    academicYearId: academicYear.id,
+                                    classId: dto.classId,
+                                    sectionId: section.id,
+                                    subjectId: dto.subjectId
+                                }
+                            },
+                            update: {
+                                teacherId: dto.teacherId,
+                                isActive: true,
+                                periodsPerWeek: dto.weeklyClasses
+                            },
+                            create: {
+                                schoolId,
+                                academicYearId: academicYear.id,
+                                classId: dto.classId,
+                                sectionId: section.id,
+                                subjectId: dto.subjectId,
+                                teacherId: dto.teacherId,
+                                periodsPerWeek: dto.weeklyClasses,
+                                isActive: true
+                            }
+                        });
+                    }
+                }
             });
 
             this.eventEmitter.emit('audit.log', new AuditLogEvent(
                 schoolId,
                 userId,
                 'CLASS_SUBJECT',
-                'CREATE',
+                'ASSIGN',
                 dto.subjectId,
                 { dto, sectionsAssigned: sectionsToAssign.length }
             ));
 
-            this.logger.log(`[School ${schoolId}] Assignment complete. Sections assigned: ${count.count}`);
-            return { message: `Assigned to ${count.count} sections.` };
+            this.logger.log(`[School ${schoolId}] Assignment complete. Sections assigned: ${sectionsToAssign.length}`);
+            return { message: `Assigned to ${sectionsToAssign.length} sections.` };
         } catch (error) {
             this.logger.error(`[School ${schoolId}] Bulk assignment failed`, error.stack);
             throw new BadRequestException('Failed to assign subjects to sections');
@@ -273,12 +310,50 @@ export class SubjectService {
         });
         if (!existing) throw new NotFoundException('Class Subject configuration not found');
 
-        const updated = await this.prisma.classSubject.update({
-            where: { id },
-            data: {
-                ...dto,
-                assessmentType: dto.assessmentType as AssessmentType
+        const { teacherId, ...rest } = dto;
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            // 1. Update configuration
+            const cs = await tx.classSubject.update({
+                where: { id },
+                data: {
+                    ...rest,
+                    teacherProfileId: teacherId, // SYNC: Store in config
+                    assessmentType: dto.assessmentType as AssessmentType
+                }
+            });
+
+            // 2. Synchronize teacher allocation
+            if (teacherId) {
+                await tx.subjectAssignment.upsert({
+                    where: {
+                        schoolId_academicYearId_classId_sectionId_subjectId: {
+                            schoolId,
+                            academicYearId: cs.academicYearId,
+                            classId: cs.classId,
+                            sectionId: cs.sectionId,
+                            subjectId: cs.subjectId
+                        }
+                    },
+                    update: { 
+                        teacherId: teacherId, 
+                        isActive: true,
+                        periodsPerWeek: dto.weeklyClasses ?? cs.weeklyClasses
+                    },
+                    create: {
+                        schoolId,
+                        academicYearId: cs.academicYearId,
+                        classId: cs.classId,
+                        sectionId: cs.sectionId,
+                        subjectId: cs.subjectId,
+                        teacherId: teacherId,
+                        periodsPerWeek: dto.weeklyClasses ?? cs.weeklyClasses,
+                        isActive: true
+                    }
+                });
             }
+
+            return cs;
         });
 
         this.eventEmitter.emit('audit.log', new AuditLogEvent(
@@ -301,7 +376,43 @@ export class SubjectService {
         });
         if (!existing) throw new NotFoundException('Class Subject configuration not found');
 
-        const deleted = await this.prisma.classSubject.delete({ where: { id } });
+        // 1. Identify scope for cleanup
+        const { academicYearId, classId, sectionId, subjectId } = existing;
+
+        const deleted = await this.prisma.$transaction(async (tx) => {
+            // 2. Delete Timetable Entries
+            // Find groups associated with this class/section to clean up their timetable
+            const groups = await tx.academicGroup.findMany({
+                where: { schoolId, classId, sectionId },
+                select: { id: true }
+            });
+            const groupIds = groups.map(g => g.id);
+
+            if (groupIds.length > 0) {
+                await tx.timetableEntry.deleteMany({
+                    where: {
+                        schoolId,
+                        academicYearId,
+                        subjectId,
+                        groupId: { in: groupIds }
+                    }
+                });
+            }
+
+            // 3. Delete Subject Assignments (Teacher allocations)
+            await tx.subjectAssignment.deleteMany({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    classId,
+                    sectionId,
+                    subjectId
+                }
+            });
+
+            // 4. Delete the configuration itself
+            return tx.classSubject.delete({ where: { id } });
+        });
 
         this.eventEmitter.emit('audit.log', new AuditLogEvent(
             schoolId,

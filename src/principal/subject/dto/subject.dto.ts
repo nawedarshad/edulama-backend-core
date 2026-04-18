@@ -131,6 +131,11 @@ export class CreateClassSubjectDto {
     @ApiPropertyOptional({ description: 'Flexible configuration object' })
     @IsOptional()
     configuration?: any;
+
+    @ApiPropertyOptional({ description: 'ID of the teacher assigned to this subject', example: 5 })
+    @IsInt()
+    @IsOptional()
+    teacherId?: number;
 }
 
 export class UpdateClassSubjectDto {
@@ -178,8 +183,9 @@ export class UpdateClassSubjectDto {
     @IsOptional()
     classSubjectCode?: string;
 
-    // displayName and configuration removed
-
+    @IsInt()
+    @IsOptional()
+    teacherId?: number;
 }
 
 export class CreateCategoryDto {

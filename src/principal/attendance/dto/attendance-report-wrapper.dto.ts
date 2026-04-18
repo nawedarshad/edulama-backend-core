@@ -28,9 +28,13 @@ export class AttendanceReportFilterDto {
     @Type(() => Number)
     @IsOptional()
     sectionId?: number;
+
     @IsNumber()
     @Type(() => Number)
     @IsOptional()
     @Min(1)
     limit?: number;
+
+    @IsOptional()
+    scope?: string;
 }
