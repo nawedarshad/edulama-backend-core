@@ -23,7 +23,7 @@ export class AttendanceConfigService {
             }),
             (this.prisma.schoolSettings as any).findUnique({
                 where: { schoolId },
-                select: { attendanceMode: true, dailyAttendanceAccess: true, trackingStrategy: true, lateMarkingResponsibility: true } 
+                select: { attendanceMode: true, dailyAttendanceAccess: true, trackingStrategy: true, lateMarkingResponsibility: true, lateCountingPolicy: true } 
             }) as any
         ]);
 
@@ -34,6 +34,7 @@ export class AttendanceConfigService {
                 responsibility: schoolSettings?.dailyAttendanceAccess || 'CLASS_TEACHER',
                 trackingStrategy: schoolSettings?.trackingStrategy || 'ATTENDANCE_SIMPLE',
                 lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility || 'TAKER',
+                lateCountingPolicy: schoolSettings?.lateCountingPolicy || 'LATE',
                 warning: 'Configuration not found for this academic year, returning defaults from SchoolSettings.'
             };
         }
@@ -42,6 +43,7 @@ export class AttendanceConfigService {
             ...config,
             trackingStrategy: schoolSettings?.trackingStrategy || 'ATTENDANCE_SIMPLE',
             lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility || 'TAKER',
+            lateCountingPolicy: schoolSettings?.lateCountingPolicy || 'LATE',
         };
     }
 

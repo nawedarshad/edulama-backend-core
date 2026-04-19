@@ -4,6 +4,7 @@ enum AttendanceStatus {
   ABSENT
   EXCUSED
   LATE
+  HALFDAY
   SUSPENDED
 }
 

@@ -196,14 +196,14 @@ export class SchoolAdminAttendanceService {
                     academicYearId,
                     teacherId: update.teacherId,
                     date: date,
-                    status: update.status,
+                    status: update.status as any,
                     remarks: update.remarks,
                     checkInTime: update.checkInTime ? new Date(update.checkInTime) : undefined, // specific date or just time? date usually.
                     checkOutTime: update.checkOutTime ? new Date(update.checkOutTime) : undefined,
                     isLate: update.status === AttendanceStatus.LATE
                 },
                 update: {
-                    status: update.status,
+                    status: update.status as any,
                     remarks: update.remarks,
                     checkInTime: update.checkInTime ? new Date(update.checkInTime) : undefined,
                     checkOutTime: update.checkOutTime ? new Date(update.checkOutTime) : undefined,
@@ -244,21 +244,49 @@ export class SchoolAdminAttendanceService {
             throw new BadRequestException('Academic Group not found for the specified class and section.');
         }
 
-        // 3. Check if attendance session exists for this class/section/date
         const attendanceDate = new Date(dto.date);
+        attendanceDate.setUTCHours(0, 0, 0, 0);
 
-        // Find or create attendance session for daily attendance
-        let session = await this.prisma.attendanceSession.findFirst({
-            where: {
-                schoolId,
-                academicYearId: dto.academicYearId,
-                classId: dto.classId,
-                sectionId: dto.sectionId,
-                date: attendanceDate,
-                subjectId: undefined, // Daily attendance
-                timePeriodId: undefined,
-            }
+        // 3. Check if attendance session exists for this class/section/date
+        // Resolve AttendanceConfig to check mode
+        const config = await this.prisma.attendanceConfig.findUnique({
+            where: { schoolId_academicYearId: { schoolId, academicYearId: dto.academicYearId } }
         });
+        const schoolSettings = await this.prisma.schoolSettings.findUnique({
+            where: { schoolId }
+        });
+        const mode = config?.mode || schoolSettings?.attendanceMode || 'DAILY';
+        const latePolicy = schoolSettings?.lateCountingPolicy || 'LATE';
+
+        // Find or create attendance session depending on mode
+        let session;
+        if (mode === 'PERIOD_WISE') {
+            session = await this.prisma.attendanceSession.findFirst({
+                where: {
+                    schoolId,
+                    academicYearId: dto.academicYearId,
+                    classId: dto.classId,
+                    sectionId: dto.sectionId,
+                    date: attendanceDate,
+                },
+                orderBy: { takenAt: 'desc' }
+            });
+            if (!session) {
+                throw new BadRequestException('Cannot mark late: no period session has been started for this class today.');
+            }
+        } else {
+            session = await this.prisma.attendanceSession.findFirst({
+                where: {
+                    schoolId,
+                    academicYearId: dto.academicYearId,
+                    classId: dto.classId,
+                    sectionId: dto.sectionId,
+                    date: attendanceDate,
+                    subjectId: null,
+                    timePeriodId: null,
+                }
+            });
+        }
 
         // If no session exists, create one
         if (!session) {
@@ -433,11 +461,17 @@ export class SchoolAdminAttendanceService {
                 academicYearId: dto.academicYearId,
                 classId: dto.classId,
                 sectionId: dto.sectionId,
-                subjectId: dto.subjectId || undefined,
-                timePeriodId: dto.timePeriodId || undefined,
+                subjectId: dto.subjectId || null,
+                timePeriodId: dto.timePeriodId || null,
                 date: normalizedDate,
             }
         });
+
+        const schoolSettings = await this.prisma.schoolSettings.findUnique({
+            where: { schoolId },
+            select: { lateCountingPolicy: true }
+        });
+        const latePolicy = schoolSettings?.lateCountingPolicy || 'LATE';
 
         return this.prisma.$transaction(async (tx) => {
             if (!session) {
@@ -486,6 +520,16 @@ export class SchoolAdminAttendanceService {
                     continue;
                 }
 
+                let finalStatus = record.status;
+                let isLate = record.status === "LATE" ? true : false;
+                
+                if (record.status === "LATE") {
+                    if (latePolicy === 'HALFDAY') finalStatus = AttendanceStatus.HALFDAY as any;
+                    else if (latePolicy === 'ABSENT') finalStatus = AttendanceStatus.ABSENT as any;
+                    else if (latePolicy === 'LATE') finalStatus = AttendanceStatus.LATE as any;
+                    else finalStatus = AttendanceStatus.PRESENT as any;
+                }
+
                 await tx.attendance.upsert({
                     where: {
                         schoolId_attendanceSessionId_studentProfileId: {
@@ -495,17 +539,17 @@ export class SchoolAdminAttendanceService {
                         }
                     },
                     update: {
-                        status: record.status,
+                        status: finalStatus,
                         remarks: record.remarks,
-                        isLate: record.status === "LATE" ? true : (record.status === "ABSENT" ? false : undefined),
+                        isLate: isLate,
                     },
                     create: {
                         schoolId,
                         attendanceSessionId: session.id,
                         studentProfileId: pid as number,
-                        status: record.status,
+                        status: finalStatus,
                         remarks: record.remarks,
-                        isLate: record.status === "LATE" ? true : false,
+                        isLate: isLate,
                     }
                 });
             }
@@ -536,8 +580,8 @@ export class SchoolAdminAttendanceService {
                 classId,
                 sectionId,
                 date: normalizedDate,
-                subjectId: subjectId || undefined,
-                timePeriodId: timePeriodId || undefined,
+                subjectId: subjectId || null,
+                timePeriodId: timePeriodId || null,
             },
             include: {
                 attendances: {
