@@ -16,7 +16,7 @@ export class SchoolAdminAttendanceService {
      * Validates if the given date is a working day for the school.
      * Checks CalendarException (holidays) and WorkingPattern (weekends).
      */
-    async validateDate(schoolId: number, dateStr: string, allowHoliday = false) {
+    async validateDate(schoolId: number, dateStr: string, classId?: number, allowHoliday = false) {
         // Parse ISO string or YYYY-MM-DD to strictly UTC midnight
         // This avoids timezone shifts (e.g. 15th becoming 14th)
         let date: Date;
@@ -50,6 +50,10 @@ export class SchoolAdminAttendanceService {
                 schoolId,
                 academicYearId: ay.id,
                 date: date,
+                OR: [
+                    { classId: null },
+                    classId ? { classId: classId } : undefined
+                ].filter(Boolean) as any
             }
         });
 
@@ -68,7 +72,7 @@ export class SchoolAdminAttendanceService {
     }
 
     async getDailyAttendance(schoolId: number, dateStr: string, allowHoliday = false) {
-        const validation = await this.validateDate(schoolId, dateStr, allowHoliday);
+        const validation = await this.validateDate(schoolId, dateStr, undefined, allowHoliday);
         const { academicYearId, date } = validation;
 
         // Fetch all active teachers
@@ -218,7 +222,8 @@ export class SchoolAdminAttendanceService {
 
     async markStudentLate(userId: number, schoolId: number, dto: MarkStudentLateDto) {
         // Validation handled by Guard and Controller
-
+        const validation = await this.validateDate(schoolId, dto.date, dto.classId);
+        const { academicYearId } = validation;
 
         // 2. Verify student belongs to the same school
         const student = await this.prisma.studentProfile.findFirst({
@@ -435,8 +440,7 @@ export class SchoolAdminAttendanceService {
     }
 
     async takeClassAttendance(userId: number, schoolId: number, dto: TakeClassAttendanceDto) {
-        // Validation handled by Guard and Controller
-
+        await this.validateDate(schoolId, dto.date, dto.classId);
 
         const group = await this.prisma.academicGroup.findFirst({
             where: {
@@ -567,11 +571,8 @@ export class SchoolAdminAttendanceService {
         subjectId?: number,
         timePeriodId?: number
     ) {
-        // Validation handled by Guard and Controller
-
-
-        const normalizedDate = new Date(date);
-        normalizedDate.setUTCHours(0, 0, 0, 0);
+        const validation = await this.validateDate(schoolId, date.toISOString(), classId);
+        const normalizedDate = validation.date;
 
         const session = await this.prisma.attendanceSession.findFirst({
             where: {
@@ -1134,9 +1135,9 @@ export class SchoolAdminAttendanceService {
     }
 
     async getClassFullDayLog(schoolId: number, academicYearId: number, classId: number, sectionId: number, date: Date) {
-        const start = new Date(date);
-        start.setUTCHours(0, 0, 0, 0);
-        const end = new Date(date);
+        const validation = await this.validateDate(schoolId, date.toISOString(), classId, true);
+        const start = validation.date;
+        const end = new Date(start);
         end.setUTCHours(23, 59, 59, 999);
 
         const sessions = await this.prisma.attendanceSession.findMany({

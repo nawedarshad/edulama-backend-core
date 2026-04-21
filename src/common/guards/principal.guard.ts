@@ -91,6 +91,12 @@ export class PrincipalAuthGuard implements CanActivate {
                 request.user.schoolId = parseInt(headerSchoolId as string);
             }
 
+            // --- CRITICAL HARDENING: Ensure core identifiers are non-null for downstream services ---
+            if (!request.user.id || !request.user.schoolId) {
+                this.logger.error(`Missing core identity: id=${request.user.id}, schoolId=${request.user.schoolId}`);
+                throw new UnauthorizedException('Authentication payload missing required school/user identifiers');
+            }
+
             return true;
         } catch (error) {
             // If it's already an UnauthorizedException, re-throw it

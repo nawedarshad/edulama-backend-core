@@ -110,6 +110,7 @@ model School {
   questionPapers         QuestionPaper[]
   examResults            ExamResult[]
   webPages               WebPage[]
+  webMenus               WebMenu[]
   inquiries              Inquiry[]
   examRoomTemplates      ExamRoomTemplate[]
   userSchools            UserSchool[]

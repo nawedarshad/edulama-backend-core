@@ -1,5 +1,5 @@
 import { IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsOptional, IsPhoneNumber, IsString, IsUrl, Min } from 'class-validator';
-import { AttendanceMode, DailyAttendanceAccess, GradingSystem, PromotionPolicy } from '@prisma/client';
+import { AttendanceMode, AttendanceTrackingStrategy, DailyAttendanceAccess, GradingSystem, LateAttendanceStatus, LateMarkingResponsibility, PromotionPolicy } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -91,6 +91,30 @@ export class UpdateSchoolSettingsDto {
     @IsOptional()
     @Transform(({ value }) => value === "" ? undefined : value)
     dailyAttendanceAccess?: DailyAttendanceAccess;
+
+    @ApiPropertyOptional({ enum: AttendanceTrackingStrategy, description: 'Attendance tracking strategy', example: AttendanceTrackingStrategy.ATTENDANCE_SIMPLE })
+    @IsEnum(AttendanceTrackingStrategy)
+    @IsOptional()
+    @Transform(({ value }) => value === "" ? undefined : value)
+    trackingStrategy?: AttendanceTrackingStrategy;
+
+    @ApiPropertyOptional({ enum: LateMarkingResponsibility, description: 'Late marking responsibility', example: LateMarkingResponsibility.TAKER })
+    @IsEnum(LateMarkingResponsibility)
+    @IsOptional()
+    @Transform(({ value }) => value === "" ? undefined : value)
+    lateMarkingResponsibility?: LateMarkingResponsibility;
+
+    @ApiPropertyOptional({ enum: LateAttendanceStatus, description: 'Late counting policy', example: LateAttendanceStatus.LATE })
+    @IsEnum(LateAttendanceStatus)
+    @IsOptional()
+    @Transform(({ value }) => value === "" ? undefined : value)
+    lateCountingPolicy?: LateAttendanceStatus;
+
+    @ApiPropertyOptional({ description: 'Lock tracking strategy after sessions start', example: false })
+    @IsBoolean()
+    @IsOptional()
+    @Transform(({ value }) => typeof value === 'string' ? value === 'true' : value)
+    isTrackingStrategyLocked?: boolean;
 
     @ApiPropertyOptional({ description: 'Start date of current academic year (ISO8601)', example: '2024-04-01T00:00:00Z' })
     @IsDateString()
@@ -190,4 +214,10 @@ export class UpdateSchoolSettingsDto {
     @IsInt()
     @IsOptional()
     landingPageTemplate?: number;
+
+    @ApiPropertyOptional({ description: 'Is the school website publicly accessible', example: false })
+    @IsBoolean()
+    @IsOptional()
+    @Transform(({ value }) => typeof value === 'string' ? value === 'true' : value)
+    isWebsitePublic?: boolean;
 }

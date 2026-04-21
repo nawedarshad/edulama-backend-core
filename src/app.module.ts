@@ -20,7 +20,6 @@ import { TodoModule } from './todo/todo.module';
 import { SaaSAdminModule } from './saas-admin/saas-admin.module';
 import { UserModule } from './user/user.module';
 import { ExamModule } from './exam/exam.module';
-import { WebPageModule } from './web-page/web-page.module';
 import { SchoolConfigController } from './common/school-config.controller';
 import { SaasAdminCbseCircularModule } from './saas-admin/cbse-circular/saas-admin-cbse-circular.module';
 import { PrincipalCbseCircularModule } from './principal/cbse-circular/principal-cbse-circular.module';
@@ -63,7 +62,6 @@ import { AppConfigModule } from './common/app-config/app-config.module';
     PrincipalCbseCircularModule,
     EventEmitterModule.forRoot(),
     HttpModule,
-    WebPageModule,
     InquiryModule,
     AuthModule,
     FileUploadModule,

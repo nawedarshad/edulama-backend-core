@@ -412,11 +412,11 @@ export class TeacherClassDiaryService {
         const customKey = `${tenantId}/${academicYear}/diary/${teacherId}/${fileName}`;
 
         // Upload to S3
-        const fileUrl = await this.s3Service.uploadFile(file.buffer, fileName, file.mimetype, customKey);
+        const uploadResult = await this.s3Service.uploadFile(file.buffer, fileName, file.mimetype, customKey);
 
         return {
             title: title || file.originalname,
-            url: fileUrl,
+            url: uploadResult.url,
             mimeType: file.mimetype,
             size: file.size,
         };

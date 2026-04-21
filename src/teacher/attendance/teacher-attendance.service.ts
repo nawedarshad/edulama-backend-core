@@ -13,6 +13,42 @@ export class TeacherAttendanceService {
         private readonly prisma: PrismaService,
         private readonly configService: AttendanceConfigService,
     ) { }
+    
+    private async validateDate(schoolId: number, dateStr: string, classId?: number) {
+        let date = new Date(dateStr);
+        date.setUTCHours(0, 0, 0, 0);
+
+        const ay = await this.prisma.academicYear.findFirst({
+            where: {
+                schoolId,
+                startDate: { lte: date },
+                endDate: { gte: date },
+                status: 'ACTIVE'
+            }
+        });
+
+        if (!ay) {
+            throw new BadRequestException(`No active academic year found for date ${dateStr}`);
+        }
+
+        const holiday = await this.prisma.calendarException.findFirst({
+            where: {
+                schoolId,
+                academicYearId: ay.id,
+                date: date,
+                OR: [
+                    { classId: null },
+                    classId ? { classId: classId } : undefined
+                ].filter(Boolean) as any
+            }
+        });
+
+        if (holiday && holiday.type === 'HOLIDAY') {
+            throw new BadRequestException(`Cannot take attendance on a holiday: ${holiday.title || 'Holiday'}`);
+        }
+
+        return { academicYearId: ay.id, date };
+    }
 
     async getConfig(schoolId: number, academicYearId: number) {
         return this.configService.getConfig(schoolId, academicYearId);
@@ -71,28 +107,8 @@ export class TeacherAttendanceService {
         const schoolId = teacher.schoolId;
 
         // 1b. Validate Date (Holiday Check)
-        const attendanceDate = new Date(dto.date);
-        // Normalize to UTC midnight to match how holidays are stored (usually)
-        // or just ensure we're comparing correctly. 
-        // Best practice: Set time to 00:00:00.000 Z if your DB stores dates as UTC midnight.
-        // Assuming the input `dto.date` is ISO string like '2023-10-25' or '2023-10-25T...'
-        attendanceDate.setUTCHours(0, 0, 0, 0);
-
-        const holiday = await this.prisma.calendarException.findFirst({
-            where: {
-                schoolId,
-                academicYearId: dto.academicYearId,
-                date: attendanceDate,
-                OR: [
-                    { classId: undefined }, // School-wide holiday
-                    { classId: dto.classId } // Class-specific holiday
-                ]
-            }
-        });
-
-        if (holiday && holiday.type === 'HOLIDAY') {
-            throw new BadRequestException(`Cannot take attendance on a holiday: ${holiday.title || 'Holiday'}`);
-        }
+        const validation = await this.validateDate(schoolId, dto.date, dto.classId);
+        const attendanceDate = validation.date;
 
         // 2. Check Attendance Configuration
         const config = await this.configService.getConfig(schoolId, dto.academicYearId);
@@ -394,7 +410,7 @@ export class TeacherAttendanceService {
             );
         }
 
-        // 4. Resolve Academic Group to get correct groupId
+        // 4. Resolve Academic Group ID
         const group = await this.prisma.academicGroup.findFirst({
             where: {
                 schoolId,
@@ -408,7 +424,8 @@ export class TeacherAttendanceService {
         }
 
         // 5. Check if attendance session exists for this class/section/date
-        const attendanceDate = new Date(dto.date);
+        const validation = await this.validateDate(schoolId, dto.date, dto.classId);
+        const attendanceDate = validation.date;
 
         // Resolve AttendanceConfig to check mode
         const config = await this.prisma.attendanceConfig.findUnique({
@@ -522,6 +539,9 @@ export class TeacherAttendanceService {
         subjectId?: number,
         timePeriodId?: number
     ) {
+        const validation = await this.validateDate(schoolId, date.toISOString(), classId);
+        const normalizedDate = validation.date;
+
         const session = await this.prisma.attendanceSession.findFirst({
             where: {
                 schoolId,
@@ -655,7 +675,11 @@ export class TeacherAttendanceService {
 
         const schoolId = teacher.schoolId;
 
-        // 2. Find the existing session
+        // 2. Validate Date
+        const validation = await this.validateDate(schoolId, dto.date, dto.classId);
+        const normalizedDate = validation.date;
+
+        // 3. Find the existing session
         const session = await this.prisma.attendanceSession.findFirst({
             where: {
                 schoolId,
@@ -664,7 +688,7 @@ export class TeacherAttendanceService {
                 sectionId: dto.sectionId,
                 subjectId: dto.subjectId || null,
                 timePeriodId: dto.timePeriodId || null,
-                date: new Date(dto.date),
+                date: normalizedDate,
             }
         });
 
@@ -1019,6 +1043,10 @@ export class TeacherAttendanceService {
     }
 
     async getDailyAssignments(teacherId: number, schoolId: number, academicYearId: number, dateStr: string) {
+        // Validate date (Holidays)
+        await this.validateDate(schoolId, dateStr);
+
+        // Fetch user with teacher profile and academic group roles
         const teacher = await this.prisma.teacherProfile.findUnique({
             where: { userId: teacherId }
         });

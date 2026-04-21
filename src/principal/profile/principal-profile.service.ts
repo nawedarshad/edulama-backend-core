@@ -89,10 +89,10 @@ export class PrincipalProfileService {
             role: userSchool.primaryRole?.name || 'N/A',
             joinedAt: user.createdAt,
             lastSeen: user.lastSeen,
-            school: {
+            school: userSchool.school ? {
                 ...userSchool.school,
-                establishedAt: userSchool.school.createdAt
-            },
+                establishedAt: (userSchool.school as any).createdAt
+            } : null,
             departmentsHeaded: user.departmentHeadOf.map((d: any) => d.name),
             permissions: allPermissions,
             contact: [

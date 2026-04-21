@@ -467,7 +467,7 @@ export class TeacherSubjectService {
         const customKey = `${tenantId}/${academicYear}/subject/${subjectId}/syllabus/${fileName}`;
 
         // Upload to S3
-        const fileUrl = await this.s3Service.uploadFile(file.buffer, fileName, file.mimetype, customKey);
+        const uploadResult = await this.s3Service.uploadFile(file.buffer, fileName, file.mimetype, customKey);
 
         // Store into database
         return this.prisma.syllabusFile.create({
@@ -477,7 +477,7 @@ export class TeacherSubjectService {
                 // @ts-ignore
                 title,
                 fileName: file.originalname,
-                fileUrl,
+                fileUrl: uploadResult.url,
                 mimeType: file.mimetype,
                 fileSize: file.size,
             }

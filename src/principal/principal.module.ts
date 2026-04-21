@@ -33,8 +33,7 @@ import { PrincipalLessonTrackerModule } from './lesson-tracker/lesson-tracker.mo
 import { InquiryModule } from './inquiry/inquiry.module';
 import { PrincipalHomeworkModule } from './homework/principal-homework.module';
 import { UserManagementModule } from './user-management/user-management.module';
-
-
+import { MediaModule } from './media/media.module';
 
 @Module({
     imports: [
@@ -70,6 +69,7 @@ import { UserManagementModule } from './user-management/user-management.module';
         InquiryModule,
         PrincipalHomeworkModule,
         UserManagementModule,
+        MediaModule,
     ],
 })
 export class PrincipalModule { }

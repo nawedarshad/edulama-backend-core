@@ -1,7 +1,8 @@
 import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
+import * as path from 'path';
 
 @Injectable()
 export class S3StorageService {
@@ -22,7 +23,6 @@ export class S3StorageService {
         this.bucketName = this.configService.get<string>('R2_BUCKET_NAME', 'edulama');
 
         // Cloudflare R2 Public Serving URL
-        // If the user hasn't set R2_PUBLIC_URL, default to the r2.dev subdomain format (or custom domain)
         const publicUrlEnv = this.configService.get<string>('R2_PUBLIC_URL');
         this.publicUrl = publicUrlEnv ? publicUrlEnv : `https://pub-1a36ceec756f4ac9aa7a0bbef5f43bae.r2.dev`;
 
@@ -37,14 +37,45 @@ export class S3StorageService {
                 accessKeyId: accessKeyId || '',
                 secretAccessKey: secretAccessKey || '',
             },
-            // R2 requires this to be true for certain operations depending on the setup, but usually works with default
         });
+    }
+
+    /**
+     * Lists objects in a bucket with a specific prefix
+     */
+    async listObjects(prefix: string) {
+        try {
+            const command = new ListObjectsV2Command({
+                Bucket: this.bucketName,
+                Prefix: prefix,
+            });
+
+            const data = await this.s3Client.send(command);
+            
+            return (data.Contents || []).map((item) => {
+                const filename = item.Key ? item.Key.replace(prefix, "") : "unknown";
+                // Filter out the directory itself if it appears
+                if (!filename) return null;
+
+                return {
+                    name: filename,
+                    key: item.Key,
+                    url: `${this.publicUrl}/${item.Key}`,
+                    size: item.Size || 0,
+                    createdAt: item.LastModified || new Date(),
+                    type: path.extname(filename).replace(".", "")
+                };
+            }).filter(Boolean);
+        } catch (error) {
+            this.logger.error(`Failed to list objects from R2: ${error.message}`, error.stack);
+            throw new InternalServerErrorException('Failed to list files from cloud storage');
+        }
     }
 
     /**
      * Uploads a file buffer to Cloudflare R2 and returns the public URL
      */
-    async uploadFile(fileBuffer: Buffer, fileName: string, mimeType: string, customKey: string): Promise<string> {
+    async uploadFile(fileBuffer: Buffer, fileName: string, mimeType: string, customKey: string): Promise<{ url: string, key: string }> {
         try {
             const command = new PutObjectCommand({
                 Bucket: this.bucketName,
@@ -55,8 +86,10 @@ export class S3StorageService {
 
             await this.s3Client.send(command);
 
-            // Return the public URL for the file
-            return `${this.publicUrl}/${customKey}`;
+            return {
+                url: `${this.publicUrl}/${customKey}`,
+                key: customKey
+            };
         } catch (error) {
             this.logger.error(`Failed to upload file to R2: ${error.message}`, error.stack);
             throw new InternalServerErrorException('Failed to upload file to cloud storage');
@@ -65,9 +98,6 @@ export class S3StorageService {
 
     /**
      * Generates a pre-signed URL for direct client-side upload to R2
-     * @param customKey The full path/key in the R2 bucket (e.g. tenantid/studentid/docs/filename.pdf)
-     * @param mimeType The file content type
-     * @param expiresIn Expiration time in seconds (default 3600/1hr)
      */
     async getPresignedUrl(customKey: string, mimeType: string, expiresIn: number = 3600): Promise<string> {
         try {
@@ -99,7 +129,7 @@ export class S3StorageService {
             return true;
         } catch (error) {
             this.logger.error(`Failed to delete file from R2: ${error.message}`, error.stack);
-            return false; // Sometimes we just want to suppress deletion errors so the DB record can still be deleted
+            return false;
         }
     }
 
@@ -107,9 +137,16 @@ export class S3StorageService {
      * Helper to extract the R2 key from a full public URL
      */
     extractKeyFromUrl(url: string): string | null {
-        if (!url || !url.startsWith(this.publicUrl)) {
+        if (!url || (!url.startsWith(this.publicUrl) && !url.includes('r2.dev'))) {
             return null;
         }
-        return url.replace(`${this.publicUrl}/`, '');
+        
+        // Handle various public URL formats if necessary, but primarily our configured publicUrl
+        const baseUrl = this.publicUrl.endsWith('/') ? this.publicUrl : `${this.publicUrl}/`;
+        if (url.startsWith(baseUrl)) {
+            return url.replace(baseUrl, '');
+        }
+        
+        return null;
     }
 }

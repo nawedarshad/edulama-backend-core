@@ -135,6 +135,7 @@ model SchoolSettings {
   maxSubjectsPerStudent     Int @default(8)
   maxRepeatPeriodsPerDay    Int @default(2)
   maxConsecutiveSameSubject Int @default(2)
+  isWebsitePublic           Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -197,4 +198,36 @@ model PlatformSetting {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model WebMenu {
+  id        Int           @id @default(autoincrement())
+  schoolId  Int
+  name      String
+  location  String        @default("HEADER")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  school    School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  items     WebMenuItem[]
+
+  @@index([schoolId])
+}
+
+model WebMenuItem {
+  id        Int           @id @default(autoincrement())
+  menuId    Int
+  label     String
+  type      String        @default("URL")
+  value     String
+  target    String        @default("_self")
+  parentId  Int?
+  order     Int           @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  menu      WebMenu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  parent    WebMenuItem?  @relation("MenuHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children  WebMenuItem[] @relation("MenuHierarchy")
+
+  @@index([menuId])
+  @@index([parentId])
 }
