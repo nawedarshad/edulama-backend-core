@@ -1,5 +1,5 @@
 import { IsNotEmpty, IsString, IsEmail, IsOptional, IsDateString, ValidateNested, IsArray, IsEnum, IsInt, IsNumber } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 export class CreateQualificationDto {
     @IsString()
@@ -29,10 +29,22 @@ export class CreateTeacherDto {
 
     @IsString()
     @IsNotEmpty()
+    @Transform(({ value }) => {
+        if (typeof value === 'string' && /^\d+\.?\d*E\+\d+$/i.test(value)) {
+            return BigInt(Number(value)).toString();
+        }
+        return value;
+    })
     phone: string;
 
     @IsDateString()
     @IsOptional()
+    @Transform(({ value }) => {
+        if (!value) return value;
+        const d = new Date(value);
+        if (isNaN(d.getTime())) return value;
+        return d.toISOString().split('T')[0];
+    })
     joinDate?: string;
 
     @IsString()
@@ -44,7 +56,8 @@ export class CreateTeacherDto {
     department?: string;
 
     @IsOptional()
-    @ValidateNested()
+    @IsArray()
+    @ValidateNested({ each: true })
     @Type(() => CreateQualificationDto)
     qualifications?: CreateQualificationDto[];
 
@@ -55,6 +68,12 @@ export class CreateTeacherDto {
 
     @IsDateString()
     @IsNotEmpty()
+    @Transform(({ value }) => {
+        if (!value) return value;
+        const d = new Date(value);
+        if (isNaN(d.getTime())) return value;
+        return d.toISOString().split('T')[0];
+    })
     dateOfBirth: string;
 
     @IsString()
@@ -75,6 +94,12 @@ export class CreateTeacherDto {
 
     @IsString()
     @IsNotEmpty()
+    @Transform(({ value }) => {
+        if (typeof value === 'string' && /^\d+\.?\d*E\+\d+$/i.test(value)) {
+            return BigInt(Number(value)).toString();
+        }
+        return value;
+    })
     alternatePhone: string;
 
     @IsString()
@@ -103,6 +128,12 @@ export class CreateTeacherDto {
 
     @IsString()
     @IsNotEmpty()
+    @Transform(({ value }) => {
+        if (typeof value === 'string' && /^\d+\.?\d*E\+\d+$/i.test(value)) {
+            return BigInt(Number(value)).toString();
+        }
+        return value;
+    })
     emergencyContactPhone: string;
 
     @IsString()
@@ -204,6 +235,12 @@ export class CreateTrainingDto {
 
     @IsDateString()
     @IsNotEmpty()
+    @Transform(({ value }) => {
+        if (!value) return value;
+        const d = new Date(value);
+        if (isNaN(d.getTime())) return value;
+        return d.toISOString().split('T')[0];
+    })
     date: string;
 
     @IsInt()

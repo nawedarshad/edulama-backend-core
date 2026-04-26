@@ -1,5 +1,4 @@
-// @ts-nocheck
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AttendanceConfigService } from 'src/principal/attendance-config/attendance-config.service';
 import { TakeAttendanceDto } from './dto/take-attendance.dto';
@@ -9,13 +8,20 @@ import { MarkStudentLateDto } from './dto/mark-student-late.dto';
 
 @Injectable()
 export class TeacherAttendanceService {
+    private readonly logger = new Logger(TeacherAttendanceService.name);
+
     constructor(
         private readonly prisma: PrismaService,
         private readonly configService: AttendanceConfigService,
     ) { }
-    
+
     private async validateDate(schoolId: number, dateStr: string, classId?: number) {
-        let date = new Date(dateStr);
+        let date: Date;
+        if (dateStr.includes('T')) {
+            date = new Date(dateStr);
+        } else {
+            date = new Date(`${dateStr}T00:00:00.000Z`);
+        }
         date.setUTCHours(0, 0, 0, 0);
 
         const ay = await this.prisma.academicYear.findFirst({
@@ -64,11 +70,10 @@ export class TeacherAttendanceService {
             throw new NotFoundException('Teacher profile not found.');
         }
 
-        // Calculate start and end dates for the month
-        const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+        // UTC-safe month boundaries
+        const startDate = new Date(Date.UTC(year, month - 1, 1));
+        const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
-        // Fetch staff attendance records
         const attendanceRecords = await this.prisma.staffAttendance.findMany({
             where: {
                 schoolId: schoolId,
@@ -216,15 +221,14 @@ export class TeacherAttendanceService {
                 groupId: validGroupId,
                 classId: dto.classId,
                 sectionId: dto.sectionId,
-                subjectId: dto.subjectId || null,
-                timePeriodId: dto.timePeriodId || null,
-                date: new Date(dto.date),
+                subjectId: dto.subjectId ?? null,
+                timePeriodId: dto.timePeriodId ?? null,
+                date: attendanceDate,
             }
         });
 
         return this.prisma.$transaction(async (tx) => {
             if (!session) {
-                // Create new session if it doesn't exist
                 session = await tx.attendanceSession.create({
                     data: {
                         schoolId,
@@ -232,9 +236,9 @@ export class TeacherAttendanceService {
                         groupId: validGroupId,
                         classId: dto.classId,
                         sectionId: dto.sectionId,
-                        subjectId: dto.subjectId,
-                        timePeriodId: dto.timePeriodId || undefined,
-                        date: new Date(dto.date),
+                        subjectId: dto.subjectId ?? null,
+                        timePeriodId: dto.timePeriodId ?? null,
+                        date: attendanceDate,
                         markedById: teacher.userId,
                         takenAt: new Date(),
                     }
@@ -267,7 +271,7 @@ export class TeacherAttendanceService {
                 }
 
                 if (!pid) {
-                    console.warn(`Skipping attendance record: Missing valid studentProfileId or userId. Record: ${JSON.stringify(record)}`);
+                    this.logger.warn(`Skipping attendance record with no resolvable studentProfileId`);
                     continue;
                 }
 
@@ -283,15 +287,15 @@ export class TeacherAttendanceService {
 
                 // Check for Late Marking (Only relevant if not on leave)
                 let isLate = false;
-                let lateReason = undefined;
-                let lateMarkedAt = undefined;
-                let lateMarkedById = undefined;
+                let lateReason: string | null = null;
+                let lateMarkedAt: Date | null = null;
+                let lateMarkedById: number | null = null;
 
                 if (finalStatus !== AttendanceStatus.EXCUSED) {
                     if (record.isLate || record.status === AttendanceStatus.LATE) {
                         isLate = true;
                         finalStatus = AttendanceStatus.PRESENT; // Late arrival counts as Present
-                        lateReason = record.lateReason;
+                        lateReason = record.lateReason ?? null;
                         lateMarkedAt = new Date();
                         lateMarkedById = teacher.userId;
                     }
@@ -331,10 +335,9 @@ export class TeacherAttendanceService {
         });
     }
 
-    async markStudentLate(teacherId: number, dto: MarkStudentLateDto) {
-        // 1. Fetch Teacher Profile with School ID
+    async markStudentLate(userId: number, dto: MarkStudentLateDto) {
         const teacher = await this.prisma.teacherProfile.findUnique({
-            where: { userId: teacherId },
+            where: { userId },
         });
 
         if (!teacher) {
@@ -342,14 +345,6 @@ export class TeacherAttendanceService {
         }
 
         const schoolId = teacher.schoolId;
-
-        // 2. Check if teacher is authorized as Late Attendance Monitor
-        console.log('Checking authorization for:', {
-            schoolId,
-            academicYearId: dto.academicYearId,
-            teacherId: teacher.id,
-            userId: teacherId
-        });
 
         const isAuthorized = await this.prisma.lateAttendanceMonitor.findUnique({
             where: {
@@ -361,53 +356,16 @@ export class TeacherAttendanceService {
             }
         });
 
-        console.log('Authorization result:', isAuthorized);
-
         if (!isAuthorized) {
-            // Provide detailed error message
-            const allMonitors = await this.prisma.lateAttendanceMonitor.findMany({
-                where: {
-                    schoolId,
-                    academicYearId: dto.academicYearId,
-                }
-            });
-
-            throw new ForbiddenException(
-                `You are not authorized to mark students as late. ` +
-                `Teacher ID: ${teacher.id}, School ID: ${schoolId}, Academic Year: ${dto.academicYearId}. ` +
-                `Assigned monitors for this year: ${allMonitors.map(m => m.teacherId).join(', ') || 'None'}`
-            );
+            throw new ForbiddenException('You are not authorized to mark students as late.');
         }
 
-        // 3. Verify student belongs to the same school
-        console.log('Looking for student by User ID:', {
-            userId: dto.userId,
-            schoolId: schoolId
-        });
-
         const student = await this.prisma.studentProfile.findFirst({
-            where: {
-                userId: dto.userId,
-                schoolId,
-            }
+            where: { userId: dto.userId, schoolId },
         });
-
-        console.log('Student found:', student);
 
         if (!student) {
-            // Check if student exists at all
-            const userExists = await this.prisma.user.findUnique({
-                where: { id: dto.userId },
-                include: { studentProfile: true }
-            });
-
-            throw new NotFoundException(
-                `Student not found in your school. ` +
-                `Looking for User ID: ${dto.userId} in School ID: ${schoolId}. ` +
-                `User exists: ${userExists ? 'Yes' : 'No'}. ` +
-                `Has Student Profile: ${userExists?.studentProfile ? 'Yes' : 'No'}. ` +
-                `Profile School ID: ${userExists?.studentProfile?.schoolId}`
-            );
+            throw new NotFoundException('Student not found in your school.');
         }
 
         // 4. Resolve Academic Group ID
@@ -477,7 +435,7 @@ export class TeacherAttendanceService {
                     classId: dto.classId,
                     sectionId: dto.sectionId,
                     date: attendanceDate,
-                    markedById: teacherId,
+                    markedById: userId,
                     remarks: 'Late arrival session',
                 }
             });
@@ -488,8 +446,7 @@ export class TeacherAttendanceService {
         if (latePolicy === 'HALFDAY') finalStatus = AttendanceStatus.HALFDAY as any;
         else if (latePolicy === 'ABSENT') finalStatus = AttendanceStatus.ABSENT as any;
         else if (latePolicy === 'LATE') finalStatus = AttendanceStatus.LATE as any;
-        
-        // 5. Create or update attendance record
+
         const attendance = await this.prisma.attendance.upsert({
             where: {
                 schoolId_attendanceSessionId_studentProfileId: {
@@ -501,9 +458,9 @@ export class TeacherAttendanceService {
             update: {
                 status: finalStatus,
                 isLate: true,
-                lateReason: dto.lateReason,
+                lateReason: dto.lateReason ?? null,
                 lateMarkedAt: new Date(),
-                lateMarkedById: teacherId,
+                lateMarkedById: userId,
             },
             create: {
                 schoolId,
@@ -511,9 +468,9 @@ export class TeacherAttendanceService {
                 studentProfileId: student.id,
                 status: finalStatus,
                 isLate: true,
-                lateReason: dto.lateReason,
+                lateReason: dto.lateReason ?? null,
                 lateMarkedAt: new Date(),
-                lateMarkedById: teacherId,
+                lateMarkedById: userId,
             }
         });
 
@@ -548,9 +505,9 @@ export class TeacherAttendanceService {
                 academicYearId,
                 classId,
                 sectionId,
-                date,
-                subjectId: subjectId || null,
-                timePeriodId: timePeriodId || null,
+                date: normalizedDate,
+                subjectId: subjectId ?? null,
+                timePeriodId: timePeriodId ?? null,
             },
             include: {
                 attendances: {
@@ -603,11 +560,9 @@ export class TeacherAttendanceService {
         month: number,
         subjectId?: number
     ) {
-        // Calculate start and end dates for the month
-        const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0, 23, 59, 59, 999);
-
-        console.log(`[getMonthlyAttendance Debug] Finding sessions for schoolId=${schoolId}, academicYearId=${academicYearId}, classId=${classId}, sectionId=${sectionId}, subjectId=${subjectId}, startDate=${startDate.toISOString()}, endDate=${endDate.toISOString()}`);
+        // UTC-safe month boundaries
+        const startDate = new Date(Date.UTC(year, month - 1, 1));
+        const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
         const sessions = await this.prisma.attendanceSession.findMany({
             where: {
@@ -696,7 +651,6 @@ export class TeacherAttendanceService {
             throw new NotFoundException('Attendance session not found for this date.');
         }
 
-        // 3. Update attendance records
         const results: any[] = [];
         for (const update of dto.updates) {
             const attendance = await this.prisma.attendance.updateMany({
@@ -706,8 +660,10 @@ export class TeacherAttendanceService {
                     studentProfileId: update.studentProfileId,
                 },
                 data: {
-                    status: update.status,
-                    remarks: update.remarks,
+                    ...(update.status !== undefined && { status: update.status }),
+                    ...(update.remarks !== undefined && { remarks: update.remarks }),
+                    ...(update.isLate !== undefined && { isLate: update.isLate }),
+                    ...(update.lateReason !== undefined && { lateReason: update.lateReason }),
                 }
             });
             results.push(attendance);
@@ -735,48 +691,40 @@ export class TeacherAttendanceService {
             }
         });
 
-        const studentUserIds = students.map(s => s.userId);
+        // Build a map from userId → studentProfileId using already-fetched students
+        const userToStudentId = new Map<number, number>();
+        for (const s of students) {
+            if (s.userId != null) userToStudentId.set(s.userId, s.id);
+        }
 
-        // Use overlap logic similar to what I fixed
+        const validUserIds = Array.from(userToStudentId.keys());
+        if (validUserIds.length === 0) return [];
+
         const startOfDay = new Date(date);
         startOfDay.setUTCHours(0, 0, 0, 0);
         const endOfDay = new Date(date);
         endOfDay.setUTCHours(23, 59, 59, 999);
 
-        // Get approved leaves for these students on this date
         const leaves = await this.prisma.leaveRequest.findMany({
             where: {
                 schoolId,
-                applicantId: { in: studentUserIds },
+                applicantId: { in: validUserIds },
                 status: 'APPROVED',
                 startDate: { lte: endOfDay },
                 endDate: { gte: startOfDay },
             },
-            include: {
-                applicant: {
-                    select: {
-                        id: true,
-                        name: true,
-                        studentProfile: {
-                            select: {
-                                id: true,
-                            }
-                        }
-                    }
-                }
-            }
         });
 
-        return leaves.map(leave => ({
-            studentProfileId: leave.applicant.studentProfile?.id,
-            userId: leave.applicantId, // ADDED: Ensuring userId is returned for frontend matching
-            name: leave.applicant.name,
-            rollNumber: '', // Leaves might not have roll number in this context
-            leaveType: leave.leaveTypeId,
-            startDate: leave.startDate,
-            endDate: leave.endDate,
-            reason: leave.reason,
-        }));
+        return leaves
+            .filter(leave => userToStudentId.has(leave.applicantId))
+            .map(leave => ({
+                studentProfileId: userToStudentId.get(leave.applicantId)!,
+                userId: leave.applicantId,
+                leaveType: leave.leaveTypeId,
+                startDate: leave.startDate,
+                endDate: leave.endDate,
+                reason: leave.reason,
+            }));
     }
 
     async getLateStudentsForAttendance(
@@ -786,26 +734,23 @@ export class TeacherAttendanceService {
         sectionId: number,
         date: Date
     ) {
-        console.log(`[getLateStudents] Inputs: School=${schoolId}, Year=${academicYearId}, Class=${classId}, Section=${sectionId}, Date=${date}`);
+        this.logger.debug(`getLateStudentsForAttendance: school=${schoolId}, year=${academicYearId}, class=${classId}, section=${sectionId}`);
 
         const startOfDay = new Date(date);
         startOfDay.setUTCHours(0, 0, 0, 0);
         const endOfDay = new Date(date);
         endOfDay.setUTCHours(23, 59, 59, 999);
 
-        // Find daily attendance session for this date range
+        // Daily session only — explicitly filter subjectId/timePeriodId as null
         const session = await this.prisma.attendanceSession.findFirst({
             where: {
                 schoolId,
                 academicYearId,
                 classId,
                 sectionId,
-                date: {
-                    gte: startOfDay,
-                    lte: endOfDay
-                },
-                subjectId: undefined, // Only checking daily attendance for late status
-                timePeriodId: undefined,
+                date: { gte: startOfDay, lte: endOfDay },
+                subjectId: null,
+                timePeriodId: null,
             },
             include: {
                 attendances: {
@@ -829,13 +774,10 @@ export class TeacherAttendanceService {
         });
 
         if (!session) {
-            console.log(`[getLateStudents] No session found for date range ${startOfDay.toISOString()} - ${endOfDay.toISOString()}`);
             return [];
         }
 
-        console.log(`[getLateStudents] Found session ${session.id} with ${(session as any).attendances.length} late records.`);
-
-        return (session as any).attendances.map(a => ({
+        return (session as any).attendances.map((a: any) => ({
             studentProfileId: a.studentProfileId,
             name: a?.studentProfile?.user.name || 'Unknown Student',
             rollNumber: a?.studentProfile?.rollNo || '',
@@ -932,9 +874,9 @@ export class TeacherAttendanceService {
             },
             data: {
                 isLate: false,
-                lateReason: undefined,
-                lateMarkedById: undefined,
-                lateMarkedAt: undefined,
+                lateReason: null,
+                lateMarkedById: null,
+                lateMarkedAt: null,
             }
         });
 
@@ -1007,6 +949,7 @@ export class TeacherAttendanceService {
                     schoolId,
                     classId,
                     sectionId,
+                    isActive: true,
                 },
                 select: {
                     id: true,
@@ -1142,7 +1085,7 @@ export class TeacherAttendanceService {
                     assignments.push({
                         type: 'DAILY',
                         classId: entry.group.classId,
-                        className: entry.group.class.name,
+                        className: entry.group.class?.name ?? '',
                         sectionId: entry.groupId,
                         sectionName: entry.group.name,
                     });

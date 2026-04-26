@@ -14,45 +14,47 @@ export class TimetableInventoryService {
         timeSlotId: number,
         subjectId?: number,
     ) {
-        // 1. Get all teachers
-        const allTeachers = await this.prisma.teacherProfile.findMany({
-            where: { schoolId, isActive: true },
-            select: {
-                id: true,
-                empCode: true,
-                personalInfo: { select: { fullName: true } },
-                user: { select: { name: true } },
-                subjectAssignments: { select: { subjectId: true } },
-            },
-        });
+        // 1. Get all teachers and the target slot in parallel
+        const [allTeachers, targetSlot] = await Promise.all([
+            this.prisma.teacherProfile.findMany({
+                where: { schoolId, isActive: true },
+                select: {
+                    id: true,
+                    empCode: true,
+                    personalInfo: { select: { fullName: true } },
+                    user: { select: { name: true } },
+                    subjectAssignments: { select: { subjectId: true } },
+                },
+            }),
+            this.prisma.timeSlot.findUnique({ where: { id_schoolId: { id: timeSlotId, schoolId } } }),
+        ]);
 
-        // 2. Identify busy teachers (including those in spans)
-        // We find entries that either:
-        // a) Start exactly at this slot
-        // b) Started before but span into this slot
-        // Simplified approach: find all entries for the group/day and check their span
-        // But for global teacher availability, we check all entries for that day
-        const entriesOnDay = await this.prisma.timetableEntry.findMany({
-            where: { schoolId, academicYearId, day },
-            select: {
-                teacherId: true,
-                timeSlotId: true,
-                durationSlots: true,
-                teachers: { select: { teacherId: true } }
-            }
-        });
-
-        const busyTeacherIds = new Set<number>();
-        const targetSlot = await this.prisma.timeSlot.findUnique({ where: { id_schoolId: { id: timeSlotId, schoolId } } });
         if (!targetSlot) return [];
 
-        for (const entry of entriesOnDay) {
-            const entrySlot = await this.prisma.timeSlot.findUnique({ where: { id_schoolId: { id: entry.timeSlotId, schoolId } } });
-            if (!entrySlot) continue;
+        // 2. Load all slots for the day once — avoid N+1 per entry
+        const [entriesOnDay, allDaySlots] = await Promise.all([
+            this.prisma.timetableEntry.findMany({
+                where: { schoolId, academicYearId, day },
+                select: {
+                    teacherId: true,
+                    timeSlotId: true,
+                    durationSlots: true,
+                    teachers: { select: { teacherId: true } },
+                },
+            }),
+            this.prisma.timeSlot.findMany({
+                where: { schoolId, academicYearId, day, scheduleId: targetSlot.scheduleId },
+                orderBy: { startTime: 'asc' },
+            }),
+        ]);
 
-            const isBusyInSlot = await this.isSlotInEntrySpan(schoolId, academicYearId, day, entry.timeSlotId, entry.durationSlots, timeSlotId);
-            
-            if (isBusyInSlot) {
+        const busyTeacherIds = new Set<number>();
+
+        for (const entry of entriesOnDay) {
+            const startIndex = allDaySlots.findIndex(s => s.id === entry.timeSlotId);
+            if (startIndex === -1) continue;
+            const spanIds = new Set(allDaySlots.slice(startIndex, startIndex + entry.durationSlots).map(s => s.id));
+            if (spanIds.has(timeSlotId)) {
                 if (entry.teacherId) busyTeacherIds.add(entry.teacherId);
                 entry.teachers.forEach(t => busyTeacherIds.add(t.teacherId));
             }
@@ -76,32 +78,53 @@ export class TimetableInventoryService {
         day: DayOfWeek,
         timeSlotId: number,
     ) {
-        const allRooms = await this.prisma.room.findMany({
-            where: { schoolId, status: 'ACTIVE' },
-            select: { id: true, name: true, code: true },
-        });
+        const [allRooms, targetSlot] = await Promise.all([
+            this.prisma.room.findMany({
+                where: { schoolId, status: 'ACTIVE' },
+                select: { id: true, name: true, code: true },
+            }),
+            this.prisma.timeSlot.findUnique({ where: { id_schoolId: { id: timeSlotId, schoolId } } }),
+        ]);
 
-        const entriesOnDay = await this.prisma.timetableEntry.findMany({
-            where: { schoolId, academicYearId, day },
-            select: {
-                roomId: true,
-                timeSlotId: true,
-                durationSlots: true,
-                rooms: { select: { roomId: true } }
-            }
-        });
+        if (!targetSlot) return allRooms;
+
+        const [entriesOnDay, allDaySlots] = await Promise.all([
+            this.prisma.timetableEntry.findMany({
+                where: { schoolId, academicYearId, day },
+                select: {
+                    roomId: true,
+                    timeSlotId: true,
+                    durationSlots: true,
+                    rooms: { select: { roomId: true } },
+                },
+            }),
+            this.prisma.timeSlot.findMany({
+                where: { schoolId, academicYearId, day, scheduleId: targetSlot.scheduleId },
+                orderBy: { startTime: 'asc' },
+            }),
+        ]);
 
         const busyRoomIds = new Set<number>();
 
         for (const entry of entriesOnDay) {
-            const isBusyInSlot = await this.isSlotInEntrySpan(schoolId, academicYearId, day, entry.timeSlotId, entry.durationSlots, timeSlotId);
-            if (isBusyInSlot) {
+            const startIndex = allDaySlots.findIndex(s => s.id === entry.timeSlotId);
+            if (startIndex === -1) continue;
+            const spanIds = new Set(allDaySlots.slice(startIndex, startIndex + entry.durationSlots).map(s => s.id));
+            if (spanIds.has(timeSlotId)) {
                 if (entry.roomId) busyRoomIds.add(entry.roomId);
                 entry.rooms.forEach(r => busyRoomIds.add(r.roomId));
             }
         }
 
         return allRooms.filter(r => !busyRoomIds.has(r.id));
+    }
+
+    private isSlotInEntrySpanSync(allDaySlots: { id: number }[], entryStartSlotId: number, duration: number, targetSlotId: number): boolean {
+        if (entryStartSlotId === targetSlotId) return true;
+        if (duration <= 1) return false;
+        const startIndex = allDaySlots.findIndex(s => s.id === entryStartSlotId);
+        if (startIndex === -1) return false;
+        return allDaySlots.slice(startIndex, startIndex + duration).some(s => s.id === targetSlotId);
     }
 
     private async isSlotInEntrySpan(schoolId: number, academicYearId: number, day: DayOfWeek, entryStartSlotId: number, duration: number, targetSlotId: number): Promise<boolean> {
@@ -116,6 +139,7 @@ export class TimetableInventoryService {
         schoolId: number,
         academicYearId: number,
         dto: CreateTimetableEntryDto,
+        excludeEntryId?: number,
     ): Promise<{ status: 'OK' | 'CONFLICT'; message?: string }> {
         const { day, timeSlotId, teacherId, teacherIds = [], roomId, roomIds = [], groupId, subjectId, durationSlots = 1 } = dto;
 
@@ -183,6 +207,7 @@ export class TimetableInventoryService {
                 schoolId,
                 academicYearId,
                 day,
+                id: excludeEntryId ? { not: excludeEntryId } : undefined,
                 OR: [
                     { groupId },
                     { teacherId: { in: allTeacherIds } },

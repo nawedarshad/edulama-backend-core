@@ -8,26 +8,31 @@ export class AcademicYearService {
     constructor(private prisma: PrismaService) { }
 
     async create(schoolId: number, dto: CreateAcademicYearDto) {
-        if (new Date(dto.endDate) <= new Date(dto.startDate)) {
+        const start = new Date(dto.startDate);
+        const end = new Date(dto.endDate);
+
+        if (end <= start) {
             throw new BadRequestException('End date must be after start date');
         }
 
-        // Overlap Check [Enterprise Readiness]
-        await this.checkOverlap(schoolId, new Date(dto.startDate), new Date(dto.endDate));
+        return this.prisma.$transaction(async (tx) => {
+            // Enterprise Overlap Guard
+            await this.checkOverlap(schoolId, start, end, undefined, tx);
 
-        // If making this active, deactivate others (or check logic)
-        if (dto.status === AcademicYearStatus.ACTIVE) {
-            await this.deactivateOtherYears(schoolId);
-        }
+            // Single Active Year Policy
+            if (dto.status === AcademicYearStatus.ACTIVE) {
+                await this.deactivateOtherYears(schoolId, undefined, tx);
+            }
 
-        return this.prisma.academicYear.create({
-            data: {
-                schoolId,
-                name: dto.name,
-                startDate: new Date(dto.startDate),
-                endDate: new Date(dto.endDate),
-                status: dto.status || AcademicYearStatus.PLANNED,
-            },
+            return tx.academicYear.create({
+                data: {
+                    schoolId,
+                    name: dto.name,
+                    startDate: start,
+                    endDate: end,
+                    status: dto.status || AcademicYearStatus.PLANNED,
+                },
+            });
         });
     }
 
@@ -47,77 +52,80 @@ export class AcademicYearService {
     }
 
     async findActive(schoolId: number) {
-        const year = await this.prisma.academicYear.findFirst({
+        return this.prisma.academicYear.findFirst({
             where: { schoolId, status: AcademicYearStatus.ACTIVE },
         });
-        return year; // Returns null if none active, which is valid state
     }
 
     async update(schoolId: number, id: number, dto: UpdateAcademicYearDto) {
-        const year = await this.findOne(schoolId, id);
+        return this.prisma.$transaction(async (tx) => {
+            const year = await tx.academicYear.findFirst({
+                where: { id, schoolId },
+            });
+            if (!year) throw new NotFoundException('Academic year not found');
 
-        // Immutable check
-        if (year.status === AcademicYearStatus.CLOSED) {
-            // Allow status change BACK to ACTIVE/ARCHIVED? Or completely locked?
-            // User said: "Dates can only be edited when status != CLOSED"
-            // So if trying to edit DATES and status is CLOSED, block it.
-            if (dto.startDate || dto.endDate) {
+            // Immutable protection for CLOSED years
+            if (year.status === AcademicYearStatus.CLOSED && (dto.startDate || dto.endDate)) {
                 throw new BadRequestException('Cannot modify dates of a CLOSED academic year');
             }
-        }
 
-        if (dto.startDate || dto.endDate) {
             const start = dto.startDate ? new Date(dto.startDate) : year.startDate;
             const end = dto.endDate ? new Date(dto.endDate) : year.endDate;
-            if (end <= start) {
-                throw new BadRequestException('End date must be after start date');
+
+            if (dto.startDate || dto.endDate) {
+                if (end <= start) {
+                    throw new BadRequestException('End date must be after start date');
+                }
+                await this.checkOverlap(schoolId, start, end, id, tx);
             }
-            // Overlap Check
-            await this.checkOverlap(schoolId, start, end, id);
-        }
 
-        if (dto.status === AcademicYearStatus.ACTIVE && year.status !== AcademicYearStatus.ACTIVE) {
-            await this.deactivateOtherYears(schoolId, id);
-        }
+            if (dto.status === AcademicYearStatus.ACTIVE && year.status !== AcademicYearStatus.ACTIVE) {
+                await this.deactivateOtherYears(schoolId, id, tx);
+            }
 
-        return this.prisma.academicYear.update({
-            where: { id, schoolId },
-            data: {
-                name: dto.name,
-                startDate: dto.startDate ? new Date(dto.startDate) : undefined,
-                endDate: dto.endDate ? new Date(dto.endDate) : undefined,
-                status: dto.status,
-            },
+            return tx.academicYear.update({
+                where: { id, schoolId },
+                data: {
+                    name: dto.name,
+                    startDate: dto.startDate ? new Date(dto.startDate) : undefined,
+                    endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+                    status: dto.status,
+                },
+            });
         });
     }
 
-    private async deactivateOtherYears(schoolId: number, excludeId?: number) {
-        await this.prisma.academicYear.updateMany({
+    private async deactivateOtherYears(schoolId: number, excludeId?: number, tx?: any) {
+        const db = tx || this.prisma;
+        await db.academicYear.updateMany({
             where: {
                 schoolId,
                 status: AcademicYearStatus.ACTIVE,
                 id: { not: excludeId },
             },
-            data: { status: AcademicYearStatus.CLOSED }, // Or PLANNED? CLOSED is safer for history.
+            // BUG FIX: Use PLANNED not CLOSED. CLOSED is a terminal/immutable state and should
+            // only be set explicitly by a principal. Activating a new year should just un-activate others.
+            data: { status: AcademicYearStatus.PLANNED },
         });
     }
 
-    private async checkOverlap(schoolId: number, startDate: Date, endDate: Date, excludeId?: number) {
-        const overlapping = await this.prisma.academicYear.findFirst({
+    private async checkOverlap(schoolId: number, startDate: Date, endDate: Date, excludeId?: number, tx?: any) {
+        const db = tx || this.prisma;
+        // Mathematical Interval Overlap: (StartA < EndB) && (EndA > StartB)
+        const overlapping = await db.academicYear.findFirst({
             where: {
                 schoolId,
                 id: excludeId ? { not: excludeId } : undefined,
-                OR: [
-                    { startDate: { lte: startDate }, endDate: { gte: startDate } },
-                    { startDate: { lte: endDate }, endDate: { gte: endDate } },
-                    { startDate: { gte: startDate }, endDate: { lte: endDate } },
-                ],
+                AND: [
+                    { startDate: { lt: endDate } },
+                    { endDate: { gt: startDate } }
+                ]
             },
         });
 
         if (overlapping) {
             throw new BadRequestException(
-                `Date range overlaps with existing academic year: ${overlapping.name} (${overlapping.startDate.toISOString().split('T')[0]} to ${overlapping.endDate.toISOString().split('T')[0]})`
+                `Date range overlaps with existing year: ${overlapping.name} (${overlapping.startDate.toISOString().split('T')[0]} to ${overlapping.endDate.toISOString().split('T')[0]})`
             );
         }
     }

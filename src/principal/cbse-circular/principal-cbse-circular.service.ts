@@ -1,11 +1,33 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CbseCircularQueryDto } from '../../saas-admin/cbse-circular/dto/cbse-circular-query.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, NoticeType, NoticePriority, AuditAction, NotificationType } from '@prisma/client';
+import { NotificationService } from '../global/notification/notification.service';
 
 @Injectable()
 export class PrincipalCbseCircularService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private readonly notificationService: NotificationService
+    ) { }
+
+    private async resolveTeacherProfile(schoolId: number, userId: number): Promise<number> {
+        const profile = await this.prisma.teacherProfile.findUnique({
+            where: { userId }
+        });
+        if (profile) return profile.id;
+
+        const newProfile = await this.prisma.teacherProfile.create({
+            data: {
+                userId,
+                schoolId,
+                isActive: true,
+                joinDate: new Date(),
+                empCode: `BOARD-ADMIN-${userId}`,
+            }
+        });
+        return newProfile.id;
+    }
 
     async findAll(query: CbseCircularQueryDto) {
         const { type, search, page = 1, limit = 10 } = query;
@@ -13,9 +35,7 @@ export class PrincipalCbseCircularService {
 
         const where: Prisma.CbseCircularWhereInput = {};
 
-        if (type) {
-            where.type = type;
-        }
+        if (type) where.type = type;
 
         if (search) {
             where.OR = [
@@ -47,44 +67,79 @@ export class PrincipalCbseCircularService {
     }
 
     async findOne(id: number, userId?: number, userRole?: string) {
-        console.log(`[PrincipalCbseCircularService] Finding circular with ID: ${id}`);
         const circular = await this.prisma.cbseCircular.findUnique({
             where: { id },
             include: { attachments: true },
         });
 
-        if (!circular) {
-            console.error(`[PrincipalCbseCircularService] Circular ${id} NOT FOUND`);
-            throw new NotFoundException(`CBSE Circular with ID ${id} not found`);
-        }
+        if (!circular) throw new NotFoundException(`CBSE Circular with ID ${id} not found`);
 
-        // Record View (Upsert to avoid duplicates or multiple simple inserts if we want unique views)
-        // Schema says @@unique([cbseCircularId, userId]), so we can ignore if exists
         if (userId && userRole) {
             try {
                 await this.prisma.cbseCircularView.upsert({
-                    where: {
-                        cbseCircularId_userId: {
-                            cbseCircularId: id,
-                            userId: userId,
-                        }
-                    },
-                    update: {
-                        viewedAt: new Date(), // Update timestamp if viewed again? Or keep first view? Let's update.
-                    },
-                    create: {
-                        cbseCircularId: id,
-                        userId: userId,
-                        userRole: userRole,
-                    }
+                    where: { cbseCircularId_userId: { cbseCircularId: id, userId } },
+                    update: { viewedAt: new Date() },
+                    create: { cbseCircularId: id, userId, userRole }
                 });
-            } catch (error) {
-                console.error("Failed to record circular view:", error);
-                // Don't block the response if analytics fail
-            }
+            } catch (e) {}
         }
 
         return circular;
+    }
+
+    async broadcast(schoolId: number, userId: number, id: number) {
+        const circular = await this.findOne(id);
+        const teacherId = await this.resolveTeacherProfile(schoolId, userId);
+
+        const activeYear = await this.prisma.academicYear.findFirst({
+            where: { schoolId, status: 'ACTIVE' }
+        });
+        if (!activeYear) throw new NotFoundException('Active Academic Year not found');
+
+        // 1. Create a school notice
+        const notice = await this.prisma.notice.create({
+            data: {
+                schoolId,
+                academicYearId: activeYear.id,
+                teacherId,
+                title: `Official Board Circular: ${circular.title}`,
+                content: circular.content,
+                type: NoticeType.SCHOOL,
+                priority: NoticePriority.NORMAL,
+                attachments: {
+                    create: circular.attachments.map(a => ({
+                        fileName: a.fileName,
+                        fileUrl: a.fileUrl,
+                        fileType: a.fileType
+                    }))
+                }
+            }
+        });
+
+        // 2. Audit Log
+        await this.prisma.auditLog.create({
+            data: {
+                schoolId,
+                userId,
+                entity: 'CbseCircular',
+                entityId: id,
+                action: AuditAction.APPROVE, // Using APPROVE to signify "Push to School"
+                newValue: { noticeId: notice.id }
+            }
+        });
+
+        // 3. Dispatch Notifications
+        try {
+            await this.notificationService.create(schoolId, userId, {
+                title: `New Board Update: ${circular.title}`,
+                message: "A new official board circular has been published for your attention.",
+                type: NotificationType.ANNOUNCEMENT,
+                isGlobal: true,
+                data: { noticeId: notice.id, module: 'Notice' }
+            });
+        } catch (e) {}
+
+        return notice;
     }
 
     async recordDownload(id: number, attachmentId: number, userId: number, userRole: string) {
@@ -99,8 +154,6 @@ export class PrincipalCbseCircularService {
             });
             return { success: true };
         } catch (error) {
-            console.error("Failed to record download:", error);
-            // We can throw or just return false
             return { success: false };
         }
     }

@@ -47,6 +47,6 @@ export class PrincipalNoticeController {
 
     @Delete(':id')
     remove(@GetUser() user: AuthUserPayload, @Param('id', ParseIntPipe) id: number) {
-        return this.noticeService.remove(user.schoolId, id);
+        return this.noticeService.remove(user.schoolId, user.id, id);
     }
 }

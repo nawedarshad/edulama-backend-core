@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { PrincipalAnnouncementService } from './principal-announcement.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
+import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 
 import { AnnouncementQueryDto } from './dto/announcement-query.dto';
 import { GetUser } from '../../common/decorators/get-user.decorator';
@@ -68,6 +69,15 @@ export class PrincipalAnnouncementController {
     }
 
 
+
+    @Patch(':id')
+    update(
+        @GetUser() user: AuthUserPayload,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() updateDto: UpdateAnnouncementDto,
+    ) {
+        return this.announcementService.update(user.schoolId, id, updateDto);
+    }
 
     @Delete(':id')
     remove(

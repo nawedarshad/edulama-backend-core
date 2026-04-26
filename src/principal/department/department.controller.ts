@@ -1,9 +1,11 @@
-import { Controller, Get, Post, Body, Req, UseGuards, Delete, Param, ParseIntPipe, Query, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Body, Req, UseGuards, Delete, Param, ParseIntPipe, Query, Patch, Res, Logger } from '@nestjs/common';
+import type { Response } from 'express';
 import { DepartmentService } from './department.service';
-import { CreateDepartmentDto, UpdateDepartmentDto, DepartmentQueryDto, AddDepartmentMemberDto, UpdateDepartmentMemberDto, AddDepartmentMembersBulkDto, AssignSubjectsBulkDto } from './dto/department.dto';
+import { CreateDepartmentDto, UpdateDepartmentDto, DepartmentQueryDto, AddDepartmentMemberDto, UpdateDepartmentMemberDto, AddDepartmentMembersBulkDto, AssignSubjectsBulkDto, DepartmentMemberQueryDto, DepartmentSubjectQueryDto } from './dto/department.dto';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { Audit } from '../../common/audit/audit.decorator';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { ExportService } from '../../common/services/export.service';
 
 import { RequiredModule } from '../../common/decorators/required-module.decorator';
 import { ModuleGuard } from '../../common/guards/module.guard';
@@ -14,7 +16,11 @@ import { ModuleGuard } from '../../common/guards/module.guard';
 @RequiredModule('DEPARTMENTS')
 @Audit('Department')
 export class DepartmentController {
-    constructor(private readonly departmentService: DepartmentService) { }
+    private readonly logger = new Logger(DepartmentController.name);
+    constructor(
+        private readonly departmentService: DepartmentService,
+        private readonly exportService: ExportService,
+    ) { }
 
     @Post()
     @ApiOperation({ summary: 'Create a department' })
@@ -33,6 +39,79 @@ export class DepartmentController {
     ) {
         const schoolId = req.user.schoolId;
         return this.departmentService.findAll(schoolId, query);
+    }
+
+    @Get('export')
+    @ApiOperation({ summary: 'Export all departments to PDF' })
+    @ApiResponse({ status: 200, description: 'Return PDF file stream.' })
+    async export(@Req() req, @Res() res: Response) {
+        const schoolId = req.user.schoolId;
+        try {
+            this.logger.debug(`Exporting minimalist departments report for school ${schoolId}`);
+            
+            // 1. Fetch all departments
+            const departments = await this.departmentService.findAll(schoolId, { limit: 1000, page: 1 }) as any;
+            
+            // 2. Format data
+            const headers = ['Code', 'Department Name', 'Type', 'Status', 'Head'];
+            
+            const rows = (departments.data as any[]).map(dept => [
+                dept.code || '—',
+                dept.name,
+                dept.type?.replace('_', ' ') || '—',
+                dept.status === 'ACTIVE' ? 'Active' : 'Inactive',
+                dept.headUser?.name || '—'
+            ]);
+
+            // 3. Set headers for PDF download
+            const date = new Date();
+            const filename = `Departments_${date.toISOString().split('T')[0]}.pdf`;
+            
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+            // 4. Generate Minimalistic PDF
+            await this.exportService.generateMinimalPdfReport(
+                schoolId,
+                'Department Directory',
+                headers,
+                rows,
+                res
+            );
+            
+            this.logger.debug('Minimal PDF generated and delivered');
+        } catch (error) {
+            this.logger.error(`Export failed: ${error.message}`, error.stack);
+            if (!res.headersSent) {
+                res.status(500).json({ message: 'Export failed: ' + error.message });
+            }
+        }
+    }
+
+    @Get(':id/export')
+    @ApiOperation({ summary: 'Export a specific department details to PDF' })
+    @ApiResponse({ status: 200, description: 'Return detailed PDF file stream.' })
+    async exportOne(@Req() req, @Res() res: Response, @Param('id', ParseIntPipe) id: number) {
+        const schoolId = req.user.schoolId;
+        try {
+            this.logger.debug(`Exporting detailed report for department ${id}`);
+            
+            // Fetch department with all necessary relations for a full report
+            const department = await this.departmentService.findOneFull(schoolId, id);
+            
+            const filename = `Department_${department.code}_Report.pdf`;
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+            await this.exportService.generateDetailedDepartmentReport(schoolId, department, res);
+            
+            this.logger.debug(`Detailed report for ${department.name} delivered`);
+        } catch (error) {
+            this.logger.error(`Individual export failed: ${error.message}`, error.stack);
+            if (!res.headersSent) {
+                res.status(500).json({ message: 'Detailed export failed: ' + error.message });
+            }
+        }
     }
 
     @Get(':id')
@@ -83,9 +162,10 @@ export class DepartmentController {
     async getMembers(
         @Req() req,
         @Param('id', ParseIntPipe) id: number,
+        @Query() query: DepartmentMemberQueryDto,
     ) {
         const schoolId = req.user.schoolId;
-        return this.departmentService.getMembers(schoolId, id);
+        return this.departmentService.getMembers(schoolId, id, query);
     }
 
     @Get(':id/subjects')
@@ -94,9 +174,10 @@ export class DepartmentController {
     async getSubjects(
         @Req() req,
         @Param('id', ParseIntPipe) id: number,
+        @Query() query: DepartmentSubjectQueryDto,
     ) {
         const schoolId = req.user.schoolId;
-        return this.departmentService.getSubjects(schoolId, id);
+        return this.departmentService.getSubjects(schoolId, id, query);
     }
 
     @Patch(':id/members/:userId')

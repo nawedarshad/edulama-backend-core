@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards, ParseIntPipe, DefaultValuePipe, Optional } from '@nestjs/common';
 import { AuditLogService } from '../../common/audit/audit-log.service';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
@@ -14,14 +14,14 @@ export class PrincipalAuditLogController {
     @ApiResponse({ status: 200, description: 'Return audit logs.' })
     async findAll(
         @Req() req,
-        @Query('page') page?: number,
-        @Query('limit') limit?: number,
+        @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+        @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
         @Query('entity') entity?: string,
-        @Query('entityId') entityId?: number,
-        @Query('entities') entities?: string, // Comma separated entities
-        @Query('entityIds') entityIds?: string, // Comma separated IDs
+        @Query('entityId', new DefaultValuePipe(0), ParseIntPipe) entityId?: number,
+        @Query('entities') entities?: string,
+        @Query('entityIds') entityIds?: string,
         @Query('action') action?: string,
-        @Query('userId') userId?: number,
+        @Query('userId', new DefaultValuePipe(0), ParseIntPipe) userId?: number,
     ) {
         const schoolId = req.user.schoolId;
         return this.auditLogService.findAll({

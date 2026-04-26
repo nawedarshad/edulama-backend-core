@@ -17,6 +17,7 @@ import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { TimetableService } from './timetable.service';
 import { CreateTimePeriodDto } from './dto/create-time-period.dto';
 import { CreateTimetableEntryDto } from './dto/create-timetable-entry.dto';
+import { UpdateTimetableEntryDto } from './dto/update-timetable-entry.dto';
 import { DayOfWeek } from '@prisma/client';
 import { RequiredModule } from '../../common/decorators/required-module.decorator';
 import { ModuleGuard } from '../../common/guards/module.guard';
@@ -133,6 +134,22 @@ export class TimetableController {
         @Body() dto: CreateTimetableEntryDto,
     ) {
         return this.timetableService.createEntry(schoolId, academicYearId, dto, userId);
+    }
+
+    @Put('entries/:id')
+    @ApiOperation({ summary: 'Update a timetable entry', description: 'Updates an existing entry with full conflict validation. Maintains atomic integrity.' })
+    @ApiParam({ name: 'id', description: 'Timetable Entry ID' })
+    @ApiResponse({ status: 200, description: 'Entry updated successfully.' })
+    @ApiResponse({ status: 400, description: 'Locked year or invalid entry state.' })
+    @ApiResponse({ status: 409, description: 'Conflict: Resources are already booked in the target slot.' })
+    updateEntry(
+        @GetUser('schoolId') schoolId: number,
+        @GetUser('academicYearId') academicYearId: number,
+        @GetUser('id') userId: number,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() dto: UpdateTimetableEntryDto,
+    ) {
+        return this.timetableService.updateEntry(schoolId, academicYearId, id, dto, userId);
     }
 
     @Delete('entries/:id')

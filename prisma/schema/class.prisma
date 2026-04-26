@@ -87,10 +87,10 @@ model ClassSubject {
   passMarks Float? @default(33)
 
   // Flags
-  isOptional     Boolean @default(false)
-  hasLab         Boolean @default(false)
-  excludeFromGPA Boolean @default(false)
-  isGraded       Boolean @default(true)
+  isOptional     Boolean        @default(false)
+  hasLab         Boolean        @default(false)
+  excludeFromGPA Boolean        @default(false)
+  isGraded       Boolean        @default(true)
   assessmentType AssessmentType @default(MARKS)
 
   // ---------------------------------------------

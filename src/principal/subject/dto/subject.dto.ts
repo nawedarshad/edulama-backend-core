@@ -1,4 +1,5 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, IsEnum, IsBoolean, IsNumber, IsHexColor, Matches } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, IsEnum, IsBoolean, IsNumber, IsHexColor, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
 import { SubjectType, AssessmentType } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -12,6 +13,11 @@ export class CreateSubjectDto {
     @IsString()
     @IsNotEmpty()
     code: string;
+
+    @ApiPropertyOptional({ description: 'ID of the department this subject belongs to', example: 1 })
+    @IsInt()
+    @IsOptional()
+    departmentId?: number;
 
     // Visuals
     @ApiPropertyOptional({ description: 'Hex color code for UI representation', example: '#FF5733' })
@@ -38,6 +44,10 @@ export class UpdateSubjectDto {
     @IsString()
     @IsOptional()
     code?: string;
+
+    @IsInt()
+    @IsOptional()
+    departmentId?: number;
 
     @IsHexColor()
     @IsOptional()
@@ -213,11 +223,16 @@ export class UpdateCategoryDto {
 }
 
 export class GetSubjectsQueryDto {
+    @Type(() => Number)
     @IsInt()
+    @Min(1)
     @IsOptional()
     page?: number = 1;
 
+    @Type(() => Number)
     @IsInt()
+    @Min(1)
+    @Max(100)
     @IsOptional()
     limit?: number = 10;
 
@@ -225,9 +240,23 @@ export class GetSubjectsQueryDto {
     @IsOptional()
     search?: string;
 
+    @Type(() => Number)
     @IsInt()
     @IsOptional()
     categoryId?: number;
+}
+
+export class BulkCopyDto {
+    @IsInt()
+    @Min(1)
+    fromClassId: number;
+
+    @IsInt()
+    @Min(1)
+    toClassId: number;
+
+    @IsBoolean()
+    copyTeachers: boolean;
 }
 
 export class AssignTeacherSubjectDto {

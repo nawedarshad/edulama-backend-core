@@ -5,6 +5,24 @@ enum GrievanceStatus {
   DISMISSED
 }
 
+enum GrievancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum GrievanceCategory {
+  ACADEMIC
+  ADMISSION
+  FEES
+  INFRASTRUCTURE
+  TRANSPORT
+  CONDUCT
+  STAFF_RELATED
+  OTHER
+}
+
 model Grievance {
   id Int @id @default(autoincrement())
 
@@ -16,9 +34,18 @@ model Grievance {
   raisedById Int
   raisedBy   User @relation(fields: [raisedById], references: [id], onDelete: Cascade)
 
+  // Configuration
+  category    GrievanceCategory @default(OTHER)
+  priority    GrievancePriority @default(MEDIUM)
+  isAnonymous Boolean           @default(false)
+
   // Optional: who / what the grievance is about
   againstUserId Int?
   againstUser   User? @relation("GrievanceAgainstUser", fields: [againstUserId], references: [id], onDelete: SetNull)
+
+  // Assignment
+  assignedToId Int?
+  assignedTo   User? @relation("GrievanceAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
 
   // Details
   title       String
@@ -39,10 +66,25 @@ model Grievance {
   school       School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   academicYear AcademicYear          @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   attachments  GrievanceAttachment[]
+  comments     GrievanceComment[]
 
   @@index([schoolId, academicYearId])
   @@index([status])
+  @@index([category])
+  @@index([priority])
   @@index([raisedById])
+}
+
+model GrievanceComment {
+  id          Int    @id @default(autoincrement())
+  grievanceId Int
+  userId      Int // The person commenting
+  message     String
+
+  createdAt DateTime @default(now())
+
+  grievance Grievance @relation(fields: [grievanceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model GrievanceAttachment {

@@ -25,6 +25,16 @@ export class PrincipalLeaveController {
         return this.leaveService.getTeacherLeaveSummary(req.user.schoolId, req.user.academicYearId);
     }
 
+    @Get('balances')
+    getBalances(@Request() req) {
+        return this.leaveService.getBalances(req.user.schoolId, req.user.academicYearId);
+    }
+
+    @Patch('initialize-balances')
+    initializeBalances(@Request() req) {
+        return this.leaveService.initializeBalances(req.user.schoolId, req.user.academicYearId, req.user);
+    }
+
     // Parameterized routes come AFTER specific routes
     @Get(':id')
     findOne(@Request() req, @Param('id', ParseIntPipe) id: number) {

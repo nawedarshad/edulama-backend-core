@@ -16,4 +16,10 @@ export class DashboardController {
     getStats(@Request() req) {
         return this.dashboardService.getStats(req.user.schoolId);
     }
+
+    @ApiOperation({ summary: 'Get Weekly Attendance Analytics' })
+    @Get('attendance-analytics')
+    getWeeklyAnalytics(@Request() req) {
+        return this.dashboardService.getWeeklyAttendanceAnalytics(req.user.schoolId);
+    }
 }

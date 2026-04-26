@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTimetableEntryDto } from '../dto/create-timetable-entry.dto';
+import { UpdateTimetableEntryDto } from '../dto/update-timetable-entry.dto';
 import { TimetableCacheService } from './cache.service';
 import { TimetableInventoryService } from './inventory.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -74,6 +75,83 @@ export class TimetableEntryService {
         // 4. Audit & Cache
         this.eventEmitter.emit('audit.log', new AuditLogEvent(
             schoolId, userId || 0, 'TIMETABLE_ENTRY', 'CREATE', entry.id, { ...dto, academicYearId }
+        ));
+
+        await this.cacheService.invalidateAnalyticsCache(schoolId, academicYearId);
+        return entry;
+    }
+
+    async updateEntry(schoolId: number, academicYearId: number, id: number, dto: UpdateTimetableEntryDto, userId?: number) {
+        const { groupId, teacherId, teacherIds = [], roomId, roomIds = [], subjectId, timeSlotId, day, durationSlots = 1 } = dto;
+
+        const existing = await this.prisma.timetableEntry.findUnique({
+            where: { id_schoolId: { id, schoolId } },
+            include: { teachers: true, rooms: true }
+        });
+
+        if (!existing) throw new NotFoundException('Timetable entry not found');
+        if (existing.isLocked || existing.status === 'LOCKED') {
+            throw new BadRequestException('Cannot update a locked entry');
+        }
+
+        // 1. Availability Check (Atomic & Deep, excluding this entry)
+        // We cast dto to CreateTimetableEntryDto for inventory service which expects filled fields
+        const availability = await this.inventoryService.checkAvailability(
+            schoolId,
+            academicYearId,
+            { ...existing, ...dto } as any,
+            id
+        );
+        if (availability.status === 'CONFLICT') {
+            throw new ConflictException(availability.message);
+        }
+
+        // 2. Resource Prep
+        const allTeacherIds = [...new Set([teacherId, ...teacherIds].filter((id): id is number => !!id))];
+        const allRoomIds = [...new Set([roomId, ...roomIds].filter((id): id is number => !!id))];
+
+        // 3. Transactional Update
+        const entry = await this.prisma.$transaction(async (tx) => {
+            const updatedEntry = await tx.timetableEntry.update({
+                where: { id_schoolId: { id, schoolId } },
+                data: {
+                    groupId: groupId || undefined,
+                    subjectId: subjectId || undefined,
+                    teacherId: teacherId || (allTeacherIds.length > 0 ? allTeacherIds[0] : null),
+                    roomId: roomId || (allRoomIds.length > 0 ? allRoomIds[0] : null),
+                    day: day || undefined,
+                    timeSlotId: timeSlotId || undefined,
+                    durationSlots: durationSlots || undefined,
+                    isFixed: dto.isFixed !== undefined ? dto.isFixed : undefined,
+                },
+            });
+
+            // Sync Teachers (simple clear & recreate for simplicity in transaction)
+            if (dto.teacherIds !== undefined || dto.teacherId !== undefined) {
+                await tx.timetableEntryTeacher.deleteMany({ where: { entryId: id } });
+                if (allTeacherIds.length > 0) {
+                    await tx.timetableEntryTeacher.createMany({
+                        data: allTeacherIds.map(tId => ({ entryId: id, teacherId: tId })),
+                    });
+                }
+            }
+
+            // Sync Rooms 
+            if (dto.roomIds !== undefined || dto.roomId !== undefined) {
+                await tx.timetableEntryRoom.deleteMany({ where: { entryId: id } });
+                if (allRoomIds.length > 0) {
+                    await tx.timetableEntryRoom.createMany({
+                        data: allRoomIds.map(rId => ({ entryId: id, roomId: rId })),
+                    });
+                }
+            }
+
+            return updatedEntry;
+        });
+
+        // 4. Audit & Cache
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(
+            schoolId, userId || 0, 'TIMETABLE_ENTRY', 'UPDATE', entry.id, { ...dto, academicYearId }
         ));
 
         await this.cacheService.invalidateAnalyticsCache(schoolId, academicYearId);

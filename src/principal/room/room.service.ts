@@ -1,4 +1,3 @@
-
 import { Injectable, InternalServerErrorException, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRoomDto } from './dto/create-room.dto';
@@ -7,12 +6,17 @@ import { GetRoomsDto } from './dto/get-rooms.dto';
 import { AssignRoomDto } from './dto/assign-room.dto';
 import { BulkCreateRoomDto } from './dto/bulk-create-room.dto';
 import { Prisma, AcademicYearStatus } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AuditLogEvent } from '../../common/audit/audit.event';
 
 @Injectable()
 export class RoomService {
     private readonly logger = new Logger(RoomService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly eventEmitter: EventEmitter2
+    ) { }
 
     async findAll(schoolId: number, dto: GetRoomsDto) {
         const { search, status, block, floor, roomType, page = 1, limit = 20 } = dto;
@@ -138,7 +142,7 @@ export class RoomService {
         };
     }
 
-    async create(schoolId: number, dto: CreateRoomDto) {
+    async create(schoolId: number, dto: CreateRoomDto, userId: number) {
         try {
             const room = await this.prisma.room.create({
                 data: {
@@ -153,6 +157,11 @@ export class RoomService {
                     schoolId,
                 },
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'ROOM', 'CREATE', room.id, room
+            ));
+
             return room;
         } catch (error) {
             if (error.code === 'P2002') {
@@ -236,7 +245,7 @@ export class RoomService {
         };
     }
 
-    async update(schoolId: number, id: number, dto: UpdateRoomDto) {
+    async update(schoolId: number, id: number, dto: UpdateRoomDto, userId: number) {
         const existingRoom = await this.prisma.room.findFirst({
             where: { id, schoolId },
         });
@@ -252,6 +261,11 @@ export class RoomService {
                     ...dto,
                 },
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'ROOM', 'UPDATE', id, room
+            ));
+
             return room;
         } catch (error) {
             if (error.code === 'P2002') {
@@ -262,7 +276,7 @@ export class RoomService {
         }
     }
 
-    async remove(schoolId: number, id: number) {
+    async remove(schoolId: number, id: number, userId: number) {
         const existingRoom = await this.prisma.room.findFirst({
             where: { id, schoolId },
             include: {
@@ -284,6 +298,11 @@ export class RoomService {
             await this.prisma.room.delete({
                 where: { id },
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'ROOM', 'DELETE', id, { name: existingRoom.name }
+            ));
+
             return { message: 'Room deleted successfully' };
         } catch (error) {
             this.logger.error('Error deleting room', error);
@@ -291,37 +310,17 @@ export class RoomService {
         }
     }
 
-    async assignRoom(schoolId: number, dto: AssignRoomDto) {
-        // 1. Check if room exists and belongs to school
-        const room = await this.prisma.room.findFirst({
-            where: { id: dto.roomId, schoolId },
-        });
+    async assignRoom(schoolId: number, dto: AssignRoomDto, userId: number) {
+        // ... (validation logic same)
+        const room = await this.prisma.room.findFirst({ where: { id: dto.roomId, schoolId } });
+        if (!room) throw new NotFoundException('Room not found');
 
-        if (!room) {
-            throw new NotFoundException('Room not found');
-        }
+        const section = await this.prisma.section.findFirst({ where: { id: dto.sectionId, schoolId } });
+        if (!section) throw new NotFoundException('Section not found');
 
-        // 2. Check if section exists and belongs to school
-        const section = await this.prisma.section.findFirst({
-            where: { id: dto.sectionId, schoolId },
-            // Removed include: academicYear
-        });
+        const activeYear = await this.prisma.academicYear.findFirst({ where: { schoolId, status: AcademicYearStatus.ACTIVE } });
+        if (!activeYear) throw new BadRequestException('No active academic year found');
 
-        if (!section) {
-            throw new NotFoundException('Section not found');
-        }
-
-        // Get active academic year
-        const activeYear = await this.prisma.academicYear.findFirst({
-            where: { schoolId, status: AcademicYearStatus.ACTIVE }
-        });
-
-        if (!activeYear) {
-            throw new BadRequestException('No active academic year found');
-        }
-
-        // 3. Upsert assignment
-        // We use upsert to handle re-assignment or activating existing inactive assignment
         try {
             const assignment = await this.prisma.roomAssignment.upsert({
                 where: {
@@ -343,6 +342,11 @@ export class RoomService {
                     isActive: dto.isActive ?? true,
                 }
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'ROOM_ASSIGNMENT', 'CREATE', assignment.id, { roomId: dto.roomId, sectionId: dto.sectionId }
+            ));
+
             return assignment;
         } catch (error) {
             this.logger.error('Error assigning room', error);
@@ -350,7 +354,7 @@ export class RoomService {
         }
     }
 
-    async unassignRoom(schoolId: number, roomId: number, sectionId: number) {
+    async unassignRoom(schoolId: number, roomId: number, sectionId: number, userId: number) {
         // Verify room ownership
         const room = await this.prisma.room.findFirst({
             where: { id: roomId, schoolId },
@@ -361,12 +365,6 @@ export class RoomService {
         }
 
         try {
-            // Find assignment by room and section (and potentially active year, but let's assume current context)
-            // Ideally we delete by unique composite key, but here we are unassigning a specific link.
-            // Since strict uniqueness is on [schoolId, academicYearId, sectionId], we should probably look it up first or deleteMany.
-            // However, the prompt asks to unassign. Let's delete the assignment record directly if we can find it.
-
-            // To be safe and precise with the schema:
             await this.prisma.roomAssignment.deleteMany({
                 where: {
                     schoolId,
@@ -375,6 +373,10 @@ export class RoomService {
                 }
             });
 
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'ROOM_ASSIGNMENT', 'DELETE', 0, { roomId, sectionId }
+            ));
+
             return { message: 'Room unassigned successfully' };
         } catch (error) {
             this.logger.error('Error unassigning room', error);
@@ -382,7 +384,7 @@ export class RoomService {
         }
     }
 
-    async bulkCreate(schoolId: number, dto: BulkCreateRoomDto) {
+    async bulkCreate(schoolId: number, dto: BulkCreateRoomDto, userId: number) {
         try {
             const count = await this.prisma.$transaction(async (tx) => {
                 const result = await tx.room.createMany({
@@ -396,6 +398,11 @@ export class RoomService {
                 });
                 return result.count;
             });
+
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(
+                schoolId, userId, 'ROOM', 'BULK_CREATE', 0, { count }
+            ));
+
             return { message: 'Rooms uploaded successfully', count };
         } catch (error) {
             this.logger.error('Error bulk creating rooms', error);

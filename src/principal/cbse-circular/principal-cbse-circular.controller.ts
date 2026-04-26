@@ -29,7 +29,15 @@ export class PrincipalCbseCircularController {
         @GetUser('id') userId: number,
         @GetUser('role') userRole: string
     ) {
-        console.log(`[PrincipalCbseCircularController] DOWNLOAD /${id}/download/${attachmentId} by User ${userId}`);
         return this.service.recordDownload(id, attachmentId, userId, userRole);
+    }
+
+    @Post(':id/broadcast')
+    broadcast(
+        @GetUser('schoolId') schoolId: number,
+        @GetUser('id') userId: number,
+        @Param('id', ParseIntPipe) id: number
+    ) {
+        return this.service.broadcast(schoolId, userId, id);
     }
 }

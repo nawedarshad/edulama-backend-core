@@ -55,22 +55,14 @@ export class PrincipalLeaveService {
     }
 
     async action(user: any, id: number, dto: LeaveActionDto) {
-        const request = await this.findOne(user.schoolId, id);
+        const request = await this.prisma.leaveRequest.findFirst({
+            where: { id, schoolId: user.schoolId },
+            include: { leaveType: true }
+        });
 
-        if (request.status !== LeaveStatus.PENDING && request.status !== LeaveStatus.APPROVED) {
-            // Technically can change decision, but let's warn if it's already done? 
-            // For simple flow, allow changing from PENDING to APPROVED/REJECTED.
-            // If already APPROVED/REJECTED, allow changing? 
-            // Let's assume yes, but if changing from APPROVED to REJECTED, need to revert attendance?
-            // Complexity: MVP -> Just handle PENDING -> APPROVED | REJECTED.
-        }
-
-        // Simplification: Only allow action on PENDING requests for safely handling attendance logic.
-        // Or allow re-approving (updating) but that's complex.
+        if (!request) throw new NotFoundException('Leave request not found');
         if (request.status !== LeaveStatus.PENDING) {
-            // Allow ONLY if strictly needed, but let's start restrictive.
-            // throw new BadRequestException('Request already processed. Reverting/Changing status not yet supported.');
-            // User requested "fully working", so let's try to support it or just keep it simple.
+            throw new BadRequestException('This request has already been processed.');
         }
 
         const { status } = dto;
@@ -89,34 +81,52 @@ export class PrincipalLeaveService {
                 include: { leaveType: true }
             });
 
-            // 2. Handle Attendance Pushing if APPROVED
-            if (status === LeaveStatus.APPROVED) {
+            // 2. Resolve Balance
+            const balance = await tx.leaveBalance.findUnique({
+                where: {
+                    userId_academicYearId_leaveTypeId: {
+                        userId: request.applicantId,
+                        academicYearId: request.academicYearId,
+                        leaveTypeId: request.leaveTypeId
+                    }
+                }
+            });
 
-                // Iterate dates
+            // 3. Balance Ledger Management
+            if (balance) {
+                if (status === LeaveStatus.APPROVED) {
+                    // Move from Pending to Used
+                    await tx.leaveBalance.update({
+                        where: { id: balance.id },
+                        data: {
+                            pending: { decrement: request.daysCount },
+                            used: { increment: request.daysCount }
+                        }
+                    });
+                } else if (status === LeaveStatus.REJECTED) {
+                    // Restore from Pending
+                    await tx.leaveBalance.update({
+                        where: { id: balance.id },
+                        data: {
+                            pending: { decrement: request.daysCount }
+                        }
+                    });
+                }
+            }
+
+            // 4. Attendance Sync if APPROVED
+            if (status === LeaveStatus.APPROVED) {
                 let currentDate = new Date(request.startDate);
                 const endDate = new Date(request.endDate);
 
-                // We need teacherId from applicantId (User) -> TeacherProfile
                 const teacherProfile = await tx.teacherProfile.findUnique({
                     where: { userId: request.applicantId }
                 });
 
                 if (teacherProfile) {
                     while (currentDate <= endDate) {
-
-                        // Check if it is a working day using Calendar Service (reuse validation logic)
-                        // Note: this.calendarService.validateDate uses prisma, need to pass tx? 
-                        // CalendarService uses this.prisma, which is NOT the transaction client 'tx'. 
-                        // Ideally pass tx to calendarService, but for now we'll fetch from 'this.prisma' (read-only mostly) 
-                        // or just copy logic? 'validateDate' is public.
-                        // Let's assume it's fine to read from main connection for calendar rules.
-
                         const dayValidation = await this.calendarService.validateDate(schoolId, currentDate);
-
-                        // Only mark attendance if it is typically a working day (or special working).
-                        // If it's a holiday, we skip marking it as 'EXCUSED'.
                         if (dayValidation.isWorking) {
-                            // Upsert StaffAttendance
                             await tx.staffAttendance.upsert({
                                 where: {
                                     schoolId_academicYearId_teacherId_date: {
@@ -141,30 +151,78 @@ export class PrincipalLeaveService {
                                 }
                             });
                         }
-
-                        // Next day
                         currentDate.setDate(currentDate.getDate() + 1);
                     }
                 }
             }
 
-            // TODO: Handle Rejection? If previously approved, we'd need to revert attendance. 
-            // Current logic only pushes on Approve.
-
             return updated;
         });
 
-        // Send Notification to Applicant
+        // Notifications
         if (result) {
             this.notificationService.create(schoolId, user.id, {
-                title: 'Leave Request Update',
-                message: `Your leave request for ${result.startDate.toDateString()} has been ${result.status}.`,
+                title: `Leave ${result.status}`,
+                message: `Your leave for ${result.startDate.toDateString()} has been ${result.status.toLowerCase()}.`,
                 type: NotificationType.ATTENDANCE,
                 targetUserIds: [result.applicantId]
-            }).catch(err => console.error('Failed to send leave notification', err));
+            }).catch(err => console.error('Failed to notify staff', err));
         }
 
         return result;
+    }
+
+    async initializeBalances(schoolId: number, academicYearId: number, user: any) {
+        // Find all staff (Teachers)
+        const teachers = await this.prisma.teacherProfile.findMany({
+            where: { schoolId },
+            select: { userId: true }
+        });
+
+        const leaveTypes = await this.prisma.leaveType.findMany({
+            where: { schoolId, category: 'TEACHER', isActive: true }
+        });
+
+        let createdCount = 0;
+        await this.prisma.$transaction(async (tx) => {
+            for (const teacher of teachers) {
+                for (const type of leaveTypes) {
+                    // Default values - can be adjusted via UI later
+                    const allowance = type.code === 'CL' ? 12 : type.code === 'SL' ? 15 : 0;
+                    
+                    await tx.leaveBalance.upsert({
+                        where: {
+                            userId_academicYearId_leaveTypeId: {
+                                userId: teacher.userId,
+                                academicYearId,
+                                leaveTypeId: type.id
+                            }
+                        },
+                        create: {
+                            schoolId,
+                            academicYearId,
+                            userId: teacher.userId,
+                            leaveTypeId: type.id,
+                            allowance
+                        },
+                        update: {} // Don't reset if exists
+                    });
+                    createdCount++;
+                }
+            }
+        });
+
+        return { message: `Successfully initialized ${createdCount} balance records.` };
+    }
+
+    async getBalances(schoolId: number, academicYearId: number) {
+        return this.prisma.leaveBalance.findMany({
+            where: { schoolId, academicYearId },
+            include: {
+                user: { select: { name: true, photo: true } },
+                leaveType: { select: { name: true, code: true, color: true } }
+            }
+        });
     }
 
     async getTeacherLeaveSummary(schoolId: number, academicYearId: number) {

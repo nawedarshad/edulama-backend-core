@@ -40,8 +40,9 @@ export class CreatePrincipalNoticeDto {
     priority?: NoticePriority = NoticePriority.NORMAL;
 
     // Context
+    @IsOptional()
     @IsInt()
-    classId: number;
+    classId?: number;
 
     @IsOptional()
     @IsInt()

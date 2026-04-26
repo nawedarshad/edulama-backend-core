@@ -13,6 +13,11 @@ import { TeacherFilterDto } from './dto/teacher-filter.dto';
 @Audit('Teacher')
 export class TeacherController {
     constructor(private readonly teacherService: TeacherService) { }
+ 
+    @Get('allocation-list')
+    getAllocationList(@Req() req) {
+        return this.teacherService.getAllocationList(req.user.schoolId);
+    }
 
     @Post()
     create(@Req() req, @Body() createDto: CreateTeacherDto) {
@@ -22,6 +27,11 @@ export class TeacherController {
     @Post('bulk')
     bulkCreate(@Req() req, @Body() bulkDto: BulkCreateTeacherDto) {
         return this.teacherService.bulkCreate(req.user.schoolId, bulkDto);
+    }
+
+    @Post('validate-bulk')
+    validateBulk(@Req() req, @Body() bulkDto: BulkCreateTeacherDto) {
+        return this.teacherService.validateBulk(req.user.schoolId, bulkDto);
     }
 
     @Get('check-email')
@@ -34,6 +44,7 @@ export class TeacherController {
     findAll(@Req() req, @Query() query: TeacherFilterDto) {
         return this.teacherService.findAll(req.user.schoolId, query);
     }
+
 
     @Get('analytics')
     getAnalytics(@Req() req) {

@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
-import { NotificationType } from '@prisma/client';
+import { NotificationType, DeliveryStatus } from '@prisma/client';
 import { NotificationGateway } from './notification.gateway';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Expo } from 'expo-server-sdk';
 import * as admin from 'firebase-admin';
 
@@ -13,7 +15,8 @@ export class NotificationService {
 
     constructor(
         private readonly prisma: PrismaService,
-        private readonly gateway: NotificationGateway
+        private readonly gateway: NotificationGateway,
+        @InjectQueue('notification-delivery') private readonly deliveryQueue: Queue
     ) {
         if (admin.apps.length === 0) {
             const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
@@ -32,6 +35,61 @@ export class NotificationService {
         }
     }
 
+    // Helper to process users in batches for the queue
+    private async enqueueUserBatches(notificationId: bigint, users: any[], title: string, message: string, data: any) {
+        if (users.length === 0) return;
+
+        // 1. Bulk create deliveries in PENDING state
+        await this.prisma.notificationDelivery.createMany({
+            data: users.map((u: any) => ({
+                notificationId,
+                userId: u.id,
+                status: DeliveryStatus.PENDING,
+            })),
+            skipDuplicates: true,
+        });
+
+        // 2. Users without push tokens will never receive a job — mark them SENT now
+        //    so their delivery records don't stay PENDING forever (they see it in-app).
+        const tokenlessUserIds = users
+            .filter((u: any) => !u.deviceTokens || Object.keys((u.deviceTokens as object) || {}).length === 0)
+            .map((u: any) => u.id);
+
+        if (tokenlessUserIds.length > 0) {
+            await this.prisma.notificationDelivery.updateMany({
+                where: { notificationId, userId: { in: tokenlessUserIds } },
+                data: { status: DeliveryStatus.SENT, deliveredAt: new Date() },
+            });
+        }
+
+        // 3. Enqueue batches of 50 for push delivery
+        const BATCH_SIZE = 50;
+        const isEmergency = title.toUpperCase().includes('EMERGENCY') || title.toUpperCase().includes('URGENT');
+
+        for (let i = 0; i < users.length; i += BATCH_SIZE) {
+            const batchUsers = users.slice(i, i + BATCH_SIZE);
+            const userConfigs = batchUsers.flatMap((u: any) => {
+                const tokensMap = (u.deviceTokens as Record<string, string>) || {};
+                return Object.values(tokensMap).map(token => ({ token, userId: u.id }));
+            });
+
+            if (userConfigs.length > 0) {
+                await this.deliveryQueue.add('deliver', {
+                    notificationId: notificationId.toString(),
+                    userConfigs,
+                    title,
+                    message,
+                    data,
+                }, {
+                    attempts: isEmergency ? 10 : 3,
+                    backoff: { type: 'exponential', delay: 1000 },
+                    priority: isEmergency ? 1 : 2,
+                    removeOnComplete: true,
+                });
+            }
+        }
+    }
+
     async create(schoolId: number, creatorId: number, dto: CreateNotificationDto) {
         // 1. Create Notification Record
         const notification = await this.prisma.notification.create({
@@ -42,48 +100,14 @@ export class NotificationService {
                 message: dto.message,
                 createdById: creatorId,
                 expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+                metadata: dto.data ?? undefined,
             },
         });
 
-        // Helper to process users in chunks
-        const processUserChunk = async (usersChunk: any[]) => {
-            if (usersChunk.length === 0) return;
-            await this.prisma.notificationDelivery.createMany({
-                data: usersChunk.map((u: any) => ({ notificationId: notification.id, userId: u.id })),
-                skipDuplicates: true,
-            });
-
-            const pushTokens: { token: string, user: any }[] = [];
-            for (const user of usersChunk) {
-                this.gateway.sendToUser(user.id, 'notification', {
-                    title: dto.title,
-                    message: dto.message,
-                    type: dto.type,
-                    createdAt: new Date(),
-                });
-
-                if (user.deviceTokens) {
-                    const tokensMap = user.deviceTokens as Record<string, string>;
-                    for (const t of Object.values(tokensMap)) {
-                        pushTokens.push({ token: t, user });
-                    }
-                }
-            }
-
-            if (pushTokens.length > 0) {
-                this.sendPushNotifications(
-                    pushTokens.map(p => ({ token: p.token, userId: p.user.id })),
-                    dto.title,
-                    dto.message,
-                    { notificationId: notification.id, ...(dto.data || {}) }
-                );
-            }
-        };
-
-        // 2. If global, fetch users in chunks via UserSchool to respect school isolation
+        // 2. Resolve and Enqueue
         if (dto.isGlobal) {
             let skip = 0;
-            const limit = 500;
+            const limit = 1000;
             while (true) {
                 const memberships = await this.prisma.userSchool.findMany({
                     where: { schoolId, isActive: true },
@@ -93,81 +117,18 @@ export class NotificationService {
                     orderBy: { id: 'asc' },
                 });
 
-                this.logger.log(`[NotificationService] Global: Found ${memberships.length} memberships for schoolId=${schoolId} (skip=${skip})`);
-
                 if (memberships.length === 0) break;
-                const chunk = memberships.map(m => m.user);
-                await processUserChunk(chunk);
+                await this.enqueueUserBatches(notification.id, memberships.map(m => m.user), dto.title, dto.message, dto.data);
                 skip += limit;
             }
-
             return notification;
         }
 
-        // 3. If target users provided, create deliveries (already correctly scoped by schoolId check)
-        if (dto.targetUserIds && dto.targetUserIds.length > 0) {
-            // Verify users belong to school and fetch tokens via UserSchool
-            const memberships = await this.prisma.userSchool.findMany({
-                where: {
-                    schoolId,
-                    userId: { in: dto.targetUserIds },
-                    isActive: true
-                },
-                select: { user: { select: { id: true, deviceTokens: true } } },
-            });
+        const targetUserIds = new Set<number>(dto.targetUserIds || []);
 
-            const validUsers = memberships.map(m => m.user);
-
-            if (validUsers.length > 0) {
-                await this.prisma.notificationDelivery.createMany({
-                    data: validUsers.map(u => ({
-                        notificationId: notification.id,
-                        userId: u.id,
-                    })),
-                    skipDuplicates: true
-                });
-
-                // Notify users in real-time (Socket) + Push
-                this.logger.log(`Notifying ${validUsers.length} users via gateway and push.`);
-
-                const pushTokens: { token: string, user: any }[] = [];
-
-                for (const user of validUsers) {
-                    // Socket
-                    this.gateway.sendToUser(user.id, 'notification', {
-                        title: dto.title,
-                        message: dto.message,
-                        type: dto.type,
-                        createdAt: new Date(),
-                    });
-
-                    // Collect Push Tokens
-                    if (user.deviceTokens) {
-                        const tokensMap = user.deviceTokens as Record<string, string>;
-                        for (const t of Object.values(tokensMap)) {
-                            pushTokens.push({ token: t, user });
-                        }
-                    }
-                }
-
-                // Send Push
-                if (pushTokens.length > 0) {
-                    this.sendPushNotifications(
-                        pushTokens.map(p => ({ token: p.token, userId: p.user.id })),
-                        dto.title,
-                        dto.message,
-                        {
-                            notificationId: notification.id,
-                            ...(dto.data || {}) // Merge custom data
-                        }
-                    );
-                }
-            }
-        }
-
-        // 4. If target roles provided, fetch users via UserSchoolRole
+        // Resolve roles if provided
         if (dto.targetRoleIds && dto.targetRoleIds.length > 0) {
-            const memberships = await this.prisma.userSchool.findMany({
+            const roleMembers = await this.prisma.userSchool.findMany({
                 where: {
                     schoolId,
                     isActive: true,
@@ -176,64 +137,17 @@ export class NotificationService {
                         { roles: { some: { roleId: { in: dto.targetRoleIds } } } }
                     ]
                 },
-                select: { user: { select: { id: true, deviceTokens: true } } },
+                select: { userId: true }
             });
+            roleMembers.forEach(m => targetUserIds.add(m.userId));
+        }
 
-            const roleUsers = memberships.map(m => m.user);
-            this.logger.log(`[NotificationService] Role-based: found ${roleUsers.length} users for roleIds=[${dto.targetRoleIds?.join(',')}]`);
-            const usersWithTokens = roleUsers.filter(u => u.deviceTokens && Object.keys(u.deviceTokens).length > 0);
-            this.logger.log(`[NotificationService] Role-based: ${usersWithTokens.length} users have device tokens`);
-
-            if (roleUsers.length > 0) {
-                // Avoid duplicates if user was also in targetUserIds
-                const existingTargetIds = new Set(dto.targetUserIds || []);
-                const newUsers = roleUsers.filter(u => !existingTargetIds.has(u.id));
-
-                if (newUsers.length > 0) {
-                    await this.prisma.notificationDelivery.createMany({
-                        data: newUsers.map(u => ({
-                            notificationId: notification.id,
-                            userId: u.id,
-                        })),
-                        skipDuplicates: true,
-                    });
-
-                    const pushTokens: string[] = [];
-                    for (const user of newUsers) {
-                        // Socket
-                        this.gateway.sendToUser(user.id, 'notification', {
-                            title: dto.title,
-                            message: dto.message,
-                            type: dto.type,
-                            createdAt: new Date(),
-                        });
-
-                        if (user.deviceTokens) {
-                            const tokensMap = user.deviceTokens as Record<string, string>;
-                            for (const t of Object.values(tokensMap)) {
-                                pushTokens.push(t);
-                            }
-                        }
-                    }
-
-                    // Send Push
-                    if (pushTokens.length > 0) {
-                        this.sendPushNotifications(
-                            newUsers.map(user => {
-                                // A user might have multiple tokens, so we map them all
-                                const tokensMap = user.deviceTokens as Record<string, string>;
-                                return Object.values(tokensMap).map(t => ({ token: t, userId: user.id }));
-                            }).flat(),
-                            dto.title,
-                            dto.message,
-                            {
-                                notificationId: notification.id,
-                                ...(dto.data || {}) // Merge custom data
-                            }
-                        );
-                    }
-                }
-            }
+        if (targetUserIds.size > 0) {
+            const users = await this.prisma.user.findMany({
+                where: { id: { in: Array.from(targetUserIds) } },
+                select: { id: true, deviceTokens: true }
+            });
+            await this.enqueueUserBatches(notification.id, users, dto.title, dto.message, dto.data);
         }
 
         return notification;

@@ -74,12 +74,14 @@ export class CalendarController {
         // ... implementation existing ...
         // Backward Compatibility for month/year params
         if (month && year) {
-            const start = new Date(year, month - 1, 1);
-            const end = new Date(year, month, 0);
+            // BUG FIX: Use Date.UTC to avoid DST/timezone offset issues.
+            // new Date(year, month-1, 1) produces a LOCAL time date which can be off by hours on IST/PST servers.
+            const startUtc = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
+            const endUtc = new Date(Date.UTC(Number(year), Number(month), 0)); // Last day of month
             return this.service.generateCalendar(
                 req.user.schoolId,
-                start.toISOString().split('T')[0],
-                end.toISOString().split('T')[0],
+                startUtc.toISOString().split('T')[0],
+                endUtc.toISOString().split('T')[0],
                 classId ? Number(classId) : undefined
             );
         }

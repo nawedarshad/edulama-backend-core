@@ -32,19 +32,32 @@ model Notification {
   @@index([createdAt])
 }
 
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+  RESPONDED
+}
+
 model NotificationDelivery {
   id             BigInt @id @default(autoincrement())
   notificationId BigInt
   userId         Int
 
-  deliveredAt DateTime  @default(now())
-  readAt      DateTime?
+  status       DeliveryStatus @default(PENDING)
+  deliveredAt  DateTime       @default(now())
+  readAt       DateTime?
+  respondedAt  DateTime?
+  lastError    String?
+  responseJson Json?
 
   notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([notificationId, userId])
   @@index([userId])
+  @@index([status])
 }
 
 model NotificationPreference {

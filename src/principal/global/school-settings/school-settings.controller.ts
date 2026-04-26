@@ -1,15 +1,19 @@
-import { Body, Controller, Get, Patch, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Request, UseGuards, Logger } from '@nestjs/common';
 import { SchoolSettingsService } from './school-settings.service';
 import { UpdateSchoolSettingsDto } from './dto/update-school-settings.dto';
 import { PrincipalAuthGuard } from '../../../common/guards/principal.guard';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Audit } from '../../../common/audit/audit.decorator';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 @ApiTags('Principal - Global Settings')
 @ApiBearerAuth()
 @Controller('principal/global/settings')
 @UseGuards(PrincipalAuthGuard)
+@Audit('SchoolSettings')
 export class SchoolSettingsController {
+    private readonly logger = new Logger(SchoolSettingsController.name);
+
     constructor(
         private readonly settingsService: SchoolSettingsService,
         private readonly prisma: PrismaService,
@@ -19,11 +23,7 @@ export class SchoolSettingsController {
     @Get('school-info')
     async getSchoolInfo(@Request() req) {
         const schoolId = req.user.schoolId;
-        const school = await this.prisma.school.findUnique({
-            where: { id: schoolId },
-            select: { id: true, name: true, type: true, subdomain: true },
-        });
-        return school;
+        return this.settingsService.getSchoolInfo(schoolId);
     }
 
     @ApiOperation({ summary: 'Get current school settings', description: 'Retrieves settings including branding, address, and academic config.' })

@@ -1,15 +1,42 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+    Injectable,
+    NotFoundException,
+    BadRequestException,
+    ConflictException,
+    Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateSubstitutionDto } from './dto/create-substitution.dto';
 import { UpdateSubstitutionDto } from './dto/update-substitution.dto';
-import { TimetableOverrideType, DayOfWeek, AttendanceStatus, LeaveStatus } from '@prisma/client';
+import { TimetableOverrideType, DayOfWeek, AttendanceStatus, LeaveStatus, NotificationType } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { NotificationService } from '../global/notification/notification.service';
+import { AuditLogEvent } from '../../common/audit/audit.event';
 
 @Injectable()
 export class SubstitutionService {
     private readonly logger = new Logger(SubstitutionService.name);
-    constructor(private prisma: PrismaService) { }
 
-    // Helper to treat string YYYY-MM-DD as UTC start/end
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly eventEmitter: EventEmitter2,
+        private readonly notificationService: NotificationService,
+    ) { }
+
+    // ----------------------------------------------------------------
+    // DATE HELPERS
+    // ----------------------------------------------------------------
+
+    // Always parse date strings as UTC midnight — never trust client timezone offset.
+    private normalizeDate(dateString: string): Date {
+        const [year, month, day] = dateString.split('T')[0].split('-').map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        if (isNaN(date.getTime())) {
+            throw new BadRequestException(`Invalid date: "${dateString}". Expected YYYY-MM-DD.`);
+        }
+        return date;
+    }
+
     private startOfDay(date: Date): Date {
         const d = new Date(date);
         d.setUTCHours(0, 0, 0, 0);
@@ -23,676 +50,712 @@ export class SubstitutionService {
     }
 
     private getDayOfWeek(date: Date): DayOfWeek {
-        const d = new Date(date);
-        // Ensure we check the day of the UTC date provided, not local system time
-        const dayIndex = d.getUTCDay();
         const days: DayOfWeek[] = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
-        return days[dayIndex];
+        return days[date.getUTCDay()];
     }
 
+    // ----------------------------------------------------------------
+    // ABSENT TEACHERS
+    // ----------------------------------------------------------------
     async getAbsentTeachers(schoolId: number, academicYearId: number, dateString: string) {
-        const date = new Date(dateString);
+        const date = this.normalizeDate(dateString);
         const dayStart = this.startOfDay(date);
         const dayEnd = this.endOfDay(date);
 
-        // 1. Find teachers with approved leave
-        const approvedLeaves = await this.prisma.leaveRequest.findMany({
-            where: {
-                schoolId,
-                academicYearId,
-                status: LeaveStatus.APPROVED,
-                startDate: { lte: date },
-                endDate: { gte: date },
-                leaveType: { category: 'TEACHER' },
-            },
-            include: {
-                applicant: {
-                    include: {
-                        teacherProfile: true,
-                    },
+        // Fetch leave records and attendance in parallel
+        const [approvedLeaves, absentAttendance] = await Promise.all([
+            this.prisma.leaveRequest.findMany({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    status: LeaveStatus.APPROVED,
+                    startDate: { lte: dayEnd },
+                    endDate: { gte: dayStart },
+                    leaveType: { category: 'TEACHER' },
                 },
-                leaveType: true,
-            },
-        });
-
-        const leaveTeacherIds = approvedLeaves.map((l) => l.applicant.teacherProfile?.id).filter(Boolean) as number[];
-
-        // 2. Find teachers marked absent in StaffAttendance
-        // Use range to be safe against time components
-        const absentAttendance = await this.prisma.staffAttendance.findMany({
-            where: {
-                schoolId,
-                academicYearId,
-                date: {
-                    gte: dayStart,
-                    lte: dayEnd
+                include: {
+                    applicant: { include: { teacherProfile: { select: { id: true } } } },
+                    leaveType: { select: { name: true } },
                 },
-                status: {
-                    in: [AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED, AttendanceStatus.SUSPENDED],
+            }),
+            this.prisma.staffAttendance.findMany({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    date: { gte: dayStart, lte: dayEnd },
+                    status: { in: [AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED, AttendanceStatus.SUSPENDED] },
                 },
-            },
-            include: {
-                teacher: {
-                    include: {
-                        user: true,
-                    },
-                },
-            },
-        });
+                include: { teacher: { include: { user: { select: { name: true } } } } },
+            }),
+        ]);
 
-        const absentAttendanceIds = absentAttendance.map((a) => a.teacherId);
+        const leaveTeacherIds = new Set(
+            approvedLeaves
+                .map(l => l.applicant.teacherProfile?.id)
+                .filter((id): id is number => id != null),
+        );
+        const attendanceMap = new Map(absentAttendance.map(a => [a.teacherId, a]));
 
-        // Combine unique IDs
-        const uniqueAbsentIds = [...new Set([...leaveTeacherIds, ...absentAttendanceIds])];
+        const uniqueAbsentIds = [...new Set([...leaveTeacherIds, ...attendanceMap.keys()])];
+        if (uniqueAbsentIds.length === 0) return [];
 
         const absentTeachers = await this.prisma.teacherProfile.findMany({
-            where: {
-                id: { in: uniqueAbsentIds },
-            },
-            include: {
-                user: true,
-            },
+            where: { id: { in: uniqueAbsentIds }, schoolId },
+            include: { user: { select: { name: true } } },
         });
 
         return absentTeachers.map(teacher => {
             const leave = approvedLeaves.find(l => l.applicant.teacherProfile?.id === teacher.id);
-            const attendance = absentAttendance.find(a => a.teacherId === teacher.id);
-
+            const attendance = attendanceMap.get(teacher.id);
             return {
                 teacherId: teacher.id,
-                name: (teacher.user as any).name,
-                reason: leave ? `Leave: ${leave.leaveType.name}` : (attendance ? `Attendance: ${attendance.status}` : 'Unknown'),
+                name: teacher.user.name,
+                reason: leave
+                    ? `Leave: ${leave.leaveType.name}`
+                    : attendance
+                        ? `Attendance: ${attendance.status}`
+                        : 'Unknown',
                 isLeave: !!leave,
-                isAttendance: !!attendance
-            }
+                isAttendance: !!attendance,
+            };
         });
     }
 
+    // ----------------------------------------------------------------
+    // IMPACTED CLASSES
+    // ----------------------------------------------------------------
     async getImpactedClasses(schoolId: number, academicYearId: number, dateString: string) {
-        const date = new Date(dateString);
+        const date = this.normalizeDate(dateString);
+        const dayStart = this.startOfDay(date);
+        const dayEnd = this.endOfDay(date);
         const dayOfWeek = this.getDayOfWeek(date);
 
         const absentTeachers = await this.getAbsentTeachers(schoolId, academicYearId, dateString);
         const absentTeacherIds = absentTeachers.map(t => t.teacherId);
-        this.logger.log(`Found ${absentTeacherIds.length} absent teachers for date ${dateString}`);
-        this.logger.log(`[DEBUG] Absent Teacher IDs: ${absentTeacherIds.join(', ')}`);
 
-        if (absentTeacherIds.length === 0) {
-            return [];
-        }
+        this.logger.log(`[ImpactedClasses] ${absentTeacherIds.length} absent teachers on ${dateString}`);
+        if (absentTeacherIds.length === 0) return [];
 
-        // DEBUG: Check count without status filter to see if entries exist at all
-        const allEntriesCount = await this.prisma.timetableEntry.count({
-            where: {
-                schoolId,
-                academicYearId,
-                teacherId: { in: absentTeacherIds },
-                day: dayOfWeek,
-            }
-        });
-        this.logger.log(`[DEBUG] Total timetable entries (ignoring status) for these teachers on ${dayOfWeek}: ${allEntriesCount}`);
-
-        // Find timetable entries for these teachers on this day
-        const entries = await this.prisma.timetableEntry.findMany({
-            where: {
-                schoolId,
-                academicYearId,
-                teacherId: { in: absentTeacherIds },
-                day: dayOfWeek,
-                status: { in: ['PUBLISHED', 'LOCKED'] },
-            },
-            include: {
-                timeSlot: { include: { period: true } },
-                group: true,
-                subject: true,
-                teacher: {
-                    include: { user: true }
+        // Round 1: impacted entries + all available teachers in parallel
+        const [entries, allTeachers] = await Promise.all([
+            this.prisma.timetableEntry.findMany({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    teacherId: { in: absentTeacherIds },
+                    day: dayOfWeek,
+                    status: { in: ['PUBLISHED', 'LOCKED'] },
                 },
-                timetableOverrides: {
-                    where: {
-                        date: date
+                include: {
+                    timeSlot: { include: { period: { select: { name: true } } } },
+                    group: { select: { id: true, name: true } },
+                    subject: { select: { id: true, name: true } },
+                    teacher: { include: { user: { select: { name: true } } } },
+                    timetableOverrides: {
+                        where: { date: { gte: dayStart, lte: dayEnd } },
+                        include: { substituteTeacher: { include: { user: { select: { name: true } } } } },
                     },
-                    include: {
-                        substituteTeacher: {
-                            include: { user: true }
-                        }
-                    }
-                }
-            },
-            orderBy: {
-                timeSlot: {
-                    startTime: 'asc',
                 },
-            },
-        });
+                orderBy: { timeSlot: { startTime: 'asc' } },
+            }),
+            this.prisma.teacherProfile.findMany({
+                where: { schoolId, isActive: true, user: { role: { name: 'TEACHER' } } },
+                include: {
+                    user: { select: { name: true } },
+                    preferredSubjects: { select: { subjectId: true } },
+                },
+            }),
+        ]);
 
-        this.logger.log(`Found ${entries.length} timetable entries for absent teachers on ${dayOfWeek}`);
+        if (entries.length === 0) return [];
 
-
-        // ---------------------------------------------------------
-        // BULK FETCH OPTIMIZATION (Prevent N+1)
-        // ---------------------------------------------------------
-        // 1. Get all relevant time slot IDs
         const timeSlotIds = [...new Set(entries.map(e => e.timeSlotId))];
 
-        // 2. Fetch all Regular Busy teachers in these periods
-        const busyRegularRaw = await this.prisma.timetableEntry.findMany({
-            where: {
-                schoolId,
-                academicYearId,
-                day: dayOfWeek,
-                timeSlotId: { in: timeSlotIds }
-            },
-            select: { teacherId: true, timeSlotId: true }
-        });
+        // Round 2: build busy-teacher map from regular entries + active substitutions
+        const [busyRegular, busySubs] = await Promise.all([
+            this.prisma.timetableEntry.findMany({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    day: dayOfWeek,
+                    timeSlotId: { in: timeSlotIds },
+                },
+                select: { teacherId: true, timeSlotId: true },
+            }),
+            this.prisma.timetableOverride.findMany({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    date: { gte: dayStart, lte: dayEnd },
+                    entry: { timeSlotId: { in: timeSlotIds } },
+                    substituteTeacherId: { not: null },
+                },
+                select: { substituteTeacherId: true, entry: { select: { timeSlotId: true } } },
+            }),
+        ]);
 
-        // 3. Fetch all Substitution Busy teachers in these periods
-        const busySubsRaw = await this.prisma.timetableOverride.findMany({
-            where: {
-                schoolId,
-                date: date,
-                entry: { timeSlotId: { in: timeSlotIds } },
-                substituteTeacherId: { not: null }
-            },
-            select: { substituteTeacherId: true, entry: { select: { timeSlotId: true } } }
-        });
-
-        // 4. Fetch All Active Teachers
-        // We'll filter them in memory
-        const allTeachers = await this.prisma.teacherProfile.findMany({
-            where: {
-                schoolId,
-                isActive: true,
-                user: { role: { name: 'TEACHER' } }
-            },
-            include: {
-                user: true,
-                preferredSubjects: true
-            }
-        });
-
-        // 5. Build Lookups
-        // Map: TimeSlotID -> Set<TeacherID>
+        // Map<timeSlotId, Set<teacherId>> — O(1) availability lookup
         const busyMap = new Map<number, Set<number>>();
-
-        busyRegularRaw.forEach(item => {
+        for (const item of busyRegular) {
+            if (item.teacherId == null) continue;
             if (!busyMap.has(item.timeSlotId)) busyMap.set(item.timeSlotId, new Set());
-            busyMap.get(item.timeSlotId)?.add(item.teacherId as number);
-        });
+            busyMap.get(item.timeSlotId)!.add(item.teacherId);
+        }
+        for (const item of busySubs) {
+            if (!item.substituteTeacherId) continue;
+            const tsId = item.entry.timeSlotId;
+            if (!busyMap.has(tsId)) busyMap.set(tsId, new Set());
+            busyMap.get(tsId)!.add(item.substituteTeacherId);
+        }
 
-        busySubsRaw.forEach(item => {
-            const pid = item.entry.timeSlotId;
-            if (item.substituteTeacherId) {
-                if (!busyMap.has(pid)) busyMap.set(pid, new Set());
-                busyMap.get(pid)?.add(item.substituteTeacherId);
-            }
-        });
+        return entries.map(entry => {
+            const override = entry.timetableOverrides[0] ?? null;
+            let suggestions: { id: number; name: string; isSubjectMatch: boolean }[] = [];
 
-        // Enrich entries with suggestions computed in-memory
-        const enrichedEntries = entries.map((entry) => {
-            const override = entry.timetableOverrides[0];
-            let suggestions: any[] = [];
-
-            // Only fetch suggestions if not covered
             if (!override) {
-                const busyInThisPeriod = busyMap.get(entry.timeSlotId) || new Set();
-
-                // Exclude: Absent Teachers + Busy Teachers + Already Subbing Teachers (which are in busyMap)
-                // Note: absentTeacherIds is globally absent for the day.
-
-                const candidates = allTeachers.filter(t => {
-                    if (absentTeacherIds.includes(t.id)) return false; // Absent today
-                    if (busyInThisPeriod.has(t.id)) return false; // Busy in this period
-                    return true;
-                });
-
-                // Rank them
-                const ranked = candidates.sort((a, b) => {
-                    const aMatches = a.preferredSubjects.some(ps => ps.subjectId === entry.subjectId);
-                    const bMatches = b.preferredSubjects.some(ps => ps.subjectId === entry.subjectId);
-                    if (aMatches && !bMatches) return -1;
-                    if (!aMatches && bMatches) return 1;
-                    return 0; // Could sort alphabetically here
-                });
-
-                suggestions = ranked.slice(0, 3).map(t => ({
-                    id: t.id,
-                    name: (t.user as any).name,
-                    isSubjectMatch: (t.preferredSubjects as any).some((ps: any) => ps.subjectId === entry.subjectId)
-                }));
+                const busyInPeriod = busyMap.get(entry.timeSlotId) ?? new Set<number>();
+                suggestions = allTeachers
+                    .filter(t => !absentTeacherIds.includes(t.id) && !busyInPeriod.has(t.id))
+                    .sort((a, b) => {
+                        const aM = a.preferredSubjects.some(ps => ps.subjectId === entry.subjectId) ? 1 : 0;
+                        const bM = b.preferredSubjects.some(ps => ps.subjectId === entry.subjectId) ? 1 : 0;
+                        return bM - aM;
+                    })
+                    .slice(0, 3)
+                    .map(t => ({
+                        id: t.id,
+                        name: t.user.name,
+                        isSubjectMatch: t.preferredSubjects.some(ps => ps.subjectId === entry.subjectId),
+                    }));
             }
 
             return {
                 entryId: entry.id,
-                period: entry.timeSlot.period?.name || 'Unnamed',
+                timeSlotId: entry.timeSlotId, // Required by frontend to call getAvailableTeachers
+                period: entry.timeSlot.period?.name ?? 'Unnamed',
                 startTime: entry.timeSlot.startTime,
                 endTime: entry.timeSlot.endTime,
                 className: entry.group.name,
-                subject: entry.subject?.name || 'N/A',
-                originalTeacher: entry.teacher?.user?.name || 'N/A',
+                subject: entry.subject?.name ?? 'N/A',
+                originalTeacher: entry.teacher?.user?.name ?? 'N/A',
                 originalTeacherId: entry.teacherId,
                 isCovered: !!override,
                 isCancelled: override?.type === TimetableOverrideType.CANCELLED,
-                substitution: override ? {
-                    id: override.id,
-                    type: override.type,
-                    substituteTeacher: override.substituteTeacher ? `${override.substituteTeacher.user.name}` : 'N/A',
-                    substituteTeacherId: override.substituteTeacherId,
-                    note: override.note
-                } : null,
-                suggestions // Top 3 recommended teachers
+                substitution: override
+                    ? {
+                        id: override.id,
+                        type: override.type,
+                        substituteTeacher: override.substituteTeacher?.user?.name ?? null,
+                        substituteTeacherId: override.substituteTeacherId,
+                        note: override.note,
+                    }
+                    : null,
+                suggestions,
             };
         });
-
-        return enrichedEntries;
     }
 
-    async getAvailableTeachers(schoolId: number, academicYearId: number, dateString: string, timeSlotId: number) {
-        const date = new Date(dateString);
+    // ----------------------------------------------------------------
+    // AVAILABLE TEACHERS
+    // ----------------------------------------------------------------
+    async getAvailableTeachers(
+        schoolId: number,
+        academicYearId: number,
+        dateString: string,
+        timeSlotId: number,
+    ) {
+        const date = this.normalizeDate(dateString);
+        const dayStart = this.startOfDay(date);
+        const dayEnd = this.endOfDay(date);
         const dayOfWeek = this.getDayOfWeek(date);
 
-        // 1. Get absent teachers
-        const absentTeachers = await this.getAbsentTeachers(schoolId, academicYearId, dateString);
+        const [absentTeachers, busyEntries, substitutingTeachers] = await Promise.all([
+            this.getAbsentTeachers(schoolId, academicYearId, dateString),
+            this.prisma.timetableEntry.findMany({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    day: dayOfWeek,
+                    timeSlotId,
+                    status: { in: ['PUBLISHED', 'LOCKED'] },
+                },
+                select: { id: true, teacherId: true },
+            }),
+            this.prisma.timetableOverride.findMany({
+                where: {
+                    schoolId,
+                    academicYearId,
+                    date: { gte: dayStart, lte: dayEnd },
+                    entry: { timeSlotId },
+                    substituteTeacherId: { not: null },
+                },
+                select: { substituteTeacherId: true },
+            }),
+        ]);
+
         const absentTeacherIds = absentTeachers.map(t => t.teacherId);
+        const busyEntryIds = busyEntries.map(e => e.id);
 
-        // 2. Get teachers who have a class in this period
-        const busyTeachersInPeriod = await this.prisma.timetableEntry.findMany({
-            where: {
-                schoolId,
-                academicYearId,
-                day: dayOfWeek,
-                timeSlotId: timeSlotId,
-                status: { in: ['PUBLISHED', 'LOCKED'] },
-            },
-            select: { id: true, teacherId: true }
-        });
-
-        // Check if any of these "busy" teachers are actually freed up by an override (Cancelled or Substituted)
-        // If there is an override for their entry on this date, they are NOT teaching that class.
-        // (Unless they are the substitute? No, this is the original teacher).
-        const busyEntryIds = busyTeachersInPeriod.map(t => t.id);
-
+        // Teachers freed from their regular class by any override on this date are available
         const freeingOverrides = await this.prisma.timetableOverride.findMany({
             where: {
                 schoolId,
-                date: date,
-                entryId: { in: busyEntryIds }
+                academicYearId,
+                date: { gte: dayStart, lte: dayEnd },
+                entryId: { in: busyEntryIds },
             },
-            select: { entryId: true }
+            select: { entryId: true },
         });
 
         const freedEntryIds = new Set(freeingOverrides.map(o => o.entryId));
+        const busyTeacherIds = busyEntries
+            .filter(e => !freedEntryIds.has(e.id))
+            .map(e => e.teacherId);
+        const substitutingTeacherIds = substitutingTeachers
+            .map(t => t.substituteTeacherId)
+            .filter((id): id is number => id != null);
 
-        // Only teachers whose class is NOT overridden are effectively busy
-        const busyTeacherIds = busyTeachersInPeriod
-            .filter(t => !freedEntryIds.has(t.id))
-            .map(t => t.teacherId);
+        const unavailableIds = [
+            ...new Set([...absentTeacherIds, ...busyTeacherIds, ...substitutingTeacherIds]),
+        ].filter((id): id is number => id != null);
 
-
-        // 3. Get teachers who are already substituting in this period
-        const substitutingTeachers = await this.prisma.timetableOverride.findMany({
-            where: {
-                schoolId,
-                academicYearId,
-                date: date,
-                entry: {
-                    timeSlotId: timeSlotId
-                },
-                substituteTeacherId: { not: null }
-            },
-            select: { substituteTeacherId: true }
-        });
-        const substitutingTeacherIds = substitutingTeachers.map(t => t.substituteTeacherId).filter(Boolean) as number[];
-
-        const unavailableIds = [...new Set([...absentTeacherIds, ...busyTeacherIds, ...substitutingTeacherIds])].filter((id): id is number => id !== null);
-
-        // 4. Fetch all active teachers excluding unavailable ones, strictly with role 'TEACHER'
-        const availableTeachers = await this.prisma.teacherProfile.findMany({
+        const available = await this.prisma.teacherProfile.findMany({
             where: {
                 schoolId,
                 isActive: true,
                 id: { notIn: unavailableIds },
-                user: {
-                    role: {
-                        name: 'TEACHER'
-                    }
-                }
+                user: { role: { name: 'TEACHER' } },
             },
             include: {
                 user: { select: { name: true } },
-                preferredSubjects: { include: { subject: true } }
-            }
-        });
-
-        return availableTeachers.map(t => ({
-            id: t.id,
-            name: `${t.user?.name || 'Unknown'}`,
-            subjects: t.preferredSubjects.map((ps: any) => ps.subject.name).join(', ')
-        }));
-    }
-
-
-    async createSubstitution(userId: number, schoolId: number, academicYearId: number, dto: CreateSubstitutionDto) {
-        // 1. Fetch original entry to validate and get time details
-        const entry = await this.prisma.timetableEntry.findUnique({
-            where: { id: dto.entryId },
-            include: { timeSlot: true }
-        });
-
-        if (!entry || entry.schoolId !== schoolId) {
-            throw new NotFoundException('Timetable entry not found');
-        }
-
-        const date = new Date(dto.date);
-        const dayOfWeek = this.getDayOfWeek(date);
-
-        // 2. Check for existing substitution on this entry
-        const existing = await this.prisma.timetableOverride.findFirst({
-            where: {
-                schoolId,
-                entryId: dto.entryId,
-                date: date
-            }
-        });
-
-        if (existing) {
-            throw new BadRequestException('Substitution already exists for this slot. Please delete or update it.');
-        }
-
-        const type = dto.type || TimetableOverrideType.SUBSTITUTE;
-
-        // 3. Logic for SUBSTITUTE type
-        if (type === TimetableOverrideType.SUBSTITUTE) {
-            if (!dto.substituteTeacherId) {
-                // Determine if we allow "Open" substitutions? 
-                // For now, let's allow it but typically a substitute is assigned.
-                // If the user INTENDS to assign, they send an ID. 
-                // If they don't, it might be just marking it "To Be Substituted".
-            }
-
-            if (dto.substituteTeacherId) {
-                // SECURITY CHECK: Ensure substitute teacher belongs to this school
-                const subTeacher = await this.prisma.teacherProfile.findUnique({
-                    where: { id: dto.substituteTeacherId }
-                });
-
-                if (!subTeacher || subTeacher.schoolId !== schoolId) {
-                    throw new BadRequestException('Invalid substitute teacher selected.');
-                }
-
-                // A. Check if they have a regular class at this time
-                const busyRegular = await this.prisma.timetableEntry.findFirst({
-                    where: {
-                        schoolId,
-                        academicYearId,
-                        teacherId: dto.substituteTeacherId,
-                        day: dayOfWeek,
-                        timeSlotId: entry.timeSlotId,
-                    }
-                });
-
-                if (busyRegular) {
-                    // Check if this busy slot is freed up by another override
-                    const isFreedUp = await this.prisma.timetableOverride.findFirst({
-                        where: {
-                            schoolId,
-                            entryId: busyRegular.id, // The class they normally teach
-                            date: date
-                        }
-                    });
-
-                    if (!isFreedUp) {
-                        throw new BadRequestException('Substitute teacher has a regular class at this time.');
-                    }
-
-                    if (isFreedUp.type === TimetableOverrideType.SUBSTITUTE) {
-                        throw new BadRequestException('Substitute teacher is marked absent/substituted at this time.');
-                    }
-                    // If CANCELLED, they are free.
-                }
-
-                // B. Check if they are already substituting elsewhere at this time
-                const busySub = await this.prisma.timetableOverride.findFirst({
-                    where: {
-                        schoolId,
-                        date: date,
-                        substituteTeacherId: dto.substituteTeacherId,
-                        entry: {
-                            timeSlotId: entry.timeSlotId // Same period
-                        }
-                    }
-                });
-
-                if (busySub) {
-                    throw new BadRequestException('Substitute teacher is already assigned to another substitution at this time.');
-                }
-            }
-        } else if (type === TimetableOverrideType.CANCELLED) {
-            // If cancelled, force substituteTeacher to null
-            dto.substituteTeacherId = undefined;
-            dto.substituteRoomId = undefined;
-        }
-
-        return this.prisma.timetableOverride.create({
-            data: {
-                schoolId,
-                academicYearId,
-                entryId: dto.entryId,
-                date: date,
-                type: type,
-                substituteTeacherId: dto.substituteTeacherId,
-                substituteRoomId: dto.substituteRoomId,
-                note: dto.note,
-                createdById: userId
-            }
-        });
-    }
-
-    async deleteSubstitution(schoolId: number, id: number) {
-        const sub = await this.prisma.timetableOverride.findUnique({
-            where: { id }
-        });
-        if (!sub || sub.schoolId !== schoolId) {
-            throw new NotFoundException('Substitution not found');
-        }
-
-        return this.prisma.timetableOverride.delete({
-            where: { id }
-        });
-    }
-
-    async getSubstitutions(schoolId: number, academicYearId: number, dateString?: string) {
-        const where: any = {
-            schoolId,
-            academicYearId
-        };
-        if (dateString) {
-            where.date = new Date(dateString);
-        }
-
-        const overrides = await this.prisma.timetableOverride.findMany({
-            where,
-            include: {
-                substituteTeacher: {
-                    include: { user: true }
-                },
-                entry: {
-                    include: {
-                        group: true,
-                        subject: true,
-                        timeSlot: { include: { period: true } },
-                        teacher: {
-                            include: { user: true }
-                        }
-                    }
-                }
+                preferredSubjects: { include: { subject: { select: { name: true } } } },
             },
-            orderBy: { createdAt: 'desc' }
         });
 
-        return overrides.map(o => ({
-            id: o.id,
-            date: o.date,
-            originalTeacher: o.entry.teacher?.user?.name || 'N/A',
-            substituteTeacher: o.substituteTeacher?.user?.name || 'N/A',
-            className: o.entry.group.name,
-            subject: o.entry.subject?.name || 'N/A',
-            period: `${o.entry.timeSlot.period?.name || 'Unnamed'} (${o.entry.timeSlot.startTime})`,
-            note: o.note
+        return available.map(t => ({
+            id: t.id,
+            name: t.user?.name ?? 'Unknown',
+            subjects: t.preferredSubjects.map(ps => ps.subject.name).join(', '),
         }));
     }
-    async updateSubstitution(schoolId: number, id: number, dto: UpdateSubstitutionDto) {
-        const existing = await this.prisma.timetableOverride.findUnique({
-            where: { id },
-            include: { entry: true }
-        });
 
-        if (!existing || existing.schoolId !== schoolId) {
-            throw new NotFoundException('Substitution not found');
+    // ----------------------------------------------------------------
+    // CREATE SUBSTITUTION
+    // ----------------------------------------------------------------
+    async createSubstitution(
+        userId: number,
+        schoolId: number,
+        academicYearId: number,
+        dto: CreateSubstitutionDto,
+    ) {
+        // 1. Validate entry belongs to school (IDOR-safe: findFirst with schoolId)
+        const entry = await this.prisma.timetableEntry.findFirst({
+            where: { id: dto.entryId, schoolId },
+            select: { id: true, timeSlotId: true },
+        });
+        if (!entry) throw new NotFoundException('Timetable entry not found');
+
+        const date = this.normalizeDate(dto.date);
+        const dayStart = this.startOfDay(date);
+        const dayEnd = this.endOfDay(date);
+        const dayOfWeek = this.getDayOfWeek(date);
+        const type = dto.type ?? TimetableOverrideType.SUBSTITUTE;
+
+        // 2. Prevent duplicate override for the same entry+date
+        const existing = await this.prisma.timetableOverride.findFirst({
+            where: { schoolId, entryId: dto.entryId, date: { gte: dayStart, lte: dayEnd } },
+        });
+        if (existing) {
+            throw new ConflictException('A substitution already exists for this slot. Delete or update it first.');
         }
 
-        // If updating substitute Teacher, we must validate availability (similar to create)
-        if (dto.substituteTeacherId && dto.substituteTeacherId !== existing.substituteTeacherId) {
-            const date = existing.date;
-            const dayOfWeek = this.getDayOfWeek(date);
+        let substituteTeacherUserId: number | null = null;
 
-            const subTeacher = await this.prisma.teacherProfile.findUnique({
-                where: { id: dto.substituteTeacherId }
+        if (type === TimetableOverrideType.SUBSTITUTE && dto.substituteTeacherId) {
+            // 3. Validate substitute teacher belongs to school (IDOR-safe)
+            const subTeacher = await this.prisma.teacherProfile.findFirst({
+                where: { id: dto.substituteTeacherId, schoolId },
+                select: { id: true, userId: true },
             });
+            if (!subTeacher) throw new BadRequestException('Invalid substitute teacher selected.');
+            substituteTeacherUserId = subTeacher.userId;
 
-            if (!subTeacher || subTeacher.schoolId !== schoolId) {
-                throw new BadRequestException('Invalid substitute teacher selected.');
-            }
-
-            // A. Check Regular Class
+            // 4. Check if substitute has a regular class at this time
+            //    Covers BOTH primary teacher (teacherId) and secondary teachers (EntryTeacher junction)
             const busyRegular = await this.prisma.timetableEntry.findFirst({
                 where: {
                     schoolId,
-                    academicYearId: existing.academicYearId,
-                    teacherId: dto.substituteTeacherId,
+                    academicYearId,
                     day: dayOfWeek,
-                    timeSlotId: existing.entry.timeSlotId,
-                }
+                    timeSlotId: entry.timeSlotId,
+                    status: { in: ['PUBLISHED', 'LOCKED'] },
+                    OR: [
+                        { teacherId: dto.substituteTeacherId },
+                        { teachers: { some: { teacherId: dto.substituteTeacherId } } },
+                    ],
+                },
             });
 
             if (busyRegular) {
                 const isFreedUp = await this.prisma.timetableOverride.findFirst({
                     where: {
                         schoolId,
-                        entryId: busyRegular.id, // The class they normally teach
-                        date: date
-                    }
+                        entryId: busyRegular.id,
+                        date: { gte: dayStart, lte: dayEnd },
+                    },
                 });
-                // If not freed up, they are busy.
                 if (!isFreedUp) {
                     throw new BadRequestException('Substitute teacher has a regular class at this time.');
                 }
-                // If freed up but by substitution? (Meaning they are absent/subbed out)
                 if (isFreedUp.type === TimetableOverrideType.SUBSTITUTE) {
-                    throw new BadRequestException('Substitute teacher is marked absent/substituted at this time.');
+                    throw new BadRequestException('Substitute teacher is themselves being substituted at this time.');
                 }
+                // type === CANCELLED → original class freed, teacher is available
             }
 
-            // B. Check Other Subs
+            // 5. Check if substitute is already assigned to another class in this period
             const busySub = await this.prisma.timetableOverride.findFirst({
                 where: {
                     schoolId,
-                    date: date,
+                    date: { gte: dayStart, lte: dayEnd },
                     substituteTeacherId: dto.substituteTeacherId,
-                    entry: { timeSlotId: existing.entry.timeSlotId },
-                    id: { not: id } // Exclude self
-                }
+                    entry: { timeSlotId: entry.timeSlotId },
+                },
             });
-
             if (busySub) {
-                throw new BadRequestException('Substitute teacher is already assigned to another substitution at this time.');
+                throw new BadRequestException('Substitute teacher is already assigned to another class in this period.');
             }
         }
 
-        return this.prisma.timetableOverride.update({
-            where: { id },
-            data: dto
-        });
+        // 6. Validate substitute room belongs to school (IDOR-safe)
+        if (dto.substituteRoomId) {
+            const room = await this.prisma.room.findFirst({
+                where: { id: dto.substituteRoomId, schoolId },
+                select: { id: true },
+            });
+            if (!room) throw new BadRequestException('Invalid substitute room selected.');
+        }
+
+        // 7. Create — catch P2002 from concurrent duplicate requests slipping past soft check
+        let substitution: any;
+        try {
+            substitution = await this.prisma.timetableOverride.create({
+                data: {
+                    schoolId,
+                    academicYearId,
+                    entryId: dto.entryId,
+                    date,
+                    type,
+                    substituteTeacherId: type === TimetableOverrideType.CANCELLED ? null : (dto.substituteTeacherId ?? null),
+                    substituteRoomId: type === TimetableOverrideType.CANCELLED ? null : (dto.substituteRoomId ?? null),
+                    note: dto.note,
+                    createdById: userId,
+                },
+            });
+        } catch (error: any) {
+            if (error?.code === 'P2002') {
+                throw new ConflictException('A substitution already exists for this slot (concurrent request conflict).');
+            }
+            throw error;
+        }
+
+        // 8. Audit trail
+        this.eventEmitter.emit('audit.log', new AuditLogEvent(schoolId, userId, 'SUBSTITUTION', 'CREATE', substitution.id, dto));
+
+        // 9. Notify substitute teacher (best-effort: don't fail the HTTP response if push fails)
+        if (type === TimetableOverrideType.SUBSTITUTE && dto.substituteTeacherId && substituteTeacherUserId) {
+            try {
+                await this.notificationService.create(schoolId, userId, {
+                    type: NotificationType.SYSTEM,
+                    title: 'Substitution Assignment',
+                    message: `You have been assigned as a substitute teacher. Please check your schedule.`,
+                    targetUserIds: [substituteTeacherUserId],
+                    data: { substitutionId: substitution.id, entryId: dto.entryId, date: dto.date },
+                });
+            } catch (err: any) {
+                this.logger.error(`Substitution #${substitution.id}: failed to notify substitute teacher — ${err.message}`);
+            }
+        }
+
+        return substitution;
     }
 
-    async getTeacherSubstitutionHistory(schoolId: number, teacherId: number, academicYearId: number, dateString?: string) {
-        // 1. Teacher Info
-        const teacher = await this.prisma.teacherProfile.findUnique({
-            where: { id: teacherId },
-            include: {
-                user: true,
-                preferredSubjects: { include: { subject: true } }
-            }
+    // ----------------------------------------------------------------
+    // UPDATE SUBSTITUTION
+    // ----------------------------------------------------------------
+    async updateSubstitution(schoolId: number, id: number, dto: UpdateSubstitutionDto, userId?: number) {
+        // IDOR-safe: findFirst with schoolId
+        const existing = await this.prisma.timetableOverride.findFirst({
+            where: { id, schoolId },
+            include: { entry: { select: { timeSlotId: true, academicYearId: true } } },
         });
-        if (!teacher || teacher.schoolId !== schoolId) throw new NotFoundException('Teacher not found');
+        if (!existing) throw new NotFoundException('Substitution not found');
 
-        // 2. Fetch all substitutions done BY this teacher
-        const substitutions = await this.prisma.timetableOverride.findMany({
-            where: {
-                schoolId,
-                academicYearId,
-                substituteTeacherId: teacherId
+        const resolvedType = dto.type ?? existing.type;
+
+        // When type switches to CANCELLED, always clear teacher/room — no orphaned assignments
+        if (resolvedType === TimetableOverrideType.CANCELLED) {
+            const updated = await this.prisma.timetableOverride.update({
+                where: { id },
+                data: {
+                    type: TimetableOverrideType.CANCELLED,
+                    substituteTeacherId: null,
+                    substituteRoomId: null,
+                    note: dto.note ?? existing.note,
+                },
+            });
+            if (userId) {
+                this.eventEmitter.emit('audit.log', new AuditLogEvent(schoolId, userId, 'SUBSTITUTION', 'UPDATE', id, dto));
+            }
+            return updated;
+        }
+
+        const date = existing.date;
+        const dayStart = this.startOfDay(date);
+        const dayEnd = this.endOfDay(date);
+        const dayOfWeek = this.getDayOfWeek(date);
+
+        // Validate new substitute teacher only if actually changed
+        if (dto.substituteTeacherId != null && dto.substituteTeacherId !== existing.substituteTeacherId) {
+            // IDOR-safe
+            const subTeacher = await this.prisma.teacherProfile.findFirst({
+                where: { id: dto.substituteTeacherId, schoolId },
+                select: { id: true },
+            });
+            if (!subTeacher) throw new BadRequestException('Invalid substitute teacher selected.');
+
+            // Regular class conflict — includes secondary teacher check
+            const busyRegular = await this.prisma.timetableEntry.findFirst({
+                where: {
+                    schoolId,
+                    academicYearId: existing.entry.academicYearId,
+                    day: dayOfWeek,
+                    timeSlotId: existing.entry.timeSlotId,
+                    status: { in: ['PUBLISHED', 'LOCKED'] },
+                    OR: [
+                        { teacherId: dto.substituteTeacherId },
+                        { teachers: { some: { teacherId: dto.substituteTeacherId } } },
+                    ],
+                },
+            });
+
+            if (busyRegular) {
+                const isFreedUp = await this.prisma.timetableOverride.findFirst({
+                    where: {
+                        schoolId,
+                        entryId: busyRegular.id,
+                        date: { gte: dayStart, lte: dayEnd },
+                    },
+                });
+                if (!isFreedUp) {
+                    throw new BadRequestException('Substitute teacher has a regular class at this time.');
+                }
+                if (isFreedUp.type === TimetableOverrideType.SUBSTITUTE) {
+                    throw new BadRequestException('Substitute teacher is themselves being substituted at this time.');
+                }
+            }
+
+            // Other substitution conflicts — exclude self (id: { not: id })
+            const busySub = await this.prisma.timetableOverride.findFirst({
+                where: {
+                    schoolId,
+                    date: { gte: dayStart, lte: dayEnd },
+                    substituteTeacherId: dto.substituteTeacherId,
+                    entry: { timeSlotId: existing.entry.timeSlotId },
+                    id: { not: id },
+                },
+            });
+            if (busySub) {
+                throw new BadRequestException('Substitute teacher is already assigned to another class in this period.');
+            }
+        }
+
+        // Validate room belongs to school only if changed
+        if (dto.substituteRoomId != null && dto.substituteRoomId !== existing.substituteRoomId) {
+            const room = await this.prisma.room.findFirst({
+                where: { id: dto.substituteRoomId, schoolId },
+                select: { id: true },
+            });
+            if (!room) throw new BadRequestException('Invalid substitute room selected.');
+        }
+
+        // Whitelist: only the fields this DTO carries — entryId and date are immutable
+        const updated = await this.prisma.timetableOverride.update({
+            where: { id },
+            data: {
+                ...(dto.type !== undefined ? { type: dto.type } : {}),
+                ...(dto.substituteTeacherId !== undefined ? { substituteTeacherId: dto.substituteTeacherId } : {}),
+                ...(dto.substituteRoomId !== undefined ? { substituteRoomId: dto.substituteRoomId } : {}),
+                ...(dto.note !== undefined ? { note: dto.note } : {}),
             },
+        });
+
+        if (userId) {
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(schoolId, userId, 'SUBSTITUTION', 'UPDATE', id, dto));
+        }
+
+        return updated;
+    }
+
+    // ----------------------------------------------------------------
+    // DELETE SUBSTITUTION
+    // ----------------------------------------------------------------
+    async deleteSubstitution(schoolId: number, id: number, userId?: number) {
+        // IDOR-safe: findFirst with schoolId
+        const sub = await this.prisma.timetableOverride.findFirst({
+            where: { id, schoolId },
+        });
+        if (!sub) throw new NotFoundException('Substitution not found');
+
+        const deleted = await this.prisma.timetableOverride.delete({ where: { id } });
+
+        if (userId) {
+            this.eventEmitter.emit('audit.log', new AuditLogEvent(schoolId, userId, 'SUBSTITUTION', 'DELETE', id));
+        }
+
+        return deleted;
+    }
+
+    // ----------------------------------------------------------------
+    // GET SUBSTITUTIONS (paginated)
+    // ----------------------------------------------------------------
+    async getSubstitutions(
+        schoolId: number,
+        academicYearId: number,
+        dateString?: string,
+        page = 1,
+        limit = 50,
+    ) {
+        const where: any = { schoolId, academicYearId };
+
+        if (dateString) {
+            const date = this.normalizeDate(dateString);
+            where.date = { gte: this.startOfDay(date), lte: this.endOfDay(date) };
+        }
+
+        const skip = (page - 1) * limit;
+
+        const [overrides, total] = await Promise.all([
+            this.prisma.timetableOverride.findMany({
+                where,
+                include: {
+                    substituteTeacher: { include: { user: { select: { name: true } } } },
+                    entry: {
+                        include: {
+                            group: { select: { name: true } },
+                            subject: { select: { name: true } },
+                            timeSlot: {
+                                include: { period: { select: { name: true } } },
+                            },
+                            teacher: { include: { user: { select: { name: true } } } },
+                        },
+                    },
+                },
+                orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+                take: limit,
+                skip,
+            }),
+            this.prisma.timetableOverride.count({ where }),
+        ]);
+
+        return {
+            data: overrides.map(o => ({
+                id: o.id,
+                date: o.date,
+                type: o.type,
+                originalTeacher: o.entry.teacher?.user?.name ?? 'N/A',
+                substituteTeacher: o.substituteTeacher?.user?.name ?? null,
+                className: o.entry.group.name,
+                subject: o.entry.subject?.name ?? 'N/A',
+                period: `${o.entry.timeSlot.period?.name ?? 'Unnamed'} (${o.entry.timeSlot.startTime})`,
+                note: o.note,
+            })),
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
+    }
+
+    // ----------------------------------------------------------------
+    // TEACHER SUBSTITUTION HISTORY
+    // ----------------------------------------------------------------
+    async getTeacherSubstitutionHistory(
+        schoolId: number,
+        teacherId: number,
+        academicYearId: number,
+        dateString?: string,
+        limit = 200,
+    ) {
+        // IDOR-safe: findFirst with schoolId
+        const teacher = await this.prisma.teacherProfile.findFirst({
+            where: { id: teacherId, schoolId },
             include: {
-                substituteTeacher: { include: { user: true } },
+                user: { select: { name: true } },
+                preferredSubjects: { include: { subject: { select: { name: true } } } },
+            },
+        });
+        if (!teacher) throw new NotFoundException('Teacher not found');
+
+        const substitutions = await this.prisma.timetableOverride.findMany({
+            where: { schoolId, academicYearId, substituteTeacherId: teacherId },
+            include: {
                 entry: {
                     include: {
-                        group: true,
-                        subject: true,
-                        timeSlot: { include: { period: true } },
-                        teacher: { include: { user: true } } // The original teacher
-                    }
-                }
+                        group: { select: { name: true } },
+                        subject: { select: { name: true } },
+                        timeSlot: { include: { period: { select: { name: true } } } },
+                        teacher: { include: { user: { select: { name: true } } } },
+                    },
+                },
             },
-            orderBy: { date: 'desc' }
+            orderBy: { date: 'desc' },
+            take: limit,
         });
 
-        // Use provided date or today
-        const pivotDate = dateString ? new Date(dateString) : new Date();
-        const startOfPivot = this.startOfDay(pivotDate);
-        const endOfPivot = this.endOfDay(pivotDate);
+        const pivotDate = dateString
+            ? this.normalizeDate(dateString)
+            : this.normalizeDate(new Date().toISOString().split('T')[0]);
+        const pivotStart = this.startOfDay(pivotDate).getTime();
+        const pivotEnd = this.endOfDay(pivotDate).getTime();
 
         const past: any[] = [];
+        const active: any[] = [];
         const upcoming: any[] = [];
-        const activeList: any[] = []; // "Today" or the selected date
 
-        substitutions.forEach(sub => {
-            const subDate = new Date(sub.date);
+        for (const sub of substitutions) {
+            const t = sub.date.getTime();
             const item = {
                 id: sub.id,
                 date: sub.date,
-                period: `${sub.entry.timeSlot.period?.name || 'Unnamed'} (${sub.entry.timeSlot.startTime})`,
+                period: `${sub.entry.timeSlot.period?.name ?? 'Unnamed'} (${sub.entry.timeSlot.startTime})`,
                 className: sub.entry.group.name,
-                subject: sub.entry.subject?.name || 'N/A',
-                originalTeacher: sub.entry.teacher?.user?.name || 'N/A',
-                note: sub.note
+                subject: sub.entry.subject?.name ?? 'N/A',
+                originalTeacher: sub.entry.teacher?.user?.name ?? 'N/A',
+                note: sub.note,
             };
+            if (t < pivotStart) past.push(item);
+            else if (t > pivotEnd) upcoming.push(item);
+            else active.push(item);
+        }
 
-            if (subDate.getTime() < startOfPivot.getTime()) {
-                past.push(item);
-            } else if (subDate.getTime() > endOfPivot.getTime()) {
-                upcoming.push(item);
-            } else {
-                activeList.push(item);
-            }
-        });
-
-        // 3. Stats
-        const stats = {
-            totalSubstitutions: substitutions.length,
-            subjectsCovered: [...new Set(substitutions.map(s => s.entry.subject?.name || 'N/A'))].join(', ')
-        };
+        const uniqueSubjects = [...new Set(substitutions.map(s => s.entry.subject?.name).filter(Boolean))];
 
         return {
             teacher: {
                 id: teacher.id,
                 name: teacher.user.name,
-                subjects: teacher.preferredSubjects.map(ps => ps.subject.name).join(', ')
+                subjects: teacher.preferredSubjects.map(ps => ps.subject.name).join(', '),
             },
-            stats,
-            active: activeList, // Renamed from 'today' to 'active' to reflect date selection
+            stats: {
+                totalSubstitutions: substitutions.length,
+                subjectsCovered: uniqueSubjects.join(', '),
+            },
+            active,
             upcoming,
-            past
+            past,
         };
     }
 }

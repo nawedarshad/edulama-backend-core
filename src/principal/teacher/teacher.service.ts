@@ -22,10 +22,108 @@ export class TeacherService {
     private readonly logger = new Logger(TeacherService.name);
 
     constructor(private readonly prisma: PrismaService) { }
+ 
+    private safeDate(dateInput: any, fallback: Date = new Date()): Date {
+        if (!dateInput) return fallback;
+        const d = new Date(dateInput);
+        return isNaN(d.getTime()) ? fallback : d;
+    }
+
+    async validateBulk(schoolId: number, dto: BulkCreateTeacherDto) {
+        const MAX_BATCH = 300;
+        if (dto.teachers.length > MAX_BATCH) {
+            throw new BadRequestException(`Cannot validate more than ${MAX_BATCH} teachers at once. Split your file into smaller batches.`);
+        }
+
+        // Build intra-batch duplicate maps before hitting the DB
+        const batchEmails = new Map<string, number>(); // email -> first occurrence index
+        const batchEmpCodes = new Map<string, number>(); // empCode -> first occurrence index
+        for (let i = 0; i < dto.teachers.length; i++) {
+            const email = dto.teachers[i].email?.toLowerCase().trim();
+            if (email) {
+                if (batchEmails.has(email)) {
+                    // Mark this index as duplicate; the first occurrence stays clean
+                } else {
+                    batchEmails.set(email, i);
+                }
+            }
+            if (dto.teachers[i].empCode) {
+                const code = dto.teachers[i].empCode!.trim().toUpperCase();
+                if (!batchEmpCodes.has(code)) batchEmpCodes.set(code, i);
+            }
+        }
+
+        const details = await Promise.all(
+            dto.teachers.map(async (t, i) => {
+                const errors: string[] = [];
+                let status: 'VALID' | 'INVALID' | 'EXISTS' = 'VALID';
+
+                const email = t.email?.toLowerCase().trim();
+
+                // Intra-batch duplicate email check
+                if (email && batchEmails.get(email) !== i) {
+                    status = 'INVALID';
+                    errors.push(`Duplicate email in this file (first appears at row ${(batchEmails.get(email) ?? 0) + 1})`);
+                }
+
+                // Intra-batch duplicate empCode check
+                if (t.empCode) {
+                    const code = t.empCode.trim().toUpperCase();
+                    if (batchEmpCodes.get(code) !== i) {
+                        status = 'INVALID';
+                        errors.push(`Duplicate employee code in this file (first appears at row ${(batchEmpCodes.get(code) ?? 0) + 1})`);
+                    }
+                }
+
+                // Check email globally (only if not already INVALID)
+                if (status !== 'INVALID' && email) {
+                    const existingIdentity = await this.prisma.authIdentity.findFirst({
+                        where: { type: 'EMAIL', value: email },
+                        include: {
+                            user: {
+                                include: {
+                                    userSchools: { where: { schoolId } }
+                                }
+                            }
+                        }
+                    });
+
+                    if (existingIdentity) {
+                        const isInSchool = existingIdentity.user.userSchools.length > 0;
+                        status = 'EXISTS';
+                        if (isInSchool) errors.push('Teacher already exists in this school');
+                        else errors.push('Email already registered in another school (will be linked)');
+                    }
+                }
+
+                // Check empCode uniqueness in school (only if not already flagged)
+                if (status !== 'INVALID' && t.empCode) {
+                    const code = t.empCode.trim().toUpperCase();
+                    const existingCode = await this.prisma.teacherProfile.findFirst({
+                        where: { schoolId, empCode: code }
+                    });
+                    if (existingCode) {
+                        status = 'INVALID';
+                        errors.push(`Employee code ${code} is already assigned to another teacher`);
+                    }
+                }
+
+                return { index: i, status, errors, email: t.email, name: t.name };
+            })
+        );
+
+        return {
+            total: dto.teachers.length,
+            valid: details.filter(d => d.status === 'VALID').length,
+            invalid: details.filter(d => d.status === 'INVALID').length,
+            alreadyExists: details.filter(d => d.status === 'EXISTS').length,
+            details
+        };
+    }
 
     async checkEmail(schoolId: number, email: string) {
         const identity = await this.prisma.authIdentity.findFirst({
-            where: { type: 'EMAIL', value: email },
+            where: { type: 'EMAIL', value: email.toLowerCase().trim() },
             include: {
                 user: {
                     include: {
@@ -54,11 +152,13 @@ export class TeacherService {
     }
 
     async create(schoolId: number, dto: CreateTeacherDto) {
+        const normalizedEmail = dto.email.toLowerCase().trim();
+
         // 1. Check for duplicate email across the global system
         const existingIdentity = await this.prisma.authIdentity.findFirst({
             where: {
                 type: 'EMAIL',
-                value: dto.email,
+                value: normalizedEmail,
             },
             include: { 
                 user: {
@@ -74,12 +174,12 @@ export class TeacherService {
         let existingUserRoles: string[] = [];
 
         if (identityAlreadyExists) {
-            this.logger.log(`Email ${dto.email} already exists. Linking to existing user ${existingIdentity.userId}`);
+            this.logger.log(`Email ${normalizedEmail} already exists. Linking to existing user ${existingIdentity.userId}`);
              const mem = existingIdentity.user.userSchools.find(m => m.schoolId === schoolId);
              if (mem) {
                  existingUserRoles = mem.roles.map(r => r.role.name);
                  if (existingUserRoles.includes('TEACHER')) {
-                      throw new BadRequestException(`User ${dto.email} is already a teacher in this school`);
+                      throw new BadRequestException(`User ${normalizedEmail} is already a teacher in this school`);
                  }
              }
         }
@@ -177,7 +277,7 @@ export class TeacherService {
                         data: {
                             userId: user.id,
                             type: 'EMAIL',
-                            value: dto.email,
+                            value: normalizedEmail,
                             secret: hashedPassword,
                             verified: true,
                         },
@@ -189,32 +289,46 @@ export class TeacherService {
                     data: {
                         userId: user.id,
                         schoolId,
-                        joinDate: dto.joinDate ? new Date(dto.joinDate) : new Date(),
-                        empCode: (dto.empCode?.trim().toUpperCase())!,
+                        joinDate: this.safeDate(dto.joinDate),
+                        empCode: dto.empCode?.trim().toUpperCase(),
                         employmentType: dto.employmentType || 'FULL_TIME',
                         department: dto.department,
                         preferredStages: dto.preferredStages,
                     },
                 });
 
+                // Link to Department if exists
+                if (dto.department) {
+                    const dept = await tx.department.findFirst({
+                        where: { schoolId, name: { equals: dto.department, mode: 'insensitive' } }
+                    });
+                    if (dept) {
+                        await tx.departmentMember.upsert({
+                            where: { departmentId_userId: { departmentId: dept.id, userId: user.id } },
+                            create: { departmentId: dept.id, userId: user.id, role: 'TEACHER' },
+                            update: { role: 'TEACHER', isActive: true }
+                        });
+                    }
+                }
+
                 // D. Create Personal Info (mapping fields from DTO)
                 await tx.teacherPersonalInfo.create({
                     data: {
                         staffId: teacherProfile.id,
                         fullName: dto.name,
-                        email: dto.email,
+                        email: normalizedEmail,
                         phone: dto.phone,
-                        gender: dto.gender?.toUpperCase(),
-                        dateOfBirth: new Date(dto.dateOfBirth),
-                        addressLine1: dto.addressLine1,
+                        gender: dto.gender?.toUpperCase() || 'NOT_SPECIFIED',
+                        dateOfBirth: this.safeDate(dto.dateOfBirth, new Date('1970-01-01')),
+                        addressLine1: dto.addressLine1 || 'N/A',
                         addressLine2: dto.addressLine2,
-                        city: dto.city,
-                        state: dto.state,
-                        country: dto.country,
-                        postalCode: dto.postalCode,
-                        alternatePhone: dto.alternatePhone,
-                        emergencyContactName: dto.emergencyContactName,
-                        emergencyContactPhone: dto.emergencyContactPhone,
+                        city: dto.city || 'N/A',
+                        state: dto.state || 'N/A',
+                        country: dto.country || 'N/A',
+                        postalCode: dto.postalCode || '000000',
+                        alternatePhone: dto.alternatePhone || '0000000000',
+                        emergencyContactName: dto.emergencyContactName || 'N/A',
+                        emergencyContactPhone: dto.emergencyContactPhone || '0000000000',
                         emergencyRelation: dto.emergencyRelation,
                         nationalIdMasked: dto.nationalIdMasked,
                         taxIdMasked: dto.taxIdMasked,
@@ -325,8 +439,8 @@ export class TeacherService {
                     id: teacherProfile.id,
                     userId: user.id,
                     name: user.name,
-                    email: dto.email,
-                    message: identityAlreadyExists 
+                    email: normalizedEmail,
+                    message: identityAlreadyExists
                         ? 'Teacher linked to existing user account successfully' 
                         : 'Teacher created successfully',
                     identityAlreadyExists,
@@ -335,12 +449,20 @@ export class TeacherService {
                 };
             });
         } catch (error) {
+            if (error instanceof BadRequestException || error instanceof NotFoundException) {
+                throw error;
+            }
             this.logger.error('Error creating teacher', error);
             throw new InternalServerErrorException('Failed to create teacher');
         }
     }
 
     async bulkCreate(schoolId: number, dto: BulkCreateTeacherDto) {
+        const MAX_BATCH = 300;
+        if (dto.teachers.length > MAX_BATCH) {
+            throw new BadRequestException(`Cannot import more than ${MAX_BATCH} teachers at once. Split your file into smaller batches.`);
+        }
+
         const results: any[] = [];
         const errors: any[] = [];
 
@@ -349,9 +471,14 @@ export class TeacherService {
                 const result = await this.create(schoolId, teacherDto);
                 results.push(result);
             } catch (error) {
+                // Handle NestJS validation errors which can have array messages
+                const errorMessage = error.response?.message || error.message || 'Unknown Error';
+                const readableError = Array.isArray(errorMessage) ? errorMessage.join(', ') : String(errorMessage);
+                
                 errors.push({
-                    email: teacherDto.email,
-                    error: error.message,
+                    name: teacherDto.name || 'Unknown',
+                    email: teacherDto.email || 'N/A',
+                    error: readableError,
                 });
             }
         }
@@ -423,6 +550,9 @@ export class TeacherService {
                                 where: { type: 'EMAIL' },
                                 select: { value: true },
                             },
+                            departmentMemberships: {
+                                include: { department: true }
+                            }
                         },
                     },
                     personalInfo: true,
@@ -545,7 +675,12 @@ export class TeacherService {
                 id: id,
             },
             include: {
-                user: true,
+                user: {
+                    include: {
+                        authIdentities: { where: { type: 'EMAIL' } },
+                        departmentMemberships: { include: { department: true } }
+                    }
+                },
                 personalInfo: true,
                 qualifications: true,
                 preferredSubjects: { include: { subject: true } },
@@ -570,17 +705,42 @@ export class TeacherService {
 
         try {
             return await this.prisma.$transaction(async (tx) => {
+                // Validate empCode uniqueness within school if it's being changed
+                if (dto.empCode) {
+                    const newCode = dto.empCode.trim().toUpperCase();
+                    const codeConflict = await tx.teacherProfile.findFirst({
+                        where: { schoolId, empCode: newCode, id: { not: staff.id } }
+                    });
+                    if (codeConflict) {
+                        throw new BadRequestException(`Employee code ${newCode} is already assigned to another teacher.`);
+                    }
+                }
+
                 // Update Base Profile
                 await tx.teacherProfile.update({
                     where: { id: staff.id },
                     data: {
-                        employmentType: dto.employmentType || 'FULL_TIME',
+                        employmentType: dto.employmentType || undefined,
                         department: dto.department,
                         joinDate: dto.joinDate ? new Date(dto.joinDate) : undefined,
                         empCode: dto.empCode?.trim().toUpperCase(),
                         preferredStages: dto.preferredStages,
                     },
                 });
+
+                // Link/Update Department Member
+                if (dto.department) {
+                    const dept = await tx.department.findFirst({
+                        where: { schoolId, name: { equals: dto.department, mode: 'insensitive' } }
+                    });
+                    if (dept) {
+                        await tx.departmentMember.upsert({
+                            where: { departmentId_userId: { departmentId: dept.id, userId: staff.userId } },
+                            create: { departmentId: dept.id, userId: staff.userId, role: 'TEACHER' },
+                            update: { role: 'TEACHER', isActive: true }
+                        });
+                    }
+                }
 
                 // Update User Name if changed
                 if (dto.name && dto.name !== staff.user.name) {
@@ -599,7 +759,7 @@ export class TeacherService {
                             phone: dto.phone,
                             email: dto.email,
                             gender: dto.gender?.toUpperCase(),
-                            dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+                            dateOfBirth: dto.dateOfBirth ? this.safeDate(dto.dateOfBirth) : undefined,
                             addressLine1: dto.addressLine1,
                             addressLine2: dto.addressLine2,
                             city: dto.city,
@@ -760,6 +920,9 @@ export class TeacherService {
                 return { message: 'Teacher updated successfully' };
             });
         } catch (error) {
+            if (error instanceof BadRequestException || error instanceof NotFoundException) {
+                throw error;
+            }
             this.logger.error('Error updating teacher', error);
             throw new InternalServerErrorException('Failed to update teacher');
         }
@@ -795,6 +958,95 @@ export class TeacherService {
     // =================================================================
     // GRANULAR ENDPOINTS SUPPORT
     // =================================================================
+
+    async getAllocationList(schoolId: number) {
+        this.logger.log(`[School ${schoolId}] Fetching unified teacher allocation list`);
+
+        // 1. Get Active Academic Year
+        const activeYear = await this.prisma.academicYear.findFirst({
+            where: { schoolId, status: 'ACTIVE' },
+            select: { id: true }
+        });
+
+        if (!activeYear) {
+            throw new NotFoundException('No active academic year found for this school');
+        }
+
+        // 2. Fetch all active teachers with assignments and qualifications
+        const teachers = await this.prisma.teacherProfile.findMany({
+            where: {
+                schoolId,
+                isActive: true,
+            },
+            orderBy: {
+                user: { name: 'asc' }
+            },
+            include: {
+                user: {
+                    select: {
+                        name: true,
+                        photo: true,
+                    }
+                },
+                personalInfo: {
+                    select: {
+                        email: true,
+                    }
+                },
+                qualifications: {
+                    select: {
+                        degree: true,
+                        specialization: true,
+                    }
+                },
+                preferredSubjects: {
+                    include: {
+                        subject: {
+                            select: { name: true, code: true }
+                        }
+                    }
+                },
+                skills: {
+                    select: { name: true }
+                },
+                subjectAssignments: {
+                    where: { 
+                        academicYearId: activeYear.id,
+                        isActive: true 
+                    },
+                    select: { periodsPerWeek: true }
+                }
+            }
+        });
+
+        this.logger.log(`[School ${schoolId}] allocation-list: Found ${teachers.length} teachers in DB`);
+
+        // 3. Format result to match frontend expectation
+        const formatted = teachers.map(t => {
+            const prefSubjects = t.preferredSubjects.map(ps => ps.subject.name).join(", ");
+            const degrees = t.qualifications.map(q => q.degree).filter(Boolean).join(", ");
+            const specs = t.qualifications.map(q => q.specialization).filter(Boolean).join(", ");
+            const skills = t.skills.map((s: any) => s.name).join(", ");
+
+            // Consistent specialization string: Subjects > Degrees > specialization > Skills
+            const specialization = [prefSubjects, degrees, specs, skills].filter(Boolean).join(" | ") || "General Faculty";
+            
+            // Workload calculation (aggregate of periods assigned in current year)
+            const workload = t.subjectAssignments.reduce((sum, a) => sum + (a.periodsPerWeek ?? 0), 0);
+
+            return {
+                id: t.id,
+                name: t.user?.name || "Unknown",
+                photo: t.user?.photo,
+                email: t.personalInfo?.email || "No Email",
+                specialization,
+                stages: "", // Can be extended if needed
+                workload
+            };
+        });
+
+        return formatted;
+    }
 
     async addDocument(schoolId: number, teacherId: number, dto: CreateDocumentDto) {
         await this.findOne(schoolId, teacherId);
@@ -965,6 +1217,11 @@ export class TeacherService {
         await this.findOne(schoolId, teacherId);
 
         if (dto.id) {
+            // Verify ownership before updating — prevents IDOR
+            const owned = await this.prisma.teacherBankAccount.findFirst({
+                where: { id: dto.id, teacherId }
+            });
+            if (!owned) throw new NotFoundException('Bank account not found for this teacher');
             return this.prisma.teacherBankAccount.update({
                 where: { id: dto.id },
                 data: {

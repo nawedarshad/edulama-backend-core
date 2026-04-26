@@ -1,24 +1,41 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsArray } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, IsArray, IsEnum, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { GrievanceCategory, GrievancePriority } from '@prisma/client';
 
 export class CreateGrievanceDto {
-    @ApiProperty({ description: 'Title of the grievance' })
+    @ApiProperty({ example: 'Academic Issue' })
     @IsString()
     @IsNotEmpty()
     title: string;
 
-    @ApiProperty({ description: 'Detailed description of the grievance' })
+    @ApiProperty({ example: 'I am facing issues with...' })
     @IsString()
     @IsNotEmpty()
     description: string;
 
-    @ApiPropertyOptional({ description: 'ID of the user this grievance is against (optional)' })
+    @ApiProperty({ enum: GrievanceCategory, example: 'ACADEMIC' })
+    @IsEnum(GrievanceCategory)
+    @IsNotEmpty()
+    category: GrievanceCategory;
+
+    @ApiProperty({ enum: GrievancePriority, example: 'MEDIUM' })
+    @IsEnum(GrievancePriority)
+    @IsOptional()
+    priority?: GrievancePriority;
+
+    @ApiPropertyOptional({ example: false })
+    @IsBoolean()
+    @IsOptional()
+    isAnonymous?: boolean;
+
+    @ApiPropertyOptional({ example: 101 })
+    @IsInt()
     @IsOptional()
     againstUserId?: number;
 
-    @ApiPropertyOptional({ description: 'URLs of attachment files', type: [String] })
-    @IsOptional()
+    @ApiPropertyOptional({ type: [String], example: ['https://storage.com/evidence.jpg'] })
     @IsArray()
     @IsString({ each: true })
+    @IsOptional()
     attachmentUrls?: string[];
 }

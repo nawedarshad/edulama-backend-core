@@ -34,8 +34,9 @@ model LeaveType {
 
   isActive Boolean @default(true)
 
-  school   School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  requests LeaveRequest[]
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  requests      LeaveRequest[]
+  leaveBalances LeaveBalance[]
 
   @@unique([schoolId, code, category])
 }
@@ -82,6 +83,29 @@ model LeaveRequest {
 
   @@index([schoolId, status])
   @@index([applicantId])
+}
+
+model LeaveBalance {
+  id             Int @id @default(autoincrement())
+  schoolId       Int
+  academicYearId Int
+  userId         Int
+  leaveTypeId    Int
+
+  allowance Float // Total allowed for the year
+  used      Float @default(0)
+  pending   Float @default(0) // Applied but not yet approved
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveType    LeaveType    @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, academicYearId, leaveTypeId])
+  @@index([userId, academicYearId])
 }
 
 model LeaveAttachment {

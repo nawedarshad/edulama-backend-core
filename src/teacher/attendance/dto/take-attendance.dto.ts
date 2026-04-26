@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsDate, IsDateString, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { AttendanceStatus } from '@prisma/client';
 
 export class StudentAttendanceDto {
@@ -19,6 +19,7 @@ export class StudentAttendanceDto {
     @IsOptional()
     remarks?: string;
 
+    @IsBoolean()
     @IsOptional()
     isLate?: boolean;
 

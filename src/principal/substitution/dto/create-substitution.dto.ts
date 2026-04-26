@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsOptional, IsString, IsDateString, IsEnum } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, IsDateString, IsEnum, MaxLength } from 'class-validator';
 import { TimetableOverrideType } from '@prisma/client';
 import { Type } from 'class-transformer';
 
@@ -25,5 +25,6 @@ export class CreateSubstitutionDto {
 
     @IsString()
     @IsOptional()
+    @MaxLength(500)
     note?: string;
 }

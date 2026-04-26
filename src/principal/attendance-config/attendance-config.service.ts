@@ -21,29 +21,40 @@ export class AttendanceConfigService {
                     responsibility: true,
                 }
             }),
-            (this.prisma.schoolSettings as any).findUnique({
+            this.prisma.schoolSettings.findUnique({
                 where: { schoolId },
-                select: { attendanceMode: true, dailyAttendanceAccess: true, trackingStrategy: true, lateMarkingResponsibility: true, lateCountingPolicy: true } 
-            }) as any
+                select: {
+                    attendanceMode: true,
+                    dailyAttendanceAccess: true,
+                    trackingStrategy: true,
+                    lateMarkingResponsibility: true,
+                    lateCountingPolicy: true,
+                    lateMarkThreshold: true,
+                    absentAfter: true,
+                }
+            })
         ]);
 
         // If no config exists for this AY, return defaults from school settings
         if (!config) {
             return {
-                mode: schoolSettings?.attendanceMode || 'DAILY',
-                responsibility: schoolSettings?.dailyAttendanceAccess || 'CLASS_TEACHER',
-                trackingStrategy: schoolSettings?.trackingStrategy || 'ATTENDANCE_SIMPLE',
-                lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility || 'TAKER',
-                lateCountingPolicy: schoolSettings?.lateCountingPolicy || 'LATE',
-                warning: 'Configuration not found for this academic year, returning defaults from SchoolSettings.'
+                mode: schoolSettings?.attendanceMode ?? 'DAILY',
+                responsibility: schoolSettings?.dailyAttendanceAccess ?? 'CLASS_TEACHER',
+                trackingStrategy: schoolSettings?.trackingStrategy ?? 'ATTENDANCE_SIMPLE',
+                lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility ?? 'TAKER',
+                lateCountingPolicy: schoolSettings?.lateCountingPolicy ?? 'LATE',
+                lateMarkThreshold: schoolSettings?.lateMarkThreshold ?? null,
+                absentAfter: schoolSettings?.absentAfter ?? null,
             };
         }
 
         return {
             ...config,
-            trackingStrategy: schoolSettings?.trackingStrategy || 'ATTENDANCE_SIMPLE',
-            lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility || 'TAKER',
-            lateCountingPolicy: schoolSettings?.lateCountingPolicy || 'LATE',
+            trackingStrategy: schoolSettings?.trackingStrategy ?? 'ATTENDANCE_SIMPLE',
+            lateMarkingResponsibility: schoolSettings?.lateMarkingResponsibility ?? 'TAKER',
+            lateCountingPolicy: schoolSettings?.lateCountingPolicy ?? 'LATE',
+            lateMarkThreshold: schoolSettings?.lateMarkThreshold ?? null,
+            absentAfter: schoolSettings?.absentAfter ?? null,
         };
     }
 
@@ -77,8 +88,10 @@ export class AttendanceConfigService {
                     attendanceMode: dto.mode,
                     dailyAttendanceAccess: dto.responsibility,
                     trackingStrategy: dto.trackingStrategy,
-                    lateMarkingResponsibility: dto.lateMarkingResponsibility || 'TAKER',
-                    lateCountingPolicy: dto.lateCountingPolicy || 'LATE',
+                    lateMarkingResponsibility: dto.lateMarkingResponsibility ?? 'TAKER',
+                    lateCountingPolicy: dto.lateCountingPolicy ?? 'LATE',
+                    ...(dto.lateMarkThreshold !== undefined && { lateMarkThreshold: dto.lateMarkThreshold }),
+                    ...(dto.absentAfter !== undefined && { absentAfter: dto.absentAfter }),
                 }
             })
         ]);

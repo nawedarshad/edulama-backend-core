@@ -22,13 +22,13 @@ model TeacherProfile {
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   // Core relations (already in your system)
-  ClassSubject          ClassSubject[]
-  ClassHeadTeacher      ClassHeadTeacher[]
-  SectionTeacher        SectionTeacher[]
-  announcementAudiences AnnouncementAudience[]
-  subjectAssignments    SubjectAssignment[]
-  timetableEntries      TimetableEntry[]
-  timetableOverrides    TimetableOverride[]
+  ClassSubject           ClassSubject[]
+  ClassHeadTeacher       ClassHeadTeacher[]
+  SectionTeacher         SectionTeacher[]
+  announcementAudiences  AnnouncementAudience[]
+  subjectAssignments     SubjectAssignment[]
+  timetableEntries       TimetableEntry[]
+  timetableOverrides     TimetableOverride[]
   timetableEntryTeachers TimetableEntryTeacher[]
 
   // New relations

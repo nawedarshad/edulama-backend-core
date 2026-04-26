@@ -38,7 +38,12 @@ export class UserAuthGuard implements CanActivate {
         if (authHeader?.startsWith('Bearer ')) {
             authMsHeaders['Authorization'] = authHeader;
         } else if (cookieHeader) {
-            authMsHeaders['Cookie'] = cookieHeader;
+            const accessToken = this.extractAccessToken(cookieHeader);
+            if (accessToken) {
+                authMsHeaders['Authorization'] = `Bearer ${accessToken}`;
+            } else {
+                authMsHeaders['Cookie'] = cookieHeader;
+            }
         } else {
             throw new UnauthorizedException('Missing or invalid token');
         }
@@ -73,10 +78,33 @@ export class UserAuthGuard implements CanActivate {
                 request.user.schoolId = parseInt(headerSchoolId as string);
             }
 
+            // --- CRITICAL HARDENING: Ensure core identifiers are non-null ---
+            if (!request.user.id || !request.user.schoolId) {
+                this.logger.error(`Missing core identity: id=${request.user.id}, schoolId=${request.user.schoolId}`);
+                throw new UnauthorizedException('Authentication payload missing required school/user identifiers');
+            }
+
             return true;
         } catch (error) {
+            if (error instanceof UnauthorizedException) throw error;
             this.logger.error('Token verification failed', error.message);
             throw new UnauthorizedException('Invalid token or auth service unavailable');
+        }
+    }
+
+    private extractAccessToken(cookieHeader: string): string | null {
+        try {
+            const cookies = cookieHeader.split(';').reduce((acc, c) => {
+                const [n, v] = c.split('=');
+                if (n && v) {
+                    acc[n.trim()] = v.trim();
+                }
+                return acc;
+            }, {} as Record<string, string>);
+
+            return cookies['accessToken'] || null;
+        } catch (e) {
+            return null;
         }
     }
 }

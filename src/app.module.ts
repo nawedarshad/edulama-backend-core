@@ -31,6 +31,8 @@ import { FileUploadModule } from './common/file-upload/file-upload.module';
 import { PublicSchoolModule } from './public-school/public-school.module';
 import { SupportModule } from './common/support/support.module';
 import { AppConfigModule } from './common/app-config/app-config.module';
+import { SaasBroadcastModule } from './saas-broadcast/saas-broadcast.module';
+import { TaskModule } from './task/task.module';
 
 @Module({
   imports: [
@@ -68,6 +70,8 @@ import { AppConfigModule } from './common/app-config/app-config.module';
     PublicSchoolModule,
     SupportModule,
     AppConfigModule,
+    SaasBroadcastModule,
+    TaskModule,
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],

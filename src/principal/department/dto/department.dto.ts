@@ -141,3 +141,14 @@ export class AssignSubjectsBulkDto {
     @IsInt({ each: true })
     subjectIds: number[];
 }
+
+import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
+
+export class DepartmentMemberQueryDto extends PaginationQueryDto {
+    @ApiPropertyOptional({ enum: RoleInDepartment, description: 'Filter by role' })
+    @IsOptional()
+    @IsEnum(RoleInDepartment)
+    role?: RoleInDepartment;
+}
+
+export class DepartmentSubjectQueryDto extends PaginationQueryDto { }

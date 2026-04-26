@@ -100,7 +100,7 @@ model StudentProfile {
   academicGroups      AcademicGroup[]
   homeworkSubmissions HomeworkSubmission[]
 
-  @@unique([schoolId, academicYearId, admissionNo])
+  @@unique([schoolId, admissionNo])
   @@index([schoolId, academicYearId])
   @@index([classId, sectionId])
 }
@@ -146,7 +146,7 @@ model StudentDocument {
 
   name       String // e.g., "Birth Certificate"
   type       String // e.g., "PDF", "IMAGE"
-  size       Int?   // Size in bytes
+  size       Int? // Size in bytes
   url        String
   isVerified Boolean  @default(false)
   uploadedAt DateTime @default(now())

@@ -14,6 +14,12 @@ import { AnnouncementProcessor } from './announcement.processor';
         NotificationModule,
         BullModule.registerQueue({
             name: 'announcements',
+            defaultJobOptions: {
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 2000 },
+                removeOnComplete: { count: 100 },
+                removeOnFail: { count: 500 },
+            },
         })
     ],
     controllers: [PrincipalAnnouncementController],

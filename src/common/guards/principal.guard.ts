@@ -20,6 +20,12 @@ export class PrincipalAuthGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest();
+
+        // 0. Bypass OPTIONS preflight
+        if (request.method === 'OPTIONS') {
+            return true;
+        }
+
         const authServiceUrl = this.configService.get<string>('AUTH_MS_URL');
 
         if (!authServiceUrl) {
@@ -30,8 +36,12 @@ export class PrincipalAuthGuard implements CanActivate {
         // Build auth headers: prefer Bearer token, fall back to forwarding the Cookie.
         const authHeader = request.headers.authorization;
         const cookieHeader = request.headers.cookie;
+        const schoolIdHeader = request.headers['x-school-id'];
+
+        this.logger.debug(`[Auth] Path: ${request.url}, Auth: ${authHeader ? 'Present' : 'Missing'}, Cookie: ${cookieHeader ? 'Present' : 'Missing'}, SchoolId: ${schoolIdHeader}`);
 
         if (!authHeader && !cookieHeader) {
+            this.logger.warn(`Unauthorized access attempt to ${request.url}: No credentials found.`);
             throw new UnauthorizedException('Missing or invalid authentication credentials');
         }
 

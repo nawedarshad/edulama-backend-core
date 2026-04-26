@@ -62,21 +62,21 @@ describe('SubjectController', () => {
     describe('create', () => {
         it('should call service.create with schoolId', async () => {
             const dto: CreateSubjectDto = { name: 'Math', code: 'MATH' };
-            await controller.create(mockRequest, dto);
+            await controller.create(mockUser.schoolId, mockUser.id, dto);
             expect(service.create).toHaveBeenCalledWith(mockUser.schoolId, dto);
         });
     });
 
     describe('findAll', () => {
         it('should call service.findAll with schoolId', async () => {
-            await controller.findAll(mockRequest, {});
+            await controller.findAll(mockUser.schoolId, {} as any);
             expect(service.findAll).toHaveBeenCalledWith(mockUser.schoolId, {});
         });
     });
 
     describe('getStats', () => {
         it('should call service.getStats', async () => {
-            await controller.getStats(mockRequest);
+            await controller.getStats(mockUser.schoolId);
             expect(service.getStats).toHaveBeenCalledWith(mockUser.schoolId);
         });
     });

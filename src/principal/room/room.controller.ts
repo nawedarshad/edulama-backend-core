@@ -57,7 +57,8 @@ export class RoomController {
     @ApiResponse({ status: 201, description: 'The room has been successfully created.' })
     async create(@Req() req, @Body() createRoomDto: CreateRoomDto) {
         const schoolId = req.user.schoolId;
-        return this.roomService.create(schoolId, createRoomDto);
+        const userId = req.user.id;
+        return this.roomService.create(schoolId, createRoomDto, userId);
     }
     @Get(':id')
     @ApiOperation({ summary: 'Get a room by id' })
@@ -76,7 +77,8 @@ export class RoomController {
         @Body() updateRoomDto: UpdateRoomDto,
     ) {
         const schoolId = req.user.schoolId;
-        return this.roomService.update(schoolId, id, updateRoomDto);
+        const userId = req.user.id;
+        return this.roomService.update(schoolId, id, updateRoomDto, userId);
     }
 
     @Delete(':id')
@@ -84,7 +86,8 @@ export class RoomController {
     @ApiResponse({ status: 200, description: 'The room has been successfully deleted.' })
     async remove(@Req() req, @Param('id', ParseIntPipe) id: number) {
         const schoolId = req.user.schoolId;
-        return this.roomService.remove(schoolId, id);
+        const userId = req.user.id;
+        return this.roomService.remove(schoolId, id, userId);
     }
 
     @Post('assign')
@@ -92,7 +95,8 @@ export class RoomController {
     @ApiResponse({ status: 201, description: 'Room assigned.' })
     async assignRoom(@Req() req, @Body() dto: AssignRoomDto) {
         const schoolId = req.user.schoolId;
-        return this.roomService.assignRoom(schoolId, dto);
+        const userId = req.user.id;
+        return this.roomService.assignRoom(schoolId, dto, userId);
     }
 
     @Delete(':roomId/assignment/:sectionId')
@@ -104,7 +108,8 @@ export class RoomController {
         @Param('sectionId', ParseIntPipe) sectionId: number
     ) {
         const schoolId = req.user.schoolId;
-        return this.roomService.unassignRoom(schoolId, roomId, sectionId);
+        const userId = req.user.id;
+        return this.roomService.unassignRoom(schoolId, roomId, sectionId, userId);
     }
 
     @Post('bulk')
@@ -112,6 +117,7 @@ export class RoomController {
     @ApiResponse({ status: 201, description: 'Rooms have been successfully created.' })
     async bulkCreate(@Req() req, @Body() dto: BulkCreateRoomDto) {
         const schoolId = req.user.schoolId;
-        return this.roomService.bulkCreate(schoolId, dto);
+        const userId = req.user.id;
+        return this.roomService.bulkCreate(schoolId, dto, userId);
     }
 }

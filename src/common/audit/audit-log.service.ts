@@ -14,12 +14,18 @@ export class AuditLogService {
             // Map string action to Enum if needed, or use as is if strictly typed
             // Assuming the event.action matches AuditAction names (CREATE, UPDATE, DELETE)
 
-            // Safe enum casting
+            // BUG FIX: Extended actions like UPDATE_STATUS, BULK_CREATE, BULK_PROMOTE were
+            // silently dropped. Now mapped to the nearest AuditAction enum value.
             let actionEnum: AuditAction;
-            if (event.action === 'CREATE' || event.action === 'POST') actionEnum = AuditAction.CREATE;
-            else if (event.action === 'UPDATE' || event.action === 'PATCH' || event.action === 'PUT') actionEnum = AuditAction.UPDATE;
-            else if (event.action === 'DELETE') actionEnum = AuditAction.DELETE;
-            else return; // Ignore other actions for now unless allowed
+            const actionUpper = (event.action as string).toUpperCase();
+            if (actionUpper === 'CREATE' || actionUpper === 'POST' || actionUpper.startsWith('BULK_CREATE')) {
+                actionEnum = AuditAction.CREATE;
+            } else if (actionUpper === 'DELETE' || actionUpper === 'BULK_DELETE') {
+                actionEnum = AuditAction.DELETE;
+            } else {
+                // UPDATE, PATCH, PUT, UPDATE_STATUS, BULK_PROMOTE, BULK_DEACTIVATE, etc.
+                actionEnum = AuditAction.UPDATE;
+            }
 
             await this.prisma.auditLog.create({
                 data: {

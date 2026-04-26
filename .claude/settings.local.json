@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(xargs grep *)",
+      "Read(//d/School-mgmt/school-mgmt/edulama-main/**)"
+    ]
+  }
+}

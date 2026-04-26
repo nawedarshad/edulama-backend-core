@@ -98,6 +98,7 @@ model School {
   timetableEntries   TimetableEntry[]
   timetableOverrides TimetableOverride[]
   schedules          Schedule[]
+  tasks              Task[]
 
   grievanceConfigs       GrievanceConfig[]
   notices                Notice[]
@@ -121,6 +122,7 @@ model School {
   timetableSettings TimetableSettings?
   academicGroups    AcademicGroup[]
   syllabusFiles     SyllabusFile[]
+  leaveBalances     LeaveBalance[]
 
   @@index([code])
   @@index([subdomain])
@@ -180,6 +182,7 @@ model AcademicYear {
   examResults            ExamResult[]
   examRoomTemplates      ExamRoomTemplate[]
   academicAssignments    AcademicAssignment[]
+  leaveBalances          LeaveBalance[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -195,7 +198,7 @@ model User {
   photo        String?
   isActive     Boolean   @default(true)
   lastSeen     DateTime?
-  deviceTokens Json?     // e.g. { "TEACHER": "token", "PARENT": "token" }
+  deviceTokens Json? // e.g. { "TEACHER": "token", "PARENT": "token" }
   tokenVersion Int       @default(1)
 
   twoFactorEnabled    Boolean   @default(false)
@@ -210,6 +213,8 @@ model User {
   grievancesRaised             Grievance[]
   grievancesResolved           Grievance[]           @relation("GrievanceResolvedBy")
   grievancesAgainst            Grievance[]           @relation("GrievanceAgainstUser")
+  grievancesAssigned           Grievance[]           @relation("GrievanceAssignedTo")
+  grievanceComments            GrievanceComment[]
   uploadedGrievanceAttachments GrievanceAttachment[]
 
   // Back-relations for IncidentReport
@@ -258,6 +263,10 @@ model User {
   roleId              Int?
   academicAssignments AcademicAssignment[]
   memo                PrincipalMemo?
+
+  createdTasks  Task[]         @relation("TaskCreator")
+  assignedTasks Task[]         @relation("TaskAssignee")
+  leaveBalances LeaveBalance[]
 }
 
 // ==========================

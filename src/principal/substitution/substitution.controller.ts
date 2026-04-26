@@ -1,11 +1,22 @@
-import { Controller, Get, Post, Delete, Body, Query, Param, UseGuards, ParseIntPipe, Patch } from '@nestjs/common';
+import {
+    Controller,
+    Get,
+    Post,
+    Delete,
+    Body,
+    Query,
+    Param,
+    UseGuards,
+    ParseIntPipe,
+    Patch,
+} from '@nestjs/common';
 import { SubstitutionService } from './substitution.service';
 import { CreateSubstitutionDto } from './dto/create-substitution.dto';
 import { UpdateSubstitutionDto } from './dto/update-substitution.dto';
+import { GetSubstitutionsFilterDto } from './dto/get-substitutions-filter.dto';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import type { AuthUserPayload } from '../../common/decorators/get-user.decorator';
 import { PrincipalAuthGuard } from '../../common/guards/principal.guard';
-
 import { RequiredModule } from '../../common/decorators/required-module.decorator';
 import { ModuleGuard } from '../../common/guards/module.guard';
 
@@ -13,7 +24,7 @@ import { ModuleGuard } from '../../common/guards/module.guard';
 @RequiredModule('SUBSTITUTIONS')
 @Controller('principal/substitution')
 export class SubstitutionController {
-    constructor(private service: SubstitutionService) { }
+    constructor(private readonly service: SubstitutionService) { }
 
     @Get('absent-teachers')
     getAbsentTeachers(
@@ -33,14 +44,15 @@ export class SubstitutionController {
         return this.service.getImpactedClasses(user.schoolId, academicYearId, date);
     }
 
+    // Query param is `timeSlotId` (a TimeSlot.id) — NOT a TimePeriod.id
     @Get('available-teachers')
     getAvailableTeachers(
         @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('date') date: string,
-        @Query('periodId', ParseIntPipe) periodId: number,
+        @Query('timeSlotId', ParseIntPipe) timeSlotId: number,
     ) {
-        return this.service.getAvailableTeachers(user.schoolId, academicYearId, date, periodId);
+        return this.service.getAvailableTeachers(user.schoolId, academicYearId, date, timeSlotId);
     }
 
     @Post()
@@ -58,7 +70,7 @@ export class SubstitutionController {
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: UpdateSubstitutionDto,
     ) {
-        return this.service.updateSubstitution(user.schoolId, id, dto);
+        return this.service.updateSubstitution(user.schoolId, id, dto, user.id);
     }
 
     @Get('teacher-history')
@@ -75,9 +87,15 @@ export class SubstitutionController {
     getSubstitutions(
         @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
-        @Query('date') date?: string,
+        @Query() filter: GetSubstitutionsFilterDto,
     ) {
-        return this.service.getSubstitutions(user.schoolId, academicYearId, date);
+        return this.service.getSubstitutions(
+            user.schoolId,
+            academicYearId,
+            filter.date,
+            filter.page,
+            filter.limit,
+        );
     }
 
     @Delete(':id')
@@ -85,6 +103,6 @@ export class SubstitutionController {
         @GetUser() user: AuthUserPayload,
         @Param('id', ParseIntPipe) id: number,
     ) {
-        return this.service.deleteSubstitution(user.schoolId, id);
+        return this.service.deleteSubstitution(user.schoolId, id, user.id);
     }
 }

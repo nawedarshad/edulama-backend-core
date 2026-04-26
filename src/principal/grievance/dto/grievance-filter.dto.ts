@@ -15,10 +15,20 @@ export class GrievanceFilterDto {
     @IsNumber()
     raisedById?: number;
 
-    @ApiPropertyOptional({ description: 'Filter by role name (e.g. PARENT, TEACHER)' })
+    @ApiPropertyOptional({ description: 'Filter by role name' })
     @IsOptional()
     @IsString()
     role?: string;
+
+    @ApiPropertyOptional({ enum: ['ACADEMIC', 'ADMISSION', 'FEES', 'INFRASTRUCTURE', 'TRANSPORT', 'CONDUCT', 'STAFF_RELATED', 'OTHER'] })
+    @IsOptional()
+    @IsString()
+    category?: string;
+
+    @ApiPropertyOptional({ enum: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] })
+    @IsOptional()
+    @IsString()
+    priority?: string;
 
     @ApiPropertyOptional()
     @IsOptional()

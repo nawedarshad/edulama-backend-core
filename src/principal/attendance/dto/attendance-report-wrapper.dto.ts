@@ -1,5 +1,10 @@
-import { IsDateString, IsOptional, IsNumber, IsNotEmpty, Min } from 'class-validator';
+import { IsDateString, IsOptional, IsNumber, IsNotEmpty, IsEnum, Min } from 'class-validator';
 import { Type } from 'class-transformer';
+
+enum ReportScope {
+    STUDENT = 'STUDENT',
+    TEACHER = 'TEACHER',
+}
 
 export class AttendanceReportFilterDto {
     @IsDateString()
@@ -36,5 +41,6 @@ export class AttendanceReportFilterDto {
     limit?: number;
 
     @IsOptional()
-    scope?: string;
+    @IsEnum(ReportScope)
+    scope?: ReportScope;
 }

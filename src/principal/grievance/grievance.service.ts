@@ -64,12 +64,51 @@ export class GrievanceService {
         });
     }
 
+    // 2. Create Bulk Grievances (Against multiple users)
+    async createBulk(schoolId: number, academicYearId: number, userId: number, roleName: string, dto: CreateBulkGrievanceDto) {
+        this.logger.log(`Bulk creating grievance by ${userId} against ${dto.againstUserIds.length} users`);
+
+        const role = await this.prisma.role.findUnique({ where: { name: roleName } });
+        if (!role) throw new BadRequestException(`Role ${roleName} not found`);
+
+        if (role.name !== 'PRINCIPAL' && role.name !== 'ADMIN') {
+            const config = await this.prisma.grievanceConfig.findUnique({
+                where: { schoolId_roleId: { schoolId, roleId: role.id } }
+            });
+            if (!config || !config.isEnabled) throw new ForbiddenException(`Unauthorized`);
+        }
+
+        const grievances = await this.prisma.$transaction(async (tx) => {
+            const results: any[] = [];
+            for (const againstUserId of dto.againstUserIds) {
+                const grievance = await tx.grievance.create({
+                    data: {
+                        schoolId,
+                        academicYearId,
+                        raisedById: userId,
+                        title: dto.title,
+                        description: dto.description,
+                        category: dto.category as any,
+                        priority: dto.priority as any || 'MEDIUM',
+                        isAnonymous: dto.isAnonymous || false,
+                        againstUserId: againstUserId,
+                        attachments: dto.attachmentUrls ? {
+                            create: dto.attachmentUrls.map(url => ({ fileUrl: url, uploadedById: userId }))
+                        } : undefined
+                    }
+                });
+                results.push(grievance);
+            }
+            return results;
+        });
+
+        return grievances;
+    }
+
     // 2. Create Grievance
     async create(schoolId: number, academicYearId: number, userId: number, roleName: string, dto: CreateGrievanceDto) {
         this.logger.log(`Creating grievance for user ${userId} in school ${schoolId} with role ${roleName}`);
 
-        // Check if role is allowed
-        // Principal and Admin are ALWAYS allowed or should be config? usually always allowed.
         const role = await this.prisma.role.findUnique({ where: { name: roleName } });
         if (!role) throw new BadRequestException(`Role ${roleName} not found`);
 
@@ -90,100 +129,56 @@ export class GrievanceService {
                 raisedById: userId,
                 title: dto.title,
                 description: dto.description,
+                category: dto.category,
+                priority: dto.priority || 'MEDIUM',
+                isAnonymous: dto.isAnonymous || false,
                 againstUserId: dto.againstUserId,
                 attachments: dto.attachmentUrls ? {
-                    create: dto.attachmentUrls.map(url => ({ fileUrl: url }))
+                    create: dto.attachmentUrls.map(url => ({ fileUrl: url, uploadedById: userId }))
                 } : undefined
             }
         });
 
-        // Notify Principal(s)
-        const principals = await this.prisma.user.findMany({
+        // Enterprise Routing Logic
+        // 1. Notify Principals
+        // 2. If Department Related, notify HOD? 
+        // For now, notify all institutional admins
+        const staffToNotify = await this.prisma.user.findMany({
             where: {
                 schoolId,
-                role: { name: 'PRINCIPAL' }
+                OR: [
+                    { role: { name: 'PRINCIPAL' } },
+                    { role: { name: 'ADMIN' } }
+                ]
             },
             select: { id: true }
         });
 
-        if (principals.length > 0) {
+        if (staffToNotify.length > 0) {
             await this.notificationService.create(schoolId, userId, {
                 type: NotificationType.GRIEVANCE,
-                title: 'New Grievance Raised',
-                message: `A new grievance "${dto.title}" has been raised.`,
-                targetUserIds: principals.map(p => p.id)
+                title: `${dto.priority === 'URGENT' ? '🚨 URGENT: ' : ''}New Grievance`,
+                message: `[${dto.category}] ${dto.title}`,
+                targetUserIds: staffToNotify.map(s => s.id)
             });
         }
 
         return grievance;
     }
 
-    // 2.5 Create Bulk Grievances
-    async createBulk(schoolId: number, academicYearId: number, userId: number, roleName: string, dto: CreateBulkGrievanceDto) {
-        this.logger.log(`Bulk creating grievance against ${dto.againstUserIds.length} users by ${userId} in school ${schoolId} with role ${roleName}`);
-
-        const role = await this.prisma.role.findUnique({ where: { name: roleName } });
-        if (!role) throw new BadRequestException(`Role ${roleName} not found`);
-
-        if (role.name !== 'PRINCIPAL' && role.name !== 'ADMIN') {
-            const config = await this.prisma.grievanceConfig.findUnique({
-                where: { schoolId_roleId: { schoolId, roleId: role.id } }
-            });
-
-            if (!config || !config.isEnabled) {
-                throw new ForbiddenException(`Role ${role.name} is not allowed to raise grievances.`);
-            }
-        }
-
-        const grievances = await this.prisma.$transaction(async (tx) => {
-            const results: any[] = [];
-            for (const againstUserId of dto.againstUserIds) {
-                const grievance = await tx.grievance.create({
-                    data: {
-                        schoolId,
-                        academicYearId,
-                        raisedById: userId,
-                        title: dto.title,
-                        description: dto.description,
-                        againstUserId: againstUserId,
-                        attachments: dto.attachmentUrls ? {
-                            create: dto.attachmentUrls.map(url => ({ fileUrl: url }))
-                        } : undefined
-                    }
-                });
-                results.push(grievance);
-            }
-            return results;
-        });
-
-        const principals = await this.prisma.user.findMany({
-            where: { schoolId, role: { name: 'PRINCIPAL' } },
-            select: { id: true }
-        });
-
-        if (principals.length > 0) {
-            await this.notificationService.create(schoolId, userId, {
-                type: NotificationType.GRIEVANCE,
-                title: 'New Bulk Grievances Raised',
-                message: `New bulk grievance "${dto.title}" has been raised against ${dto.againstUserIds.length} students.`,
-                targetUserIds: principals.map(p => p.id)
-            });
-        }
-
-        return grievances;
-    }
-
-    // 3. Find All
+    // 3. Find All (with enhanced data)
     async findAll(schoolId: number, academicYearId: number, filters: GrievanceFilterDto) {
         const { status, raisedById, page = 1, limit = 10 } = filters;
         const skip = (page - 1) * limit;
 
-        return this.prisma.grievance.findMany({
+        const data = await this.prisma.grievance.findMany({
             where: {
                 schoolId,
                 academicYearId,
                 status,
                 raisedById,
+                category: filters.category as any,
+                priority: filters.priority as any,
                 ...(filters.role ? { raisedBy: { role: { name: filters.role } } } : {})
             },
             include: {
@@ -191,36 +186,59 @@ export class GrievanceService {
                     select: {
                         id: true,
                         name: true,
-                        role: { select: { name: true } },
-                        parentProfile: {
-                            select: {
-                                parentStudents: {
-                                    select: {
-                                        student: {
-                                            select: {
-                                                fullName: true,
-                                                admissionNo: true,
-                                                rollNo: true,
-                                                class: { select: { name: true } },
-                                                section: { select: { name: true } }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        photo: true,
+                        role: { select: { name: true } }
                     }
                 },
-                againstUser: { select: { id: true, name: true } },
-                attachments: true
+                againstUser: { select: { id: true, name: true, photo: true } },
+                assignedTo: { select: { id: true, name: true, photo: true } },
+                attachments: true,
+                _count: { select: { comments: true } }
             },
-            orderBy: { createdAt: 'desc' },
+            orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
             skip,
             take: limit
         });
+
+        // Mask identity if anonymous
+        return data.map(g => {
+            if (g.isAnonymous) {
+                return {
+                    ...g,
+                    raisedBy: { id: 0, name: 'Anonymous User', photo: null, role: { name: 'GHOST' } }
+                };
+            }
+            return g;
+        });
     }
 
-    // 4. Update (Resolve/Dismiss)
+    async findOne(schoolId: number, id: number) {
+        const grievance = await this.prisma.grievance.findFirst({
+            where: { id, schoolId },
+            include: {
+                raisedBy: { select: { id: true, name: true, photo: true, role: { select: { name: true } } } },
+                againstUser: { select: { id: true, name: true, photo: true } },
+                assignedTo: { select: { id: true, name: true, photo: true } },
+                attachments: true,
+                comments: {
+                    include: {
+                        user: { select: { id: true, name: true, photo: true, role: { select: { name: true } } } }
+                    },
+                    orderBy: { createdAt: 'asc' }
+                }
+            }
+        });
+
+        if (!grievance) throw new NotFoundException('Grievance not found');
+
+        if (grievance.isAnonymous) {
+            grievance.raisedBy = { id: 0, name: 'Anonymous User', photo: null, role: { name: 'GHOST' } } as any;
+        }
+
+        return grievance;
+    }
+
+    // 4. Update (Resolve/Dismiss/Assign)
     async update(schoolId: number, id: number, resolverId: number, dto: UpdateGrievanceDto) {
         this.logger.log(`Updating grievance ${id} by ${resolverId}`);
 
@@ -230,49 +248,112 @@ export class GrievanceService {
 
         if (!grievance) throw new NotFoundException(`Grievance ${id} not found`);
 
-        const updatedGrievance = await this.prisma.grievance.update({
+        const updated = await this.prisma.grievance.update({
             where: { id },
             data: {
                 status: dto.status,
+                priority: dto.priority,
+                assignedToId: dto.assignedToId,
                 resolutionNote: dto.resolutionNote,
-                resolvedById: resolverId,
-                resolvedAt: dto.status === 'RESOLVED' || dto.status === 'DISMISSED' ? new Date() : null
+                resolvedById: (dto.status === 'RESOLVED' || dto.status === 'DISMISSED') ? resolverId : undefined,
+                resolvedAt: (dto.status === 'RESOLVED' || dto.status === 'DISMISSED') ? new Date() : undefined
+            },
+            include: { assignedTo: { select: { name: true } } }
+        });
+
+        // Notify Creator
+        if (dto.status && dto.status !== grievance.status) {
+            await this.notificationService.create(schoolId, resolverId, {
+                type: NotificationType.GRIEVANCE,
+                title: 'Action Taken',
+                message: `Status of "${grievance.title}" set to ${dto.status}.`,
+                targetUserIds: [grievance.raisedById]
+            });
+        }
+
+        // Notify Assignee
+        if (dto.assignedToId && dto.assignedToId !== grievance.assignedToId) {
+            await this.notificationService.create(schoolId, resolverId, {
+                type: NotificationType.GRIEVANCE,
+                title: 'Duty Assigned',
+                message: `You have been assigned to resolve: "${grievance.title}".`,
+                targetUserIds: [dto.assignedToId]
+            });
+        }
+
+        return updated;
+    }
+
+    async addComment(schoolId: number, id: number, userId: number, message: string) {
+        const grievance = await this.prisma.grievance.findFirst({
+            where: { id, schoolId }
+        });
+        if (!grievance) throw new NotFoundException('Grievance not found');
+
+        const comment = await this.prisma.grievanceComment.create({
+            data: {
+                grievanceId: id,
+                userId,
+                message
+            },
+            include: {
+                user: { select: { id: true, name: true, photo: true } }
             }
         });
 
-        // Notify the user if status changed
-        if (dto.status && dto.status !== grievance.status) {
-            this.logger.log(`Grievance status changed from ${grievance.status} to ${dto.status}. Triggering notification for user ${grievance.raisedById}`);
-            await this.notificationService.create(schoolId, resolverId, {
-                type: NotificationType.GRIEVANCE,
-                title: 'Grievance Update',
-                message: `Your grievance "${grievance.title}" has been marked as ${dto.status}.`,
-                targetUserIds: [grievance.raisedById]
-            });
+        // Notify either the creator or the assignee
+        const notifyIds: number[] = [];
+        if (userId === grievance.raisedById) {
+            // Reporter commented, notify handler
+            if (grievance.assignedToId) notifyIds.push(grievance.assignedToId);
         } else {
-            this.logger.log(`No status change detected (Old: ${grievance.status}, New: ${dto.status}). Notification skipped.`);
+            // Handler commented, notify reporter
+            notifyIds.push(grievance.raisedById);
         }
 
-        return updatedGrievance;
+        if (notifyIds.length > 0) {
+            await this.notificationService.create(schoolId, userId, {
+                type: NotificationType.GRIEVANCE,
+                title: 'New Response',
+                message: `Replied: "${message.substring(0, 30)}..."`,
+                targetUserIds: notifyIds
+            });
+        }
+
+        return comment;
     }
 
-    // 5. Delete
-    // 5. Delete
+    async getSummary(schoolId: number, academicYearId: number) {
+        const [total, open, closed, byCategory] = await Promise.all([
+            this.prisma.grievance.count({ where: { schoolId, academicYearId } }),
+            this.prisma.grievance.count({ where: { schoolId, academicYearId, status: 'OPEN' } }),
+            this.prisma.grievance.count({ where: { schoolId, academicYearId, status: { in: ['RESOLVED', 'DISMISSED'] } } }),
+            this.prisma.grievance.groupBy({
+                by: ['category'],
+                where: { schoolId, academicYearId },
+                _count: true
+            })
+        ]);
+
+        return {
+            total,
+            open,
+            closed,
+            byCategory: byCategory.map(c => ({ category: c.category, count: c._count }))
+        };
+    }
+
     async remove(schoolId: number, id: number, userId: number, userRole: string) {
         const grievance = await this.prisma.grievance.findFirst({ where: { id, schoolId } });
         if (!grievance) throw new NotFoundException('Grievance not found');
 
-        // Check Permissions
         const isAdminOrPrincipal = userRole === 'ADMIN' || userRole === 'PRINCIPAL';
-
-        // If not Admin/Principal, they MUST be the creator
         if (!isAdminOrPrincipal && grievance.raisedById !== userId) {
-            throw new ForbiddenException('You can only delete your own grievances.');
+            throw new ForbiddenException('Unauthorized');
         }
 
-        // Can only delete if status is OPEN
-        if (grievance.status !== GrievanceStatus.OPEN) {
-            throw new ForbiddenException('Cannot delete a grievance once action has been taken.');
+        if (grievance.status !== 'OPEN' && !isAdminOrPrincipal) {
+            throw new BadRequestException('Cannot delete processed ticket');
         }
 
         return this.prisma.grievance.delete({ where: { id } });

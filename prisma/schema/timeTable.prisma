@@ -102,10 +102,10 @@ model TimetableEntry {
   teacherId Int?
 
   // Time & Block Handling
-  day          DayOfWeek
-  timeSlotId   Int
-  durationSlots Int     @default(1) // Number of consecutive slots this entry occupies (e.g., 2 for a double lab)
-  isBlockStart Boolean @default(true) // To identify the first entry in a sequence
+  day           DayOfWeek
+  timeSlotId    Int
+  durationSlots Int       @default(1) // Number of consecutive slots this entry occupies (e.g., 2 for a double lab)
+  isBlockStart  Boolean   @default(true) // To identify the first entry in a sequence
 
   // Optional room (primary, legacy support)
   roomId Int?
@@ -137,7 +137,7 @@ model TimetableEntry {
   rooms    TimetableEntryRoom[]
 
   // Prevent double booking (Standard single slot)
-  @@unique([schoolId, academicYearId, groupId, day, timeSlotId]) 
+  @@unique([schoolId, academicYearId, groupId, day, timeSlotId])
   // Note: Complex conflict detection for blocks will be handled in service layer
   @@unique([id, schoolId])
   @@index([teacherId])
@@ -148,8 +148,8 @@ model TimetableEntry {
 // MULTI-RESOURCE JUNCTIONS
 //-------------------------------------------------------------
 model TimetableEntryTeacher {
-  id      Int @id @default(autoincrement())
-  entryId Int
+  id        Int @id @default(autoincrement())
+  entryId   Int
   teacherId Int
 
   entry   TimetableEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
@@ -160,7 +160,7 @@ model TimetableEntryTeacher {
 }
 
 model TimetableEntryRoom {
-  id     Int @id @default(autoincrement())
+  id      Int @id @default(autoincrement())
   entryId Int
   roomId  Int
 

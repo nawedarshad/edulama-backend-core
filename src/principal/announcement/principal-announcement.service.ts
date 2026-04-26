@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { NotificationService } from '../global/notification/notification.service';
@@ -12,10 +12,12 @@ import { Prisma, AnnouncementPriority, AudienceType } from '@prisma/client';
 
 @Injectable()
 export class PrincipalAnnouncementService {
+    private readonly logger = new Logger(PrincipalAnnouncementService.name);
+
     constructor(
         private readonly prisma: PrismaService,
         private readonly notificationService: NotificationService,
-        @InjectQueue('announcements') private readonly announcementQueue: Queue
+        @InjectQueue('announcements') private readonly announcementQueue: Queue,
     ) { }
 
     async create(schoolId: number, userId: number, dto: CreateAnnouncementDto) {
@@ -102,17 +104,19 @@ export class PrincipalAnnouncementService {
             return announcement;
         });
 
-        // Send Notification (Offloaded to BullMQ)
+        const isEmergency = data.isEmergency || data.priority === AnnouncementPriority.CRITICAL;
+
+        // Enqueue audience resolution and notification dispatch
         await this.announcementQueue.add('send-announcement', {
             schoolId,
             creatorId: userId,
             announcement: result,
-            audiences
+            audiences,
         }, {
-            removeOnComplete: true,
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 1000 }
+            priority: isEmergency ? 1 : 5, // 1 = highest priority in BullMQ
         });
+
+        this.logger.log(`Announcement #${result.id} created and queued (school=${schoolId}, emergency=${isEmergency})`);
 
         return result;
     }
@@ -259,6 +263,38 @@ export class PrincipalAnnouncementService {
     }
 
 
+
+    async update(schoolId: number, id: number, dto: Partial<CreateAnnouncementDto>) {
+        const announcement = await this.prisma.announcement.findFirst({
+            where: { id, schoolId, deletedAt: null },
+        });
+        if (!announcement) {
+            throw new NotFoundException(`Announcement #${id} not found`);
+        }
+
+        let safeBody = dto.body;
+        if (safeBody) {
+            safeBody = sanitizeHtml(safeBody, {
+                allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img']),
+                allowedAttributes: {
+                    ...sanitizeHtml.defaults.allowedAttributes,
+                    img: ['src', 'alt', 'width', 'height'],
+                },
+                allowedSchemesByTag: { img: ['http', 'https', 'data'] },
+            });
+        }
+
+        return this.prisma.announcement.update({
+            where: { id },
+            data: {
+                ...(dto.title && { title: dto.title }),
+                ...(safeBody && { body: safeBody }),
+                ...(dto.summary !== undefined && { summary: dto.summary }),
+                ...(dto.type && { type: dto.type }),
+                ...(dto.priority && { priority: dto.priority }),
+            },
+        });
+    }
 
     async remove(schoolId: number, id: number) {
         const announcement = await this.prisma.announcement.findFirst({

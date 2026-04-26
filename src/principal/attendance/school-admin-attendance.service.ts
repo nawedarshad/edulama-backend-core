@@ -1,7 +1,6 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { UpdateStaffAttendanceDto } from './dto/update-staff-attendance.dto';
-import { AttendanceStatus } from './dto/update-staff-attendance.dto';
+import { UpdateStaffAttendanceDto, AttendanceStatus } from './dto/update-staff-attendance.dto';
 import { MarkStudentLateDto } from '../../teacher/attendance/dto/mark-student-late.dto';
 import { TakeClassAttendanceDto } from './dto/take-class-attendance.dto';
 import { AttendanceReportFilterDto } from './dto/attendance-report-wrapper.dto';
@@ -10,6 +9,8 @@ import { AttendanceStatus as PrismaAttendanceStatus } from '@prisma/client';
 
 @Injectable()
 export class SchoolAdminAttendanceService {
+    private readonly logger = new Logger(SchoolAdminAttendanceService.name);
+
     constructor(private readonly prisma: PrismaService) { }
 
     /**
@@ -182,40 +183,41 @@ export class SchoolAdminAttendanceService {
         const validation = await this.validateDate(schoolId, dto.date);
         const { academicYearId, date } = validation;
 
-        const results: any[] = [];
-
-        // Process updates in transaction or batch? Upsert one by one is safer for logic.
-        for (const update of dto.updates) {
-            const record = await this.prisma.staffAttendance.upsert({
-                where: {
-                    schoolId_academicYearId_teacherId_date: {
+        const results = await this.prisma.$transaction(async (tx) => {
+            const records: any[] = [];
+            for (const update of dto.updates) {
+                const record = await tx.staffAttendance.upsert({
+                    where: {
+                        schoolId_academicYearId_teacherId_date: {
+                            schoolId,
+                            academicYearId,
+                            teacherId: update.teacherId,
+                            date,
+                        }
+                    },
+                    create: {
                         schoolId,
                         academicYearId,
                         teacherId: update.teacherId,
-                        date: date
+                        date,
+                        status: update.status as any,
+                        remarks: update.remarks,
+                        checkInTime: update.checkInTime ? new Date(update.checkInTime) : null,
+                        checkOutTime: update.checkOutTime ? new Date(update.checkOutTime) : null,
+                        isLate: update.status === AttendanceStatus.LATE,
+                    },
+                    update: {
+                        status: update.status as any,
+                        remarks: update.remarks,
+                        checkInTime: update.checkInTime ? new Date(update.checkInTime) : null,
+                        checkOutTime: update.checkOutTime ? new Date(update.checkOutTime) : null,
+                        isLate: update.status === AttendanceStatus.LATE,
                     }
-                },
-                create: {
-                    schoolId,
-                    academicYearId,
-                    teacherId: update.teacherId,
-                    date: date,
-                    status: update.status as any,
-                    remarks: update.remarks,
-                    checkInTime: update.checkInTime ? new Date(update.checkInTime) : undefined, // specific date or just time? date usually.
-                    checkOutTime: update.checkOutTime ? new Date(update.checkOutTime) : undefined,
-                    isLate: update.status === AttendanceStatus.LATE
-                },
-                update: {
-                    status: update.status as any,
-                    remarks: update.remarks,
-                    checkInTime: update.checkInTime ? new Date(update.checkInTime) : undefined,
-                    checkOutTime: update.checkOutTime ? new Date(update.checkOutTime) : undefined,
-                    isLate: update.status === AttendanceStatus.LATE
-                }
-            });
-            results.push(record);
-        }
+                });
+                records.push(record);
+            }
+            return records;
+        });
 
         return { message: 'Attendance updated successfully', count: results.length };
     }
@@ -309,7 +311,12 @@ export class SchoolAdminAttendanceService {
             });
         }
 
-        // 4. Create or update attendance record with LATE status
+        // Apply school late counting policy
+        let lateStatus: PrismaAttendanceStatus = PrismaAttendanceStatus.PRESENT;
+        if (latePolicy === 'HALFDAY') lateStatus = PrismaAttendanceStatus.HALFDAY;
+        else if (latePolicy === 'ABSENT') lateStatus = PrismaAttendanceStatus.ABSENT;
+        else if (latePolicy === 'LATE') lateStatus = PrismaAttendanceStatus.LATE;
+
         const attendance = await this.prisma.attendance.upsert({
             where: {
                 schoolId_attendanceSessionId_studentProfileId: {
@@ -319,7 +326,7 @@ export class SchoolAdminAttendanceService {
                 }
             },
             update: {
-                status: PrismaAttendanceStatus.PRESENT, // Late implies Present
+                status: lateStatus,
                 isLate: true,
                 lateReason: dto.lateReason,
                 lateMarkedAt: new Date(),
@@ -329,7 +336,7 @@ export class SchoolAdminAttendanceService {
                 schoolId,
                 attendanceSessionId: session.id,
                 studentProfileId: student.id,
-                status: PrismaAttendanceStatus.PRESENT, // Late implies Present
+                status: lateStatus,
                 isLate: true,
                 lateReason: dto.lateReason,
                 lateMarkedAt: new Date(),
@@ -614,9 +621,10 @@ export class SchoolAdminAttendanceService {
             const students: any[] = await this.prisma.studentProfile.findMany({
                 where: {
                     schoolId,
+                    academicYearId,
                     classId,
                     sectionId,
-                    isActive: true
+                    isActive: true,
                 },
                 include: {
                     user: {

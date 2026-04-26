@@ -35,18 +35,21 @@ export class CalendarService {
         
         // Safety Guard: Check if any day being marked as a holiday has active classes
         const holidayRequests = dto.days.filter(d => !d.isWorking);
-        for (const req of holidayRequests) {
-            const { count } = await this.timetableService.countEntriesByDay(
-                schoolId,
-                dto.academicYearId,
-                req.dayOfWeek as any,
-                dto.classId
-            );
-            if (count > 0) {
-                const scope = dto.classId ? 'this class' : 'the school';
-                throw new BadRequestException(
-                    `Cannot mark ${req.dayOfWeek} as a holiday for ${scope} because it has ${count} scheduled classes. Please clear the timetable for that day first.`
+        if (holidayRequests.length > 0) {
+            // Batch efficiency: Check all days at once or loop (7 max anyway)
+            for (const req of holidayRequests) {
+                const { count } = await this.timetableService.countEntriesByDay(
+                    schoolId,
+                    dto.academicYearId,
+                    req.dayOfWeek as any,
+                    dto.classId
                 );
+                if (count > 0) {
+                    const scope = dto.classId ? 'this class' : 'the school';
+                    throw new BadRequestException(
+                        `Cannot mark ${req.dayOfWeek} as a holiday for ${scope} because it has ${count} scheduled classes. Please clear the timetable for that day first.`
+                    );
+                }
             }
         }
 
@@ -114,10 +117,15 @@ export class CalendarService {
         if (!year || year.schoolId !== schoolId) throw new NotFoundException('Academic year not found');
         if (year.status === AcademicYearStatus.CLOSED) throw new BadRequestException('Cannot add exceptions to a CLOSED academic year');
 
-        // Validate Date within Year
+        // Validate Date within Year (Strict UTC comparison)
         const date = this.toSafeDate(dto.date);
-        if (date < year.startDate || date > year.endDate) {
-            throw new BadRequestException('Date is outside the academic year range');
+        
+        // Normalize range markers to UTC midnight for comparison
+        const yearStart = this.toSafeDate(year.startDate.toISOString());
+        const yearEnd = this.toSafeDate(year.endDate.toISOString());
+
+        if (date < yearStart || date > yearEnd) {
+            throw new BadRequestException(`Date ${dto.date} is outside the range of academic year: ${year.name} (${yearStart.toISOString().split('T')[0]} to ${yearEnd.toISOString().split('T')[0]})`);
         }
 
         // Uniqueness Guard
@@ -188,8 +196,34 @@ export class CalendarService {
 
         if (dto.date) {
             const newDate = this.toSafeDate(dto.date);
-            if (newDate < check.academicYear.startDate || newDate > check.academicYear.endDate) {
+            const yearStart = this.toSafeDate(check.academicYear.startDate.toISOString());
+            const yearEnd = this.toSafeDate(check.academicYear.endDate.toISOString());
+
+            if (newDate < yearStart || newDate > yearEnd) {
                 throw new BadRequestException('New date is outside the academic year range');
+            }
+        }
+
+        // BUG FIX: Run the timetable safety check BEFORE committing the DB update.
+        // Previously the check ran after update — meaning the DB was mutated even if the check failed.
+        if (dto.type === 'HOLIDAY' || (dto.type === undefined && check.type === 'HOLIDAY')) {
+            const checkDate = dto.date ? this.toSafeDate(dto.date) : check.date;
+            const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+            const dayOfWeek = dayNames[checkDate.getUTCDay()] as DayOfWeek;
+            const checkClassId = dto.classId !== undefined ? dto.classId : check.classId;
+
+            const { count } = await this.timetableService.countEntriesByDay(
+                schoolId,
+                check.academicYearId,
+                dayOfWeek,
+                checkClassId || undefined
+            );
+
+            if (count > 0) {
+                const scope = checkClassId ? 'this class' : 'the school';
+                throw new BadRequestException(
+                    `Cannot mark this date as a holiday for ${scope} because it has ${count} scheduled classes. Please clear the timetable for this day first.`
+                );
             }
         }
 
@@ -203,26 +237,6 @@ export class CalendarService {
                 classId: dto.classId,
             },
         });
-
-        // Safety Guard for Holidays if date or scope changed
-        if (exception.type === 'HOLIDAY') {
-            const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
-            const dayOfWeek = dayNames[exception.date.getUTCDay()] as DayOfWeek;
-
-            const { count } = await this.timetableService.countEntriesByDay(
-                schoolId,
-                check.academicYearId,
-                dayOfWeek,
-                exception.classId || undefined
-            );
-
-            if (count > 0) {
-                const scope = exception.classId ? 'this class' : 'the school';
-                throw new BadRequestException(
-                    `Cannot mark this date as a holiday for ${scope} because it has ${count} scheduled classes. Please clear the timetable for this day first.`
-                );
-            }
-        }
 
         this.eventEmitter.emit(CalendarEvents.EXCEPTION_UPDATED, { schoolId, exception });
         return exception;
@@ -328,8 +342,9 @@ export class CalendarService {
 
     // 3. Calendar Generation (Enterprise Grade)
     async generateCalendar(schoolId: number, startStr: string, endStr: string, classId?: number, academicYearId?: number): Promise<CalendarResponse> {
-        const startDate = new Date(startStr);
-        const endDate = new Date(endStr);
+        // Normalize input range to UTC midnights
+        const startDate = this.toSafeDate(startStr);
+        const endDate = this.toSafeDate(endStr);
 
         if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
             throw new BadRequestException('Invalid date format');
@@ -358,6 +373,13 @@ export class CalendarService {
             },
         });
 
+        // Pre-normalize year boundaries for fast lookups
+        const normalizedYears = academicYears.map(y => ({
+            ...y,
+            utcStart: this.toSafeDate(y.startDate.toISOString()),
+            utcEnd: this.toSafeDate(y.endDate.toISOString())
+        }));
+
         const yearIds = academicYears.map(y => y.id);
         const allPatterns = yearIds.length ? await this.prisma.workingPattern.findMany({
             where: { 
@@ -383,11 +405,13 @@ export class CalendarService {
 
         const days: CalendarDay[] = [];
 
-        for (let d = new Date(startDate); d <= endDate; d.setUTCDate(d.getUTCDate() + 1)) {
-            const dateString = this.formatDateKey(d);
-            const dayOfWeek = d.getUTCDay();
+        // ENTERPRISE FIX: Use a dedicated UTC cursor to avoid DST skips/doubles
+        let cursor = new Date(startDate);
+        while (cursor <= endDate) {
+            const dateString = this.formatDateKey(cursor);
+            const dayOfWeek = cursor.getUTCDay();
 
-            const activeYear = academicYears.find(y => d >= y.startDate && d <= y.endDate);
+            const activeYear = normalizedYears.find(y => cursor >= y.utcStart && cursor <= y.utcEnd);
 
             if (!activeYear) {
                 days.push({
@@ -398,47 +422,45 @@ export class CalendarService {
                     title: undefined,
                     academicYearId: 0
                 });
-                continue;
-            }
-
-            const yearPatterns = allPatterns.filter(p => p.academicYearId === activeYear.id);
-            
-            // Build pattern map: Start with school-wide, then override with class-specific
-            const patternMap = new Map<number, boolean>();
-            
-            // 1. Apply School-wide patterns
-            yearPatterns.filter(p => p.classId === null).forEach(p => {
-                patternMap.set(this.mapDayOfWeekToJs(p.dayOfWeek), p.isWorking);
-            });
-            
-            // 2. Override with Class-specific patterns if applicable
-            if (classId) {
-                yearPatterns.filter(p => p.classId === classId).forEach(p => {
+            } else {
+                const yearPatterns = allPatterns.filter(p => p.academicYearId === activeYear.id);
+                const patternMap = new Map<number, boolean>();
+                
+                yearPatterns.filter(p => p.classId === null).forEach(p => {
                     patternMap.set(this.mapDayOfWeekToJs(p.dayOfWeek), p.isWorking);
+                });
+                
+                if (classId) {
+                    yearPatterns.filter(p => p.classId === classId).forEach(p => {
+                        patternMap.set(this.mapDayOfWeekToJs(p.dayOfWeek), p.isWorking);
+                    });
+                }
+
+                let type: DayType = DayType.WORKING;
+                let isWorking = patternMap.has(dayOfWeek) ? patternMap.get(dayOfWeek)! : false;
+
+                if (!isWorking) type = DayType.HOLIDAY;
+
+                const yearExceptions = allExceptions.filter(e => e.academicYearId === activeYear.id && this.formatDateKey(e.date) === dateString);
+                const exception = yearExceptions.sort((a, b) => (b.classId ? 1 : 0) - (a.classId ? 1 : 0))[0];
+
+                if (exception) {
+                    type = exception.type;
+                    isWorking = (type === DayType.WORKING || type === DayType.SPECIAL_WORKING);
+                }
+
+                days.push({
+                    date: dateString,
+                    dayOfWeek,
+                    type,
+                    isWorking,
+                    title: exception?.title || (type === DayType.HOLIDAY ? 'Holiday' : undefined),
+                    academicYearId: activeYear.id
                 });
             }
 
-            let type: DayType = DayType.WORKING;
-            let isWorking = patternMap.has(dayOfWeek) ? patternMap.get(dayOfWeek)! : false;
-
-            if (!isWorking) type = DayType.HOLIDAY;
-
-            const yearExceptions = allExceptions.filter(e => e.academicYearId === activeYear.id && this.formatDateKey(e.date) === dateString);
-            const exception = yearExceptions.sort((a, b) => (b.classId ? 1 : 0) - (a.classId ? 1 : 0))[0];
-
-            if (exception) {
-                type = exception.type;
-                isWorking = (type === DayType.WORKING || type === DayType.SPECIAL_WORKING);
-            }
-
-            days.push({
-                date: dateString,
-                dayOfWeek,
-                type,
-                isWorking,
-                title: exception?.title || (type === DayType.HOLIDAY ? 'Holiday' : undefined),
-                academicYearId: activeYear.id
-            });
+            // Advance cursor by exactly one UTC day
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
         }
 
         const fallbackYear = academicYears.find(y => y.status === 'ACTIVE') || academicYears[0];
@@ -487,19 +509,21 @@ export class CalendarService {
     }
 
     async validateDate(schoolId: number, date: Date, classId?: number) {
+        // Ensure date is UTC midnight for comparison
+        const targetDate = this.toSafeDate(date.toISOString());
+        
         const activeYear = await this.prisma.academicYear.findFirst({
             where: {
                 schoolId,
-                startDate: { lte: date },
-                endDate: { gte: date }
+                startDate: { lte: targetDate },
+                endDate: { gte: targetDate }
             }
         });
 
         if (!activeYear) return { isValid: false, reason: 'Outside Academic Year' };
 
-        const dayName = this.mapJsToPrisma(date.getUTCDay());
+        const dayName = this.mapJsToPrisma(targetDate.getUTCDay());
         
-        // Fetch patterns (school and class)
         const patterns = await this.prisma.workingPattern.findMany({
             where: {
                 schoolId,
@@ -512,7 +536,6 @@ export class CalendarService {
             }
         });
 
-        // Resolve pattern: class override school
         const classPattern = patterns.find(p => p.classId !== null);
         const schoolPattern = patterns.find(p => p.classId === null);
         const isWorkingByPattern = (classPattern || schoolPattern)?.isWorking ?? false;
@@ -520,13 +543,13 @@ export class CalendarService {
         const exception = await this.prisma.calendarException.findFirst({
             where: {
                 schoolId,
-                date,
+                date: targetDate, // Already UTC normalized
                 OR: [
                     { classId: null },
                     ...(classId ? [{ classId }] : [])
                 ]
             },
-            orderBy: { classId: 'desc' } // Class-level override (id not null) first
+            orderBy: { classId: 'desc' }
         });
 
         let type: DayType = DayType.WORKING;
@@ -545,15 +568,19 @@ export class CalendarService {
     // --- Enterprise Grade Date Helpers ---
 
     private toSafeDate(dateStr: string): Date {
-        if (!dateStr) return new Date();
+        if (!dateStr) {
+            const now = new Date();
+            return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        }
         const clean = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
-        return new Date(`${clean}T00:00:00`);
+        const [y, m, d] = clean.split('-').map(Number);
+        return new Date(Date.UTC(y, m - 1, d));
     }
 
     private formatDateKey(d: Date): string {
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
+        const year = d.getUTCFullYear();
+        const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(d.getUTCDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     }
 

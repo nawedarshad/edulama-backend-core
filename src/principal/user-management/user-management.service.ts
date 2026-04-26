@@ -14,21 +14,21 @@ export class UserManagementService {
         const { search, role, page = 1, limit = 20 } = query;
         const skip = (page - 1) * limit;
 
+        const roleFilter = role ? {
+            OR: [
+                { primaryRole: { name: role.toUpperCase() } },
+                { roles: { some: { role: { name: role.toUpperCase() } } } }
+            ]
+        } : {};
+
         const where: any = {
-            userSchools: { some: { schoolId } }
+            userSchools: { some: { schoolId, ...roleFilter } }
         };
 
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
                 { authIdentities: { some: { value: { contains: search, mode: 'insensitive' } } } }
-            ];
-        }
-
-        if (role) {
-            where.userSchools.some.OR = [
-                { primaryRole: { name: role.toUpperCase() } },
-                { roles: { some: { role: { name: role.toUpperCase() } } } }
             ];
         }
 
@@ -104,9 +104,10 @@ export class UserManagementService {
         const hashedPassword = await argon2.hash(dto.newPassword);
 
         // Update all identities with secret
+        // BUG FIX: Scope identity update to this school only to prevent cross-school password resets
         await this.prisma.$transaction([
             this.prisma.authIdentity.updateMany({
-                where: { userId },
+                where: { userId, schoolId },
                 data: { secret: hashedPassword }
             }),
             this.prisma.user.update({
@@ -185,9 +186,16 @@ export class UserManagementService {
         }
 
         return await this.prisma.$transaction(async (tx) => {
-            // Delete all existing identities (enforcing "only one")
-            await tx.authIdentity.deleteMany({ where: { userId } });
-            
+            // BUG FIX: Use upsert-style replace — delete-all then create is non-atomic
+            // and could lock the user out if the create step fails.
+            // Instead: only remove the existing identity of the SAME type and replace it.
+            const existingOfSameType = await tx.authIdentity.findFirst({
+                where: { userId, type: dto.type }
+            });
+            if (existingOfSameType) {
+                await tx.authIdentity.delete({ where: { id: existingOfSameType.id } });
+            }
+
             return tx.authIdentity.create({
                 data: {
                     ...data,

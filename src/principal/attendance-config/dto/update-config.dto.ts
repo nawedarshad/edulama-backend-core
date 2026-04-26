@@ -1,14 +1,20 @@
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { AttendanceMode, AttendanceTrackingStrategy, DailyAttendanceAccess, LateMarkingResponsibility, LateAttendanceStatus } from '../attendance-enums';
 
 export class UpdateAttendanceConfigDto {
     @IsNumber()
     @IsNotEmpty()
+    @Type(() => Number)
     academicYearId: number;
 
     @IsEnum(AttendanceMode)
     @IsNotEmpty()
     mode: AttendanceMode;
+
+    @IsEnum(DailyAttendanceAccess)
+    @IsNotEmpty()
+    responsibility: DailyAttendanceAccess;
 
     @IsEnum(AttendanceTrackingStrategy)
     @IsNotEmpty()
@@ -22,7 +28,15 @@ export class UpdateAttendanceConfigDto {
     @IsOptional()
     lateCountingPolicy?: LateAttendanceStatus;
 
-    @IsEnum(DailyAttendanceAccess)
-    @IsNotEmpty()
-    responsibility: DailyAttendanceAccess;
+    @IsInt()
+    @IsOptional()
+    @Min(0)
+    @Type(() => Number)
+    lateMarkThreshold?: number;
+
+    @IsInt()
+    @IsOptional()
+    @Min(1)
+    @Type(() => Number)
+    absentAfter?: number;
 }

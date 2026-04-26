@@ -41,6 +41,12 @@ export class TeacherLeaveController {
         return this.leaveService.getStats(req.user);
     }
 
+    @Get('balances')
+    @ApiOperation({ summary: 'Get personal leave balances' })
+    getMyBalances(@Request() req) {
+        return this.leaveService.getMyBalances(req.user);
+    }
+
     @Get('types')
     @ApiOperation({ summary: 'Get available leave types' })
     getLeaveTypes(@Request() req) {

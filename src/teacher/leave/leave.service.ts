@@ -21,7 +21,10 @@ export class TeacherLeaveService {
         this.logger.log(`Teacher ${user.id} applying for leave in School ${schoolId} from ${startDate} to ${endDate}`);
 
         try {
-            if (new Date(startDate) > new Date(endDate)) {
+            const startD = new Date(startDate);
+            const endD = new Date(endDate);
+
+            if (startD > endD) {
                 throw new BadRequestException('Start date cannot be after end date');
             }
 
@@ -32,61 +35,112 @@ export class TeacherLeaveService {
                     applicantId: user.id,
                     status: { in: [LeaveStatus.PENDING, LeaveStatus.APPROVED] },
                     AND: [
-                        { startDate: { lte: new Date(endDate) } },
-                        { endDate: { gte: new Date(startDate) } }
+                        { startDate: { lte: endD } },
+                        { endDate: { gte: startD } }
                     ]
                 }
             });
 
             if (overlap > 0) {
-                this.logger.warn(`Overlap detected for user ${user.id}`);
-                throw new BadRequestException('You already have a leave request for this period.');
+                throw new BadRequestException('You already have an active leave request for this period.');
             }
 
-            // 2. Calculate Days (Async with Calendar)
+            // 2. Calculate Effective Days (Excluding Holidays/Weekends)
             const daysCount = await this.computeEffectiveDays(schoolId, startDate, endDate);
+            if (daysCount === 0) {
+                throw new BadRequestException('Selected dates consist entirely of holidays or non-working days.');
+            }
 
-            // 3. Validate Leave Type
-            const leaveType = await this.prisma.leaveType.findFirst({
-                where: { id: leaveTypeId, schoolId, isActive: true },
+            // 3. Resolve Teacher Profile (for Exam Duty Check)
+            const teacherProfile = await this.prisma.teacherProfile.findUnique({
+                where: { userId: user.id }
             });
-            if (!leaveType) throw new NotFoundException('Invalid or inactive leave type');
 
-            // 4. Create Request
-            const leaveRequest = await this.prisma.leaveRequest.create({
-                data: {
-                    schoolId,
-                    academicYearId,
-                    applicantId: user.id,
-                    leaveTypeId,
-                    startDate: new Date(startDate),
-                    endDate: new Date(endDate),
-                    daysCount,
-                    reason: dto.reason,
-                    status: LeaveStatus.PENDING,
-                    attachments: {
-                        create: attachments?.map(att => ({
-                            fileUrl: att.fileUrl,
-                            name: att.name,
-                            type: att.type
-                        }))
+            // 4. Check for Exam Invigilation Conflicts (Enterprise Guard)
+            if (teacherProfile) {
+                const examDuties = await this.prisma.invigilatorAssignment.findMany({
+                    where: {
+                        teacherId: teacherProfile.id,
+                        academicYearId,
+                        schedule: {
+                            examDate: { gte: startD, lte: endD }
+                        }
+                    },
+                    include: { schedule: { include: { exam: true, subject: true } } }
+                });
+
+                if (examDuties.length > 0) {
+                    const dutyDates = examDuties.map(d => d.schedule.examDate?.toDateString()).join(', ');
+                    // We allow applying but maybe warn? Or block?
+                    // User requested "Enterprise ready", so let's BLOCK or explicitly flag.
+                    // Let's block for now to ensure institutional integrity.
+                    throw new BadRequestException(`Conflict detected: You are assigned for exam invigilation on ${dutyDates}. Please swap duty before applying.`);
+                }
+            }
+
+            // 5. Entitlement Validation (Leave Balance)
+            const balance = await this.prisma.leaveBalance.findUnique({
+                where: {
+                    userId_academicYearId_leaveTypeId: {
+                        userId: user.id,
+                        academicYearId,
+                        leaveTypeId
                     }
-                },
-                include: {
-                    leaveType: true,
-                    attachments: true,
-                },
+                }
             });
 
-            this.logger.log(`Leave request ${leaveRequest.id} created successfully.`);
+            if (!balance) {
+                throw new BadRequestException('Leave balance not initialized for this category. Contact administration.');
+            }
+
+            const remaining = balance.allowance - balance.used - balance.pending;
+            if (daysCount > remaining) {
+                throw new BadRequestException(`Insufficient leave balance. Requested: ${daysCount}, Available: ${remaining}`);
+            }
+
+            // 6. Transactional Creation & Balance Lock
+            const leaveRequest = await this.prisma.$transaction(async (tx) => {
+                // Update Balance (Add to Pending)
+                await tx.leaveBalance.update({
+                    where: { id: balance.id },
+                    data: { pending: { increment: daysCount } }
+                });
+
+                // Create Request
+                return tx.leaveRequest.create({
+                    data: {
+                        schoolId,
+                        academicYearId,
+                        applicantId: user.id,
+                        leaveTypeId,
+                        startDate: startD,
+                        endDate: endD,
+                        daysCount,
+                        reason: dto.reason,
+                        status: LeaveStatus.PENDING,
+                        attachments: {
+                            create: attachments?.map(att => ({
+                                fileUrl: att.fileUrl,
+                                name: att.name,
+                                type: att.type
+                            }))
+                        }
+                    },
+                    include: {
+                        leaveType: true,
+                        attachments: true,
+                    },
+                });
+            });
+
             return {
                 ...leaveRequest,
                 _meta: {
-                    message: `Leave request created for ${daysCount} effective working days.`
+                    message: `Leave request for ${daysCount} days submitted for approval.`
                 }
             };
         } catch (error) {
-            this.handleError(error, 'Failed to apply for leave');
+            this.handleError(error, 'Leave Application Service Failure');
         }
     }
 
@@ -157,29 +211,47 @@ export class TeacherLeaveService {
             throw new BadRequestException('Only pending requests can be edited');
         }
 
-        // Re-calc days if dates changed
+        const { schoolId, academicYearId } = user;
         let daysCount = request.daysCount;
+        const startD = dto.startDate ? new Date(dto.startDate) : request.startDate;
+        const endD = dto.endDate ? new Date(dto.endDate) : request.endDate;
+
+        if (startD > endD) throw new BadRequestException('Start date cannot be after end date');
+        
         if (dto.startDate || dto.endDate) {
-            const start = dto.startDate ? new Date(dto.startDate) : request.startDate;
-            const end = dto.endDate ? new Date(dto.endDate) : request.endDate;
-            if (start > end) throw new BadRequestException('Start date cannot be after end date');
-            daysCount = await this.computeEffectiveDays(user.schoolId, start, end);
+            daysCount = await this.computeEffectiveDays(schoolId, startD, endD);
+            if (daysCount === 0) throw new BadRequestException('New date range consists only of holidays.');
         }
 
-        // Handle attachments update (simple replace logic for now or just add? 
-        // Usually easier to handle attachments separately in full production, but here we can just delete old and add new if provided)
-        // For this MVP, if attachments are provided, we replace.
+        const diff = daysCount - request.daysCount;
+
+        // If days increased, check balance
+        if (diff > 0) {
+            const balance = await this.prisma.leaveBalance.findUnique({
+                where: { userId_academicYearId_leaveTypeId: { userId: user.id, academicYearId, leaveTypeId: request.leaveTypeId } }
+            });
+            const remaining = (balance?.allowance || 0) - (balance?.used || 0) - (balance?.pending || 0);
+            if (diff > remaining) throw new BadRequestException(`Insufficient balance for the additional ${diff} days.`);
+        }
 
         const updateData: any = {
             ...dto,
-            startDate: dto.startDate ? new Date(dto.startDate) : undefined,
-            endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+            startDate: dto.startDate ? startD : undefined,
+            endDate: dto.endDate ? endD : undefined,
             daysCount,
         };
 
-        delete updateData.attachments; // handled separately
+        delete updateData.attachments;
 
         return this.prisma.$transaction(async (tx) => {
+            // Adjust Balance
+            if (diff !== 0) {
+                await tx.leaveBalance.update({
+                    where: { userId_academicYearId_leaveTypeId: { userId: user.id, academicYearId, leaveTypeId: request.leaveTypeId } },
+                    data: { pending: { increment: diff } }
+                });
+            }
+
             if (dto.attachments) {
                 await tx.leaveAttachment.deleteMany({ where: { leaveRequestId: id } });
                 await tx.leaveAttachment.createMany({
@@ -204,21 +276,45 @@ export class TeacherLeaveService {
         const request = await this.findOne(user, id);
 
         if (request.status !== LeaveStatus.PENDING) {
-            // Optional: Allow cancelling approved leaves if they haven't happened yet?
-            // For now, strict: Only Pending.
             throw new BadRequestException('Cannot cancel processed requests. Contact admin.');
         }
 
-        // We can either DELETE or set status to CANCELLED. CANCELLED is better for history.
-        return this.prisma.leaveRequest.update({
-            where: { id },
-            data: { status: LeaveStatus.CANCELLED },
+        return this.prisma.$transaction(async (tx) => {
+            // Restore Balance
+            await tx.leaveBalance.update({
+                where: {
+                    userId_academicYearId_leaveTypeId: {
+                        userId: user.id,
+                        academicYearId: user.academicYearId,
+                        leaveTypeId: request.leaveTypeId
+                    }
+                },
+                data: { pending: { decrement: request.daysCount } }
+            });
+
+            return tx.leaveRequest.update({
+                where: { id },
+                data: { status: LeaveStatus.CANCELLED },
+            });
         });
     }
 
     async getLeaveTypes(schoolId: number) {
         return this.prisma.leaveType.findMany({
             where: { schoolId, isActive: true, category: 'TEACHER' }
+        });
+    }
+
+    async getMyBalances(user: any) {
+        return this.prisma.leaveBalance.findMany({
+            where: {
+                userId: user.id,
+                academicYearId: user.academicYearId,
+                schoolId: user.schoolId
+            },
+            include: {
+                leaveType: { select: { name: true, code: true, color: true } }
+            }
         });
     }
 

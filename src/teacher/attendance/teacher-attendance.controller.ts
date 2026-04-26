@@ -1,13 +1,25 @@
-import { Body, Controller, Post, Get, Patch, Delete, Query, Param, UseGuards, Request, ParseIntPipe } from '@nestjs/common';
+import { Body, Controller, Post, Get, Patch, Delete, Query, Param, UseGuards, ParseIntPipe } from '@nestjs/common';
 import { TeacherAttendanceService } from './teacher-attendance.service';
 import { TakeAttendanceDto } from './dto/take-attendance.dto';
 import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 import { MarkStudentLateDto } from './dto/mark-student-late.dto';
 import { ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-
-// Assuming a standard authenticated guard that puts user in request
-// the imports might need adjustment based on project structure for guards
+import { IsNumber, IsNotEmpty } from 'class-validator';
+import { Type } from 'class-transformer';
 import { TeacherAuthGuard } from 'src/common/guards/teacher.guard';
+import { GetUser, type AuthUserPayload } from 'src/common/decorators/get-user.decorator';
+
+class UnmarkLateDto {
+    @IsNumber()
+    @IsNotEmpty()
+    @Type(() => Number)
+    academicYearId: number;
+
+    @IsNumber()
+    @IsNotEmpty()
+    @Type(() => Number)
+    studentProfileId: number;
+}
 
 @ApiTags('Teacher Attendance')
 @ApiBearerAuth()
@@ -17,28 +29,41 @@ export class TeacherAttendanceController {
     constructor(private readonly service: TeacherAttendanceService) { }
 
     @Post()
-    @ApiOperation({ summary: 'Take Attendance', description: 'Create a new attendance session. Supports UserID or StudentProfileID.' })
-    async takeAttendance(@Request() req, @Body() dto: TakeAttendanceDto) {
-        const userId = req.user.id;
-        return this.service.takeAttendance(userId, dto);
+    @ApiOperation({ summary: 'Take Attendance' })
+    takeAttendance(@GetUser() user: AuthUserPayload, @Body() dto: TakeAttendanceDto) {
+        return this.service.takeAttendance(user.id, dto);
     }
 
     @Get('self')
-    @ApiOperation({ summary: 'Get Self Attendance', description: 'Get the teacher\'s own attendance for a specific month.' })
-    async getSelfAttendance(
-        @Request() req,
+    @ApiOperation({ summary: 'Get own monthly attendance' })
+    getSelfAttendance(
+        @GetUser() user: AuthUserPayload,
         @Query('month', ParseIntPipe) month: number,
         @Query('year', ParseIntPipe) year: number,
     ) {
-        const userId = req.user.id;
-        const schoolId = req.user.schoolId;
-        return this.service.getSelfAttendance(userId, schoolId, month, year);
+        return this.service.getSelfAttendance(user.id, user.schoolId, month, year);
+    }
+
+    @Get('config')
+    @ApiOperation({ summary: 'Get attendance configuration for the academic year' })
+    getConfig(@GetUser() user: AuthUserPayload, @Query('academicYearId', ParseIntPipe) academicYearId: number) {
+        return this.service.getConfig(user.schoolId, academicYearId);
+    }
+
+    @Get('daily-assignments')
+    @ApiOperation({ summary: 'Classes/sections the teacher is authorized to mark daily attendance for' })
+    getDailyAssignments(
+        @GetUser() user: AuthUserPayload,
+        @Query('academicYearId', ParseIntPipe) academicYearId: number,
+        @Query('date') date: string,
+    ) {
+        return this.service.getDailyAssignments(user.id, user.schoolId, academicYearId, date);
     }
 
     @Get('session')
-    @ApiOperation({ summary: 'Get Session Details', description: 'Get existing attendance session and records if available.' })
+    @ApiOperation({ summary: 'Get existing session and records for a class/date' })
     getSession(
-        @Request() req,
+        @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('classId', ParseIntPipe) classId: number,
         @Query('sectionId', ParseIntPipe) sectionId: number,
@@ -46,158 +71,90 @@ export class TeacherAttendanceController {
         @Query('subjectId') subjectId?: string,
         @Query('timePeriodId') timePeriodId?: string,
     ) {
-        const schoolId = req.user.schoolId;
         return this.service.getSession(
-            schoolId,
-            academicYearId,
-            classId,
-            sectionId,
-            new Date(date),
+            user.schoolId, academicYearId, classId, sectionId, new Date(date),
             subjectId ? parseInt(subjectId) : undefined,
             timePeriodId ? parseInt(timePeriodId) : undefined,
         );
     }
 
     @Get('monthly')
-    @ApiOperation({ summary: 'Get Monthly Attendance', description: 'Get raw session data for a month.' })
+    @ApiOperation({ summary: 'Get raw session data for a month' })
     getMonthlyAttendance(
-        @Request() req,
+        @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('classId', ParseIntPipe) classId: number,
         @Query('sectionId', ParseIntPipe) sectionId: number,
         @Query('year', ParseIntPipe) year: number,
-        @Query('month', ParseIntPipe) month: number, // 1-12
+        @Query('month', ParseIntPipe) month: number,
         @Query('subjectId') subjectId?: string,
     ) {
-        const schoolId = req.user.schoolId;
         return this.service.getMonthlyAttendance(
-            schoolId,
-            academicYearId,
-            classId,
-            sectionId,
-            year,
-            month,
-            subjectId ? parseInt(subjectId) : undefined
+            user.schoolId, academicYearId, classId, sectionId, year, month,
+            subjectId ? parseInt(subjectId) : undefined,
         );
-    }
-
-    @Patch('update')
-    @ApiOperation({ summary: 'Update Attendance', description: 'Update status/remarks for students in an existing session.' })
-    async updateAttendance(@Request() req, @Body() dto: UpdateAttendanceDto) {
-        const userId = req.user.id;
-        return this.service.updateAttendance(userId, dto);
     }
 
     @Get('leaves')
-    @ApiOperation({ summary: 'Get Leaves for Attendance', description: 'Get list of students on approved leave for the date.' })
+    @ApiOperation({ summary: 'Students on approved leave for the date' })
     getLeaves(
-        @Request() req,
+        @GetUser() user: AuthUserPayload,
         @Query('classId', ParseIntPipe) classId: number,
         @Query('sectionId', ParseIntPipe) sectionId: number,
         @Query('date') date: string,
     ) {
-        return this.service.getLeavesForAttendance(
-            req.user.schoolId,
-            classId,
-            sectionId,
-            new Date(date)
-        );
+        return this.service.getLeavesForAttendance(user.schoolId, classId, sectionId, new Date(date));
     }
 
     @Get('late-students')
-    @ApiOperation({ summary: 'Get Late Students for Attendance', description: 'Get list of students marked as late for the date.' })
+    @ApiOperation({ summary: 'Students marked late for the date' })
     getLateStudents(
-        @Request() req,
+        @GetUser() user: AuthUserPayload,
         @Query('academicYearId', ParseIntPipe) academicYearId: number,
         @Query('classId', ParseIntPipe) classId: number,
         @Query('sectionId', ParseIntPipe) sectionId: number,
         @Query('date') date: string,
     ) {
-        return this.service.getLateStudentsForAttendance(
-            req.user.schoolId,
-            academicYearId,
-            classId,
-            sectionId,
-            new Date(date)
-        );
-    }
-
-    @Post('mark-late')
-    @ApiOperation({ summary: 'Mark Student Late (Teacher)', description: 'Mark a student as arriving late. Only authorized Late Attendance Monitors can use this endpoint.' })
-    async markStudentLate(@Request() req, @Body() dto: MarkStudentLateDto) {
-        const userId = req.user.id;
-        return this.service.markStudentLate(userId, dto);
-    }
-
-    @Delete(':id')
-    @ApiOperation({ summary: 'Delete Session', description: 'Delete an entire attendance session by ID.' })
-    async deleteSession(@Request() req, @Param('id', ParseIntPipe) sessionId: number) {
-        const userId = req.user.id;
-        return this.service.deleteSession(userId, sessionId);
-    }
-
-    @Patch('unmark-late')
-    @ApiOperation({ summary: 'Unmark Student Late', description: 'Revert a late marking. Restricted to Late Attendance Monitors.' })
-    async unmarkLate(
-        @Request() req,
-        @Body() body: {
-            schoolId: number,
-            academicYearId: number,
-            studentProfileId: number
-        } // Ideally use a DTO
-    ) {
-        const userId = req.user.id;
-        // In a real app we might get schoolId from req.user too (as seen in other methods `req.user.schoolId`)
-        // The service method expects schoolId. Let's rely on req.user.schoolId for security if available.
-        const schoolId = req.user.schoolId || body.schoolId;
-
-        return this.service.unmarkStudentLate(
-            userId,
-            schoolId,
-            body.academicYearId,
-            body.studentProfileId
-        );
-    }
-
-    @Get('config')
-    @ApiOperation({ summary: 'Get Attendance Configuration', description: 'Get the school\'s attendance mode and responsibility for the current academic year.' })
-    async getConfig(@Request() req, @Query('academicYearId', ParseIntPipe) academicYearId: number) {
-        const schoolId = req.user.schoolId;
-        return this.service.getConfig(schoolId, academicYearId);
-    }
-
-    @Get('daily-assignments')
-    @ApiOperation({ summary: 'Get Daily Attendance Assignments', description: 'Returns classes/sections the teacher is authorized to take daily attendance for, based on tenant config.' })
-    async getDailyAssignments(
-        @Request() req,
-        @Query('academicYearId', ParseIntPipe) academicYearId: number,
-        @Query('date') date: string,
-    ) {
-        const userId = req.user.id;
-        const schoolId = req.user.schoolId;
-        return this.service.getDailyAssignments(userId, schoolId, academicYearId, date);
+        return this.service.getLateStudentsForAttendance(user.schoolId, academicYearId, classId, sectionId, new Date(date));
     }
 
     @Get('students')
-    @ApiOperation({ summary: 'Get Students for Attendance', description: 'Get accessible students for the teacher.' })
-    async getStudents(
-        @Request() req,
+    @ApiOperation({ summary: 'Active students for a class/section' })
+    getStudents(
+        @GetUser() user: AuthUserPayload,
         @Query('classId', ParseIntPipe) classId?: number,
         @Query('sectionId', ParseIntPipe) sectionId?: number,
     ) {
-        const userId = req.user.id;
-        const schoolId = req.user.schoolId;
-        return this.service.getStudentsForAttendance(userId, schoolId, classId, sectionId);
+        return this.service.getStudentsForAttendance(user.id, user.schoolId, classId, sectionId);
     }
 
     @Get('monitor/search')
-    @ApiOperation({ summary: 'Search Students (Monitor)', description: 'Search students by name/reg no. Restricted to Late Attendance Monitors.' })
-    async searchMonitor(
-        @Request() req,
-        @Query('query') query: string,
-    ) {
-        const userId = req.user.id;
-        const schoolId = req.user.schoolId;
-        return this.service.searchStudentsForMonitor(userId, schoolId, query);
+    @ApiOperation({ summary: 'Search students (Late Attendance Monitors only)' })
+    searchMonitor(@GetUser() user: AuthUserPayload, @Query('query') query: string) {
+        return this.service.searchStudentsForMonitor(user.id, user.schoolId, query);
+    }
+
+    @Patch('update')
+    @ApiOperation({ summary: 'Update status/remarks for students in an existing session' })
+    updateAttendance(@GetUser() user: AuthUserPayload, @Body() dto: UpdateAttendanceDto) {
+        return this.service.updateAttendance(user.id, dto);
+    }
+
+    @Post('mark-late')
+    @ApiOperation({ summary: 'Mark a student as late (Late Attendance Monitors only)' })
+    markStudentLate(@GetUser() user: AuthUserPayload, @Body() dto: MarkStudentLateDto) {
+        return this.service.markStudentLate(user.id, dto);
+    }
+
+    @Patch('unmark-late')
+    @ApiOperation({ summary: 'Revert a late marking (Late Attendance Monitors only)' })
+    unmarkLate(@GetUser() user: AuthUserPayload, @Body() body: UnmarkLateDto) {
+        return this.service.unmarkStudentLate(user.id, user.schoolId, body.academicYearId, body.studentProfileId);
+    }
+
+    @Delete(':id')
+    @ApiOperation({ summary: 'Delete an attendance session by ID' })
+    deleteSession(@GetUser() user: AuthUserPayload, @Param('id', ParseIntPipe) sessionId: number) {
+        return this.service.deleteSession(user.id, sessionId);
     }
 }

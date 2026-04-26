@@ -99,10 +99,33 @@ export class GrievanceController {
         return this.grievanceService.findAll(req.user.schoolId, yearId, filters);
     }
 
+    @Get('summary')
+    @UseGuards(PrincipalAuthGuard, ModuleGuard)
+    @ApiOperation({ summary: 'Get grievance analytics summary' })
+    async getSummary(@Request() req, @Headers('x-academic-year-id') yearIdHeader?: string) {
+        const yearId = await this.getActiveAcademicYear(req.user.schoolId, yearIdHeader);
+        return this.grievanceService.getSummary(req.user.schoolId, yearId);
+    }
+
+    @Get(':id')
+    @UseGuards(UserAuthGuard, ModuleGuard)
+    async findOne(@Request() req, @Param('id', ParseIntPipe) id: number) {
+        return this.grievanceService.findOne(req.user.schoolId, id);
+    }
+
+    @Post(':id/comments')
+    @UseGuards(UserAuthGuard, ModuleGuard)
+    async addComment(
+        @Request() req,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: { message: string }
+    ) {
+        return this.grievanceService.addComment(req.user.schoolId, id, req.user.id, body.message);
+    }
+
     @Patch(':id')
-    @UseGuards(PrincipalAuthGuard, ModuleGuard) // Only Principal/Admin can resolve? Or maybe creator can cancel?
-    // For now, mostly Principal resolving.
-    @ApiOperation({ summary: 'Update grievance status' })
+    @UseGuards(PrincipalAuthGuard, ModuleGuard) 
+    @ApiOperation({ summary: 'Update grievance (resolve/assign)' })
     update(
         @Request() req,
         @Param('id', ParseIntPipe) id: number,

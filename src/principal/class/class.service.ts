@@ -30,7 +30,7 @@ export class ClassService {
         //     where.academicYearId = academicYearId;
         // }
 
-        const [classes, total] = await Promise.all([
+        const [classes, totalClasses, totalSections, totalStudents, capacityAgg] = await Promise.all([
             this.prisma.class.findMany({
                 where,
                 include: {
@@ -116,9 +116,16 @@ export class ClassService {
                 take: limit,
             }),
             this.prisma.class.count({ where: { schoolId } }),
+            this.prisma.section.count({ where: { schoolId } }),
+            this.prisma.studentProfile.count({ where: { schoolId, isActive: true } }),
+            this.prisma.section.aggregate({
+                _sum: { capacity: true },
+                where: { schoolId }
+            })
         ]);
 
-        this.logger.log(`Found ${total} classes for school ${schoolId}`);
+        const totalCapacity = capacityAgg._sum.capacity || 0;
+        this.logger.log(`Analytics for school ${schoolId}: ${totalClasses} Classes, ${totalSections} Sections, ${totalStudents} Students, ${totalCapacity} Capacity`);
 
         // Transform the data to match the frontend interface
         const data = classes.map((cls) => ({
@@ -187,9 +194,12 @@ export class ClassService {
         return {
             data,
             meta: {
-                total,
+                total: totalClasses,
+                totalSections,
+                totalStudents,
+                totalCapacity,
                 page,
-                lastPage: Math.ceil(total / limit),
+                lastPage: Math.ceil(totalClasses / limit),
             }
         };
     }

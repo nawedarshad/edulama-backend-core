@@ -1,4 +1,5 @@
 import {
+    BadRequestException,
     Body,
     Controller,
     Delete,
@@ -51,7 +52,7 @@ export class StudentController {
             where: { schoolId, status: 'ACTIVE' }
         });
         if (!year) {
-            throw new Error('No active academic year found for this school.');
+            throw new BadRequestException('No active academic year found for this school.');
         }
         return year.id;
     }

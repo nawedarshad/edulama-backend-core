@@ -110,8 +110,8 @@ model SchoolSettings {
   attendanceMode        AttendanceMode             @default(DAILY)
   trackingStrategy      AttendanceTrackingStrategy @default(ATTENDANCE_SIMPLE)
   dailyAttendanceAccess DailyAttendanceAccess      @default(CLASS_TEACHER)
-  gradingSystem         GradingSystem         @default(PERCENTAGE)
-  promotionPolicy       PromotionPolicy       @default(MANUAL)
+  gradingSystem         GradingSystem              @default(PERCENTAGE)
+  promotionPolicy       PromotionPolicy            @default(MANUAL)
 
   // School Day Timings
   schoolStartTime DateTime
@@ -126,15 +126,15 @@ model SchoolSettings {
   // Attendance
   lateMarkThreshold         Int?
   lateMarkingResponsibility LateMarkingResponsibility @default(TAKER)
-  lateCountingPolicy       LateAttendanceStatus       @default(LATE)
-  isTrackingStrategyLocked  Boolean                    @default(false)
+  lateCountingPolicy        LateAttendanceStatus      @default(LATE)
+  isTrackingStrategyLocked  Boolean                   @default(false)
   absentAfter               Int?
-  allowExcuseSubmission     Boolean                    @default(true)
+  allowExcuseSubmission     Boolean                   @default(true)
 
   // Academic constraints
-  maxSubjectsPerStudent     Int @default(8)
-  maxRepeatPeriodsPerDay    Int @default(2)
-  maxConsecutiveSameSubject Int @default(2)
+  maxSubjectsPerStudent     Int     @default(8)
+  maxRepeatPeriodsPerDay    Int     @default(2)
+  maxConsecutiveSameSubject Int     @default(2)
   isWebsitePublic           Boolean @default(false)
 
   createdAt DateTime @default(now())

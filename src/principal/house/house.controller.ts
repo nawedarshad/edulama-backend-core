@@ -21,11 +21,14 @@ import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { RequiredModule } from '../../common/decorators/required-module.decorator';
 import { ModuleGuard } from '../../common/guards/module.guard';
 
+import { Audit } from '../../common/audit/audit.decorator';
+
 @ApiTags('House Management')
 @ApiBearerAuth()
 @Controller('principal/houses')
 @UseGuards(PrincipalAuthGuard, ModuleGuard)
 @RequiredModule('HOUSES')
+@Audit('House Management')
 export class HouseController {
     constructor(private readonly houseService: HouseService) { }
 
@@ -33,8 +36,19 @@ export class HouseController {
     @ApiOperation({ summary: 'Create a new house' })
     @ApiResponse({ status: 201, description: 'The house has been successfully created.' })
     @ApiResponse({ status: 409, description: 'House with this name already exists.' })
-    create(@GetUser('schoolId') schoolId: number, @Body() dto: CreateHouseDto) {
-        return this.houseService.create(schoolId, dto);
+    create(
+        @GetUser('schoolId') schoolId: number, 
+        @GetUser('id') userId: number,
+        @Body() dto: CreateHouseDto
+    ) {
+        return this.houseService.create(schoolId, dto, userId);
+    }
+    
+    @Get('stats')
+    @ApiOperation({ summary: 'Get global house system statistics' })
+    @ApiResponse({ status: 200, description: 'Returns participation and allocation metrics.' })
+    getStats(@GetUser('schoolId') schoolId: number) {
+        return this.houseService.getStats(schoolId);
     }
 
     @Get()
@@ -73,10 +87,11 @@ export class HouseController {
     @ApiResponse({ status: 409, description: 'House name conflict.' })
     update(
         @GetUser('schoolId') schoolId: number,
+        @GetUser('id') userId: number,
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: UpdateHouseDto,
     ) {
-        return this.houseService.update(schoolId, id, dto);
+        return this.houseService.update(schoolId, id, dto, userId);
     }
 
     @Delete(':id')
@@ -85,8 +100,9 @@ export class HouseController {
     @ApiResponse({ status: 404, description: 'House not found.' })
     remove(
         @GetUser('schoolId') schoolId: number,
+        @GetUser('id') userId: number,
         @Param('id', ParseIntPipe) id: number,
     ) {
-        return this.houseService.remove(schoolId, id);
+        return this.houseService.remove(schoolId, id, userId);
     }
 }

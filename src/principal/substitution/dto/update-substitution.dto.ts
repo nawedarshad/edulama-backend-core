@@ -1,4 +1,22 @@
-import { PartialType } from '@nestjs/swagger';
-import { CreateSubstitutionDto } from './create-substitution.dto';
+import { IsEnum, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
+import { TimetableOverrideType } from '@prisma/client';
 
-export class UpdateSubstitutionDto extends PartialType(CreateSubstitutionDto) { }
+// Deliberately NOT extending CreateSubstitutionDto — entryId and date are immutable after creation.
+export class UpdateSubstitutionDto {
+    @IsEnum(TimetableOverrideType)
+    @IsOptional()
+    type?: TimetableOverrideType;
+
+    @IsInt()
+    @IsOptional()
+    substituteTeacherId?: number;
+
+    @IsInt()
+    @IsOptional()
+    substituteRoomId?: number;
+
+    @IsString()
+    @IsOptional()
+    @MaxLength(500)
+    note?: string;
+}

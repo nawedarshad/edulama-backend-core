@@ -23,6 +23,29 @@ export class AllocationService {
     async assignTeacher(schoolId: number, dto: CreateAllocationDto, userId: number) {
         const academicYearId = await this.getActiveAcademicYear(schoolId);
 
+        // 0. Validate that all referenced entities belong to this school
+        const teacher = await this.prisma.teacherProfile.findFirst({
+            where: { id: dto.teacherId, schoolId }
+        });
+        if (!teacher) throw new NotFoundException('Teacher not found or does not belong to this school');
+
+        const subject = await this.prisma.subject.findFirst({
+            where: { id: dto.subjectId, schoolId }
+        });
+        if (!subject) throw new NotFoundException('Subject not found or does not belong to this school');
+
+        const classRecord = await this.prisma.class.findFirst({
+            where: { id: dto.classId, schoolId }
+        });
+        if (!classRecord) throw new NotFoundException('Class not found or does not belong to this school');
+
+        if (dto.sectionId) {
+            const section = await this.prisma.section.findFirst({
+                where: { id: dto.sectionId, classId: dto.classId, schoolId }
+            });
+            if (!section) throw new NotFoundException('Section not found or does not belong to the specified class');
+        }
+
         // 1. Check if assignment already exists
         const existing = await this.prisma.subjectAssignment.findFirst({
             where: {
@@ -39,29 +62,50 @@ export class AllocationService {
             throw new BadRequestException('A teacher is already assigned to this subject for the selected class/section.');
         }
 
-        // 2. Create Assignment
-        const assignment = await this.prisma.subjectAssignment.create({
-            data: {
-                schoolId,
-                academicYearId,
-                classId: dto.classId,
-                sectionId: dto.sectionId || null,
-                subjectId: dto.subjectId,
-                teacherId: dto.teacherId,
-                periodsPerWeek: dto.periodsPerWeek,
-            },
-            include: {
-                teacher: {
-                    select: {
-                        id: true,
-                        user: { select: { name: true, photo: true } },
-                        personalInfo: { select: { email: true } },
-                    },
+        // 2. Create Assignment within Transaction to ensure sync with ClassSubject Config
+        const assignment = await this.prisma.$transaction(async (tx) => {
+            const asm = await tx.subjectAssignment.create({
+                data: {
+                    schoolId,
+                    academicYearId,
+                    classId: dto.classId,
+                    sectionId: dto.sectionId || null,
+                    subjectId: dto.subjectId,
+                    teacherId: dto.teacherId,
+                    periodsPerWeek: dto.periodsPerWeek,
                 },
-                subject: true,
-                class: true,
-                section: true,
-            },
+                include: {
+                    teacher: {
+                        select: {
+                            id: true,
+                            user: { select: { name: true, photo: true } },
+                            personalInfo: { select: { email: true } },
+                        },
+                    },
+                    subject: true,
+                    class: true,
+                    section: true,
+                },
+            });
+
+            // SYNC: Update the configuration table to reflect this teacher
+            // This ensures both tables (Phase 1 Config and Phase 2 Assignment) are in lock-step
+            if (dto.classId && dto.sectionId) {
+                await tx.classSubject.updateMany({
+                    where: {
+                        schoolId,
+                        academicYearId,
+                        classId: dto.classId,
+                        sectionId: dto.sectionId,
+                        subjectId: dto.subjectId
+                    },
+                    data: {
+                        teacherProfileId: dto.teacherId
+                    }
+                });
+            }
+
+            return asm;
         });
 
         this.eventEmitter.emit('audit.log', new AuditLogEvent(
@@ -105,29 +149,56 @@ export class AllocationService {
     }
 
     async updateAssignment(schoolId: number, assignmentId: number, dto: UpdateAllocationDto, userId: number) {
-        const assignment = await this.prisma.subjectAssignment.findUnique({
-            where: { id: assignmentId },
+        const assignment = await this.prisma.subjectAssignment.findFirst({
+            where: { id: assignmentId, schoolId },
             include: { subject: true, class: true }
         });
 
-        if (!assignment || assignment.schoolId !== schoolId) {
+        if (!assignment) {
             throw new NotFoundException('Assignment not found');
         }
 
-        const updated = await this.prisma.subjectAssignment.update({
-            where: { id: assignmentId },
-            data: {
-                teacherId: dto.teacherId,
-                periodsPerWeek: dto.periodsPerWeek,
-            },
-            include: {
-                teacher: {
-                    select: {
-                        id: true,
-                        user: { select: { name: true } }
+        if (dto.teacherId !== undefined) {
+            const teacher = await this.prisma.teacherProfile.findFirst({
+                where: { id: dto.teacherId, schoolId }
+            });
+            if (!teacher) throw new NotFoundException('Teacher not found or does not belong to this school');
+        }
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const upd = await tx.subjectAssignment.update({
+                where: { id: assignmentId },
+                data: {
+                    ...(dto.teacherId !== undefined && { teacherId: dto.teacherId }),
+                    ...(dto.periodsPerWeek !== undefined && { periodsPerWeek: dto.periodsPerWeek }),
+                },
+                include: {
+                    teacher: {
+                        select: {
+                            id: true,
+                            user: { select: { name: true } }
+                        }
                     }
                 }
+            });
+
+            // SYNC: Keep config in sync — only when teacherId is explicitly updated
+            if (dto.teacherId !== undefined && assignment.classId && assignment.sectionId) {
+                await tx.classSubject.updateMany({
+                    where: {
+                        schoolId,
+                        academicYearId: assignment.academicYearId,
+                        classId: assignment.classId,
+                        sectionId: assignment.sectionId,
+                        subjectId: assignment.subjectId
+                    },
+                    data: {
+                        teacherProfileId: dto.teacherId
+                    }
+                });
             }
+
+            return upd;
         });
 
         this.eventEmitter.emit('audit.log', new AuditLogEvent(
@@ -143,19 +214,39 @@ export class AllocationService {
     }
 
     async removeAssignment(schoolId: number, assignmentId: number, userId: number) {
-        const assignment = await this.prisma.subjectAssignment.findUnique({
-            where: { id: assignmentId },
+        const assignment = await this.prisma.subjectAssignment.findFirst({
+            where: { id: assignmentId, schoolId },
             include: { subject: true, class: true }
         });
 
-        if (!assignment || assignment.schoolId !== schoolId) {
+        if (!assignment) {
             throw new NotFoundException('Assignment not found');
         }
 
         // Check if there are dependent records like Timetable entries (omitted for now, but good practice)
 
-        const deleted = await this.prisma.subjectAssignment.delete({
-            where: { id: assignmentId },
+        const deleted = await this.prisma.$transaction(async (tx) => {
+            const del = await tx.subjectAssignment.delete({
+                where: { id: assignmentId },
+            });
+
+            // SYNC: Clear the configuration table if assignment is removed
+            if (assignment.classId && assignment.sectionId) {
+                await tx.classSubject.updateMany({
+                    where: {
+                        schoolId,
+                        academicYearId: assignment.academicYearId,
+                        classId: assignment.classId,
+                        sectionId: assignment.sectionId,
+                        subjectId: assignment.subjectId
+                    },
+                    data: {
+                        teacherProfileId: null
+                    }
+                });
+            }
+
+            return del;
         });
 
         this.eventEmitter.emit('audit.log', new AuditLogEvent(
@@ -173,8 +264,8 @@ export class AllocationService {
         const academicYearId = await this.getActiveAcademicYear(schoolId);
 
         // 1. Get Subject Details
-        const subject = await this.prisma.subject.findUnique({
-            where: { id: subjectId },
+        const subject = await this.prisma.subject.findFirst({
+            where: { id: subjectId, schoolId },
         });
 
         if (!subject) throw new NotFoundException('Subject not found');

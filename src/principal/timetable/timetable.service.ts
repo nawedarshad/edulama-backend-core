@@ -3,6 +3,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { DayOfWeek } from '@prisma/client';
 import { CreateTimePeriodDto } from './dto/create-time-period.dto';
 import { CreateTimetableEntryDto } from './dto/create-timetable-entry.dto';
+import { UpdateTimetableEntryDto } from './dto/update-timetable-entry.dto';
 
 // Modular Services
 import { TimetableAnalyticsService } from './services/analytics.service';
@@ -26,7 +27,7 @@ export class TimetableService {
     // HELPER: Year Lock & Validation
     // ----------------------------------------------------------------
     async ensureAcademicYear(schoolId: number, academicYearId: number): Promise<number> {
-        if (academicYearId) return academicYearId;
+        if (academicYearId > 0) return academicYearId;
         const activeYear = await this.prisma.academicYear.findFirst({
             where: { schoolId, status: 'ACTIVE' },
         });
@@ -86,6 +87,12 @@ export class TimetableService {
         const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
         await this.checkYearLock(schoolId, resolvedYearId);
         return this.entries.createEntry(schoolId, resolvedYearId, dto, userId);
+    }
+
+    async updateEntry(schoolId: number, academicYearId: number, id: number, dto: UpdateTimetableEntryDto, userId?: number) {
+        const resolvedYearId = await this.ensureAcademicYear(schoolId, academicYearId);
+        await this.checkYearLock(schoolId, resolvedYearId);
+        return this.entries.updateEntry(schoolId, resolvedYearId, id, dto, userId);
     }
 
     async deleteEntry(schoolId: number, id: number, userId?: number) {

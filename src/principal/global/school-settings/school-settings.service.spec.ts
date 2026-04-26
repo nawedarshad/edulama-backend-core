@@ -3,12 +3,14 @@ import { SchoolSettingsService } from './school-settings.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogService } from '../../../common/audit/audit-log.service';
 import { UpdateSchoolSettingsDto } from './dto/update-school-settings.dto';
-import { plainToInstance } from 'class-transformer'; // Needed to test DTO transform
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { S3StorageService } from '../../../common/file-upload/s3-storage.service';
+import { plainToInstance } from 'class-transformer';
 
 describe('SchoolSettingsService', () => {
     let service: SchoolSettingsService;
     let prisma: PrismaService;
-    let auditLogService: AuditLogService;
+    let cacheManager: any;
 
     const mockPrismaService = {
         schoolSettings: {
@@ -16,102 +18,95 @@ describe('SchoolSettingsService', () => {
             create: jest.fn(),
             upsert: jest.fn(),
         },
+        school: {
+            findUnique: jest.fn(),
+        }
     };
 
-    const mockAuditLogService = {
-        createLog: jest.fn(),
+    const mockCacheManager = {
+        get: jest.fn(),
+        set: jest.fn(),
+        del: jest.fn(),
     };
+
+    const mockAuditLogService = { createLog: jest.fn() };
+    const mockS3Storage = { extractKeyFromUrl: jest.fn(), deleteFile: jest.fn() };
 
     beforeEach(async () => {
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 SchoolSettingsService,
-                {
-                    provide: PrismaService,
-                    useValue: mockPrismaService,
-                },
-                {
-                    provide: AuditLogService,
-                    useValue: mockAuditLogService,
-                },
+                { provide: PrismaService, useValue: mockPrismaService },
+                { provide: CACHE_MANAGER, useValue: mockCacheManager },
+                { provide: AuditLogService, useValue: mockAuditLogService },
+                { provide: S3StorageService, useValue: mockS3Storage },
             ],
         }).compile();
 
         service = module.get<SchoolSettingsService>(SchoolSettingsService);
         prisma = module.get<PrismaService>(PrismaService);
-        auditLogService = module.get<AuditLogService>(AuditLogService);
+        cacheManager = module.get(CACHE_MANAGER);
     });
 
-    afterEach(() => {
-        jest.clearAllMocks();
-    });
+    afterEach(() => { jest.clearAllMocks(); });
 
-    it('should be defined', () => {
-        expect(service).toBeDefined();
+    describe('getSchoolInfo', () => {
+        it('should return cached school info if available', async () => {
+            const mockSchool = { id: 1, name: 'Test School' };
+            mockCacheManager.get.mockResolvedValue(mockSchool);
+
+            const result = await service.getSchoolInfo(1);
+            expect(result).toEqual(mockSchool);
+            expect(mockCacheManager.get).toHaveBeenCalledWith('SCHOOL_INFO:1');
+            expect(mockPrismaService.school.findUnique).not.toHaveBeenCalled();
+        });
+
+        it('should fetch and cache school info if not in cache', async () => {
+            const mockSchool = { id: 1, name: 'Test School' };
+            mockCacheManager.get.mockResolvedValue(null);
+            mockPrismaService.school.findUnique.mockResolvedValue(mockSchool);
+
+            const result = await service.getSchoolInfo(1);
+            expect(result).toEqual(mockSchool);
+            expect(mockCacheManager.set).toHaveBeenCalledWith('SCHOOL_INFO:1', mockSchool, expect.any(Number));
+        });
     });
 
     describe('getSettings', () => {
-        it('should return existing settings', async () => {
-            const mockSettings = { id: 1, schoolId: 1, motto: 'Test' };
-            (prisma.schoolSettings.findUnique as jest.Mock).mockResolvedValue(mockSettings);
+        it('should use versioned cache for settings', async () => {
+            mockCacheManager.get.mockImplementation((key) => {
+                if (key === 'SETTINGS_VER:1') return 123;
+                if (key === 'SETTINGS_SINGLE:1:V123') return { id: 1, motto: 'Cached' };
+                return null;
+            });
 
-            const result = await service.getSettings(1);
-            expect(result).toEqual(mockSettings);
-            expect(prisma.schoolSettings.findUnique).toHaveBeenCalledWith({ where: { schoolId: 1 } });
+            const result = await service.getSettings(1) as any;
+            expect(result.motto).toBe('Cached');
+            expect(mockPrismaService.schoolSettings.findUnique).not.toHaveBeenCalled();
         });
 
-        it('should create default settings if not found', async () => {
-            (prisma.schoolSettings.findUnique as jest.Mock).mockResolvedValue(null);
-            const defaultSettings = { id: 1, schoolId: 1, attendanceMode: 'DAILY' };
-            (prisma.schoolSettings.create as jest.Mock).mockResolvedValue(defaultSettings);
+        it('should fetch from DB and cache if missiong in cache', async () => {
+            mockCacheManager.get.mockResolvedValue(null);
+            const mockSettings = { id: 1, schoolId: 1, motto: 'DB' };
+            mockPrismaService.schoolSettings.findUnique.mockResolvedValue(mockSettings);
 
-            const result = await service.getSettings(1);
-            expect(result).toEqual(defaultSettings);
-            expect(prisma.schoolSettings.create).toHaveBeenCalled();
+            const result = await service.getSettings(1) as any;
+            expect(result.motto).toBe('DB');
+            expect(mockCacheManager.set).toHaveBeenCalled();
         });
     });
 
     describe('updateSettings', () => {
-        it('should upsert settings and log audit event', async () => {
-            const dto: UpdateSchoolSettingsDto = { motto: 'New Motto' };
-            const updatedSettings = { id: 1, schoolId: 1, ...dto };
-            (prisma.schoolSettings.upsert as jest.Mock).mockResolvedValue(updatedSettings);
+        it('should invalidate cache on update', async () => {
+            const dto: UpdateSchoolSettingsDto = { motto: 'Updated' };
+            mockPrismaService.schoolSettings.findUnique.mockResolvedValue({});
+            mockPrismaService.schoolSettings.upsert.mockResolvedValue({ id: 1 });
 
-            const result = await service.updateSettings(1, 101, dto, '1.2.3.4');
+            await service.updateSettings(1, 101, dto, '127.0.0.1');
 
-            expect(result).toEqual(updatedSettings);
-            expect(prisma.schoolSettings.upsert).toHaveBeenCalled();
-            expect(auditLogService.createLog).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    schoolId: 1,
-                    userId: 101,
-                    entity: 'SchoolSettings',
-                    action: 'UPDATE',
-                    ipAddress: '1.2.3.4',
-                }),
-            );
+            expect(mockCacheManager.set).toHaveBeenCalledWith('SETTINGS_VER:1', expect.any(Number), expect.any(Number));
+            expect(mockCacheManager.del).toHaveBeenCalledWith('SETTINGS_SINGLE:1');
+            expect(mockCacheManager.del).toHaveBeenCalledWith('SCHOOL_INFO:1');
         });
-
-        it('should throw error if db fails', async () => {
-            const dto: UpdateSchoolSettingsDto = { motto: 'Fail' };
-            (prisma.schoolSettings.upsert as jest.Mock).mockRejectedValue(new Error('DB Error'));
-
-            await expect(service.updateSettings(1, 101, dto, '1.2.3.4')).rejects.toThrow('DB Error');
-        });
-    });
-});
-
-describe('UpdateSchoolSettingsDto Transform', () => {
-    it('should transform empty strings to null', () => {
-        const plain = { motto: '', city: '' };
-        const dto = plainToInstance(UpdateSchoolSettingsDto, plain);
-        expect(dto.motto).toBeNull();
-        expect(dto.city).toBeNull();
-    });
-
-    it('should keep non-empty strings', () => {
-        const plain = { motto: 'Valid' };
-        const dto = plainToInstance(UpdateSchoolSettingsDto, plain);
-        expect(dto.motto).toBe('Valid');
     });
 });

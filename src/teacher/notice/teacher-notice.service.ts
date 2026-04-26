@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { NoticeQueryDto } from './dto/notice-query.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, NoticeType } from '@prisma/client';
 
 @Injectable()
 export class TeacherNoticeService {
@@ -214,8 +214,12 @@ export class TeacherNoticeService {
         classId: number,
         sectionId: number | undefined,
         subjectId: number | undefined,
-        type: 'CLASS' | 'SUBJECT'
+        type: NoticeType
     ) {
+        if (type === NoticeType.GENERAL || type === NoticeType.SCHOOL) {
+            throw new ForbiddenException('Teachers are not authorized to post school-wide notices');
+        }
+
         // 1. If TYPE=SUBJECT, subjectId is mandatory AND teacher must be teaching that subject in that class/section
         if (type === 'SUBJECT') {
             if (!subjectId) throw new BadRequestException('Subject ID is required for Subject Notices');

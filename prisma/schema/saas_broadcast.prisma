@@ -1,0 +1,33 @@
+enum SaasBroadcastType {
+  FEATURE
+  MAINTENANCE
+  IMPORTANT
+  SYSTEM
+  NEWS
+}
+
+enum SaasPriority {
+  LOW
+  NORMAL
+  URGENT
+}
+
+model SaasBroadcast {
+  id          Int               @id @default(autoincrement())
+  title       String
+  message     String            @db.Text
+  type        SaasBroadcastType @default(SYSTEM)
+  priority    SaasPriority      @default(NORMAL)
+  actionLabel String?
+  actionLink  String?
+  isActive    Boolean           @default(true)
+  expiresAt   DateTime?
+
+  // Array of school IDs this broadcast is targeted to. Empty = All schools.
+  targetSchools Int[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, expiresAt])
+}

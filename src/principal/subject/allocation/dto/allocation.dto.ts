@@ -1,4 +1,5 @@
 import { IsInt, IsOptional, IsPositive, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateAllocationDto {
@@ -31,10 +32,11 @@ export class CreateAllocationDto {
 }
 
 export class UpdateAllocationDto {
-    @ApiProperty({ example: 55, description: 'ID of the new teacher profile to replace current one' })
+    @ApiProperty({ example: 55, description: 'ID of the new teacher profile to replace current one', required: false })
     @IsInt()
     @IsPositive()
-    teacherId: number;
+    @IsOptional()
+    teacherId?: number;
 
     @ApiProperty({ example: 6, description: 'Updated periods per week', required: false })
     @IsInt()
@@ -45,21 +47,25 @@ export class UpdateAllocationDto {
 
 export class AllocationFilterDto {
     @ApiProperty({ required: false, description: 'Filter by Class ID' })
+    @Type(() => Number)
     @IsInt()
     @IsOptional()
     classId?: number;
 
     @ApiProperty({ required: false, description: 'Filter by Section ID' })
+    @Type(() => Number)
     @IsInt()
     @IsOptional()
     sectionId?: number;
 
     @ApiProperty({ required: false, description: 'Filter by Subject ID' })
+    @Type(() => Number)
     @IsInt()
     @IsOptional()
     subjectId?: number;
 
     @ApiProperty({ required: false, description: 'Filter by Teacher ID' })
+    @Type(() => Number)
     @IsInt()
     @IsOptional()
     teacherId?: number;
